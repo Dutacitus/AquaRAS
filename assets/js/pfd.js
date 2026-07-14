@@ -23,9 +23,9 @@ RAS.pfd = (function () {
   }
 
   function render(d) {
-    const W = 1100, H = 540;
+    const W = 1200, H = 580;
     const eqY = 150, eqH = 86, eqW = 172;
-    const xs = [150, 352, 554, 756, 958];
+    const xs = [110, 312, 514, 716, 918];
     const cy = eqY + eqH / 2;                 // 主流程中心线 = 193
     const Q = d.hydraulics.recircFlowH;
     const make = d.hydraulics.makeupFlowH;
@@ -60,15 +60,15 @@ RAS.pfd = (function () {
       ${arrow(xs[1] + eqW, cy, xs[2], cy)}
       ${arrow(xs[2] + eqW, cy, xs[3], cy)}
       ${arrow(xs[3] + eqW, cy, xs[4], cy)}
-      <text x="337" y="128" class="pfd-flow-label">${Q} m³/h</text>
-      <text x="539" y="128" class="pfd-flow-label">${Q} m³/h</text>
-      <text x="741" y="128" class="pfd-flow-label">${Q} m³/h</text>
-      <text x="943" y="128" class="pfd-flow-label">${Q} m³/h</text>
+      <text x="297" y="128" class="pfd-flow-label">${Q} m³/h</text>
+      <text x="499" y="128" class="pfd-flow-label">${Q} m³/h</text>
+      <text x="701" y="128" class="pfd-flow-label">${Q} m³/h</text>
+      <text x="903" y="128" class="pfd-flow-label">${Q} m³/h</text>
 
       <!-- 回水（下排 右→左，闭合正交环；箭头自回水管上行进入养殖池底）-->
       <path d="M ${uvCx} ${eqY + eqH} L ${uvCx} ${yRet} L ${tkCx} ${yRet} L ${tkCx} ${eqY + eqH}" class="pfd-line pfd-return"/>
       <polygon points="${tkCx},${eqY + eqH} ${tkCx - 5},${eqY + eqH + 9} ${tkCx + 5},${eqY + eqH + 9}" class="pfd-head pfd-return"/>
-      <text x="730" y="${yRet - 8}" class="pfd-flow-label">净化回水 ${Q} m³/h</text>
+      <text x="600" y="${yRet - 8}" class="pfd-flow-label">净化回水 ${Q} m³/h</text>
 
       <!-- 换热（回水管上）-->
       ${node(540, yRet - 26, 120, 52, "换热器", `${d.inputs.temp}℃ 控温`, "c8", "he")}

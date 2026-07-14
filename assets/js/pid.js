@@ -49,7 +49,7 @@ RAS.pid = (function () {
   }
 
   function render(d) {
-    const W = 1180, H = 600;
+    const W = 1180, H = 620;
     const eqY = 160, eqH = 86, eqW = 172;
     const xs = [150, 352, 554, 756, 958];
     const cy = eqY + eqH / 2;           // 设备中心 y = 203
@@ -141,7 +141,7 @@ RAS.pid = (function () {
       ${ortho([[900, dcsY], [900, 372], [xs[4] + eqW / 2, 372]], "pid-control")}
 
       <!-- 图例 -->
-      <g class="pid-legend" transform="translate(${dcsX}, ${H - 18})">
+      <g class="pid-legend" transform="translate(${dcsX}, ${H - 30})">
         <circle cx="8" cy="-8" r="9" class="pid-bubble"/><text x="22" y="-4" class="pid-sub">仪表测点</text>
         <rect x="120" y="-16" width="14" height="14" rx="3" class="pid-box c8"/><text x="140" y="-4" class="pid-sub">控制系统</text>
         <rect x="230" y="-16" width="14" height="14" rx="3" class="pid-valve-box" transform="rotate(45 237 -9)"/><text x="250" y="-4" class="pid-sub">控制阀</text>
