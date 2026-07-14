@@ -184,9 +184,9 @@ body::before {
 .btn-primary:active { transform: translateY(0) scale(0.99); }
 
 /* ---------- Result metric cards ---------- */
-.section-title { font-size: 17px; font-weight: 800; margin: 28px 0 14px; display: flex; align-items: center; gap: 10px; letter-spacing: -0.01em; }
+.section-title { position: relative; font-size: 17px; font-weight: 800; margin: 28px 0 14px; padding: 0 26px; display: flex; align-items: center; gap: 10px; letter-spacing: -0.01em; }
 .section-title::before {
-  content: ""; width: 5px; height: 20px; border-radius: 3px;
+  content: ""; position: absolute; left: 26px; top: 0; width: 5px; height: 20px; border-radius: 3px;
   background: linear-gradient(var(--brand), var(--brand-2));
   box-shadow: 0 0 12px var(--brand-soft);
 }
@@ -195,7 +195,7 @@ body::before {
   background: var(--brand-soft); padding: 3px 10px; border-radius: 999px; letter-spacing: 0.03em;
 }
 
-.metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
+.metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; padding: 0 26px; }
 .metric {
   position: relative; padding: 18px 18px 16px; border-radius: var(--radius-sm);
   border: 1px solid var(--border); background: var(--surface); overflow: hidden;
@@ -373,7 +373,7 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
    ============================================================ */
 .hero {
   position: relative; overflow: hidden; isolation: isolate;
-  min-height: 80vh; margin-bottom: 26px; padding: clamp(48px, 8vw, 96px) clamp(22px, 5vw, 72px);
+  min-height: 72vh; margin-bottom: 26px; padding: clamp(40px, 5.5vw, 72px) clamp(22px, 5vw, 64px);
   display: flex; align-items: center; justify-content: center; text-align: center;
   background:
     radial-gradient(120% 120% at 50% -10%, rgba(56, 189, 248, 0.10), transparent 60%),
@@ -412,27 +412,28 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
 }
 
 /* 正交 RAS 回路 SVG */
-.hero-circuit { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.62; }
-[data-theme="light"] .hero-circuit { opacity: 0.5; }
-.hc-track { fill: none; stroke: var(--border-strong); stroke-width: 1.4; }
+.hero-circuit { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.55; }
+[data-theme="light"] .hero-circuit { opacity: 0.46; }
+.hc-track { fill: none; stroke: var(--border-strong); stroke-width: 2; opacity: 0.7; }
+.hc-spur { opacity: 0.42; }
+/* 流光：连续实线为底，叠一段亮光沿回路行进（pathLength=100 归一化，循环无缝） */
 .hc-flow {
-  fill: none; stroke: url(#hcFlow); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round;
-  stroke-dasharray: 14 20; filter: drop-shadow(0 0 6px var(--brand-soft));
-  animation: hcMarch 2.4s linear infinite;
+  fill: none; stroke: url(#hcFlow); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round;
+  stroke-dasharray: 12 88; filter: drop-shadow(0 0 8px var(--brand));
+  animation: hcFlow 3s linear infinite;
 }
-.hc-flow2 { stroke-dasharray: 10 16; animation-duration: 1.9s; }
-@keyframes hcMarch { to { stroke-dashoffset: -340; } }
+@keyframes hcFlow { to { stroke-dashoffset: -100; } }
 .hc-node { fill: var(--brand); stroke: var(--surface-2); stroke-width: 2.5; filter: drop-shadow(0 0 7px var(--brand-soft)); }
-.hc-core { fill: var(--accent); filter: drop-shadow(0 0 10px var(--accent)); }
 .hc-label { fill: var(--text-soft); font-size: 13px; font-weight: 700; text-anchor: middle; font-family: var(--font); letter-spacing: 0.02em; }
 
-/* 对比度遮罩，保证文字清晰 */
+/* 柔和暗角，仅极淡压暗四角，保证中心文字清晰且角部标签可见 */
 .hero-scrim { position: absolute; inset: 0;
-  background: radial-gradient(ellipse 62% 70% at 50% 50%, transparent 40%, var(--surface) 100%);
-  opacity: 0.9; }
+  background: radial-gradient(ellipse 82% 86% at 50% 46%, transparent 62%, rgba(8, 14, 26, 0.10) 100%);
+  opacity: 0.5; }
+[data-theme="light"] .hero-scrim { background: radial-gradient(ellipse 82% 86% at 50% 46%, transparent 62%, rgba(255, 255, 255, 0.22) 100%); }
 
 /* 前景内容 */
-.hero-inner { position: relative; z-index: 2; max-width: 860px; display: flex; flex-direction: column; align-items: center; gap: 22px; }
+.hero-inner { position: relative; z-index: 2; max-width: 860px; display: flex; flex-direction: column; align-items: center; gap: 18px; }
 .hero-eyebrow {
   display: inline-flex; align-items: center; gap: 9px;
   font-size: 13px; font-weight: 700; letter-spacing: 0.04em; color: var(--brand);
@@ -477,7 +478,7 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
 /* 首屏指标条 */
 .hero-stats {
   display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px;
-  width: 100%; max-width: 720px; margin-top: 14px;
+  width: 100%; max-width: 720px; margin-top: 10px;
 }
 .hero-stat {
   position: relative; padding: 16px 14px 14px; border-radius: var(--radius-sm);
@@ -503,7 +504,7 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
 @keyframes heroScroll { 0% { opacity: 0; transform: translateY(0); } 35% { opacity: 1; } 70%,100% { opacity: 0; transform: translateY(14px); } }
 
 @media (max-width: 720px) {
-  .hero { min-height: 76vh; }
+  .hero { min-height: 70vh; }
   .hero-stats { grid-template-columns: repeat(2, 1fr); gap: 10px; }
   .hero-scroll { display: none; }
   .hc-label { font-size: 11px; }
