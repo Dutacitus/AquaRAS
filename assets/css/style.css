@@ -408,10 +408,14 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
   .lib-source .text-input { min-width: 150px; }
 
   /* Hero（字号本身已 clamp 自适应，此处调布局） */
-  .hero { min-height: 70vh; }
+  .hero { min-height: auto; padding-block: 48px; }
   .hero-stats { grid-template-columns: repeat(2, 1fr); gap: 10px; }
   .hero-scroll { display: none; }
-  .hc-label { font-size: 11px; }
+  /* 手机：管道铺满为背景(slice)，降透明度 + 隐藏角标，文字居中不重叠 */
+  .hero .hero-circuit { opacity: 0.30; }
+  .hero .hc-label, .hero .hc-node { display: none; }
+  .hero-inner { gap: 14px; max-width: 100%; }
+  .hero-sub { font-size: 14px; line-height: 1.62; }
 }
 
 /* 小屏手机 */
@@ -423,6 +427,11 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
   .header-actions .toggle-btn { flex: 1; justify-content: center; }  /* 导出按钮占满整行 */
   .hero-cta-row { gap: 10px; }
   .hero-cta { flex: 1; justify-content: center; padding: 13px 12px; font-size: 14px; }
+  /* Hero 更小屏：管道更弱、指标更紧凑 */
+  .hero .hero-circuit { opacity: 0.24; }
+  [data-theme="light"] .hero .hero-circuit { opacity: 0.30; }
+  .hero-stats { gap: 8px; }
+  .hero-stat { padding: 11px 8px 9px; }
   .hero-stat .hs-v { font-size: 22px; }
   #model3d { height: 52vh; min-height: 260px; }
   .pfd-wrap { padding: 12px; }
