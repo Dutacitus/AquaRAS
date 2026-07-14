@@ -40,11 +40,17 @@
               <stop offset="55%" stop-color="var(--brand-2)" />
               <stop offset="100%" stop-color="var(--accent)" />
             </linearGradient>
+            <radialGradient id="hcPhoton" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stop-color="#ffffff" stop-opacity="1" />
+              <stop offset="38%" stop-color="#ffffff" stop-opacity="0.92" />
+              <stop offset="70%" stop-color="#bfe9ff" stop-opacity="0.45" />
+              <stop offset="100%" stop-color="#bfe9ff" stop-opacity="0" />
+            </radialGradient>
           </defs>
           <!-- 正交 RAS 水循环矩形环线：贴边、中心留白给文字，避免重合 -->
           <g class="hc-loop">
             <path class="hc-track" d="M 120 55 H 1080 V 545 H 120 Z" />
-            <path class="hc-flow" pathLength="100" d="M 120 55 H 1080 V 545 H 120 Z" />
+            <path id="hcPath" class="hc-flow" d="M 120 55 H 1080 V 545 H 120 Z" />
             <!-- 角部正交支线（科技细节，不穿越中心） -->
             <path class="hc-track hc-spur" d="M 120 55 L 92 55 M 120 55 L 120 27 M 1080 55 L 1108 55 M 1080 55 L 1080 27 M 120 545 L 92 545 M 120 545 L 120 573 M 1080 545 L 1108 545 M 1080 545 L 1080 573" />
           </g>
@@ -54,6 +60,14 @@
             <circle class="hc-node" cx="1080" cy="55" r="8" /><text class="hc-label" x="1080" y="20">MBBR</text>
             <circle class="hc-node" cx="1080" cy="545" r="8" /><text class="hc-label" x="1080" y="586">增氧</text>
             <circle class="hc-node" cx="120" cy="545" r="8" /><text class="hc-label" x="120" y="586">除固</text>
+          </g>
+          <!-- 沿环线巡游的白色发光光子（SMIL animateMotion，速度已调慢至 16s） -->
+          <g class="hc-photon">
+            <circle r="13" fill="url(#hcPhoton)" />
+            <circle r="3.4" fill="#ffffff" />
+            <animateMotion dur="16s" repeatCount="indefinite" rotate="0">
+              <mpath href="#hcPath" />
+            </animateMotion>
           </g>
         </svg>
         <div class="hero-scrim"></div>
