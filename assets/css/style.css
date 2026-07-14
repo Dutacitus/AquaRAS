@@ -301,7 +301,12 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
 .pid-tag { font-size: 11px; font-weight: 800; fill: var(--brand); text-anchor: middle; }
 .pid-title { font-size: 14px; font-weight: 700; fill: var(--text); text-anchor: middle; }
 .pid-sub { font-size: 11.5px; fill: var(--text-soft); text-anchor: middle; }
-.pid-box { fill: var(--surface-2); stroke: var(--border-strong); stroke-width: 1.5; }
+/* P&ID 背景面板与栅格 */
+.pid-bg { fill: rgba(127,140,170,0.05); stroke: var(--border); stroke-width: 1; }
+.pid-box { fill: var(--surface-2); stroke: var(--border-strong); stroke-width: 1.6; transition: stroke-width .18s ease, stroke .18s ease; }
+.pid-node { cursor: default; }
+.pid-node:hover .pid-box { stroke-width: 2.8; }
+.pid-node:hover .pid-title { fill: var(--brand); }
 .pid-line { stroke: var(--text-soft); stroke-width: 2.2; fill: none; }
 .pid-head { fill: var(--text-soft); }
 .pid-return { stroke: var(--brand); stroke-dasharray: 6 5; }
@@ -315,15 +320,22 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
 .pid-node.c6 .pid-box { stroke: #16a085; }
 .pid-node.c7 .pid-box { stroke: #e67e22; }
 .pid-node.c8 .pid-box { stroke: var(--brand); }
-.pid-inst .pid-bubble { fill: var(--surface-2); stroke: var(--brand-2); stroke-width: 2; }
-.pid-bubble-txt { font-size: 10.5px; font-weight: 800; fill: var(--text); text-anchor: middle; }
+/* 仪表轨 */
+.pid-rail { fill: rgba(52,152,219,0.06); stroke: var(--brand-2); stroke-width: 1.2; stroke-dasharray: 5 4; }
+.pid-inst .pid-bubble { fill: var(--brand-2); stroke: #ffffff; stroke-width: 1.4; transition: stroke .15s ease, stroke-width .15s ease; }
+.pid-inst:hover .pid-bubble { stroke: var(--brand); stroke-width: 2.4; }
+.pid-bubble-txt { font-size: 10.5px; font-weight: 800; fill: #ffffff; text-anchor: middle; }
 .pid-inst-label { font-size: 10.5px; fill: var(--text-faint); text-anchor: middle; }
+.pid-inst-label.side { text-anchor: start; fill: var(--text); font-weight: 600; font-size: 11px; }
 .pid-signal { stroke: var(--brand-2); stroke-width: 1.6; stroke-dasharray: 4 4; fill: none; }
 .pid-bus { stroke: var(--brand-2); stroke-width: 2.4; stroke-dasharray: 8 4; fill: none; opacity: 0.85; }
+.pid-control { stroke: #e67e22; stroke-width: 2.2; stroke-dasharray: 2 3; fill: none; }
 .pid-valve .pid-valve-box { fill: #f39c12; stroke: #d68910; stroke-width: 1.5; }
 .pid-dcs .pid-box { stroke: var(--brand); }
+.pid-sub.left { text-anchor: start; }
+.pid-title.left { text-anchor: start; }
 .pid-legend .pid-sub { fill: var(--text-soft); text-anchor: start; }
-.pid-legend .pid-bubble { fill: var(--surface-2); stroke: var(--brand-2); stroke-width: 1.5; }
+.pid-legend .pid-bubble { fill: var(--brand-2); stroke: #ffffff; stroke-width: 1.2; }
 .pid-legend .pid-valve-box { fill: #f39c12; stroke: #d68910; }
 
 /* ---------- Optimizer / Library ---------- */
