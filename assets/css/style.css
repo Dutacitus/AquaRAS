@@ -319,6 +319,7 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
 .pid-bubble-txt { font-size: 10.5px; font-weight: 800; fill: var(--text); text-anchor: middle; }
 .pid-inst-label { font-size: 10.5px; fill: var(--text-faint); text-anchor: middle; }
 .pid-signal { stroke: var(--brand-2); stroke-width: 1.6; stroke-dasharray: 4 4; fill: none; }
+.pid-bus { stroke: var(--brand-2); stroke-width: 2.4; stroke-dasharray: 8 4; fill: none; opacity: 0.85; }
 .pid-valve .pid-valve-box { fill: #f39c12; stroke: #d68910; stroke-width: 1.5; }
 .pid-dcs .pid-box { stroke: var(--brand); }
 .pid-legend .pid-sub { fill: var(--text-soft); text-anchor: start; }

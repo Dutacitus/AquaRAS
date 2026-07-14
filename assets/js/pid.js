@@ -22,8 +22,14 @@ RAS.pid = (function () {
         <text x="${cx}" y="${cy + 30}" class="pid-inst-label">${label}</text>
       </g>`;
   }
-  function signal(x1, y1, x2, y2) {
-    return `<path d="M ${x1} ${y1} L ${x2} ${y2}" class="pid-signal"/>`;
+  // 正交信号线：传入折点数组 [[x,y],...]，只走 90° 直角，无斜线
+  function ortho(pts, cls) {
+    const d = "M " + pts.map(p => p[0] + " " + p[1]).join(" L ");
+    return `<path d="${d}" class="${cls || "pid-signal"}"/>`;
+  }
+  // 信号总线（水平母线）
+  function bus(x1, x2, y) {
+    return `<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" class="pid-bus"/>`;
   }
   function pipe(x1, y1, x2, y2, label) {
     const mx = (x1 + x2) / 2;
@@ -42,6 +48,7 @@ RAS.pid = (function () {
     const y = 150, h = 84, w = 165;
     const xs = [40, 230, 420, 610, 800];
     const Q = d.hydraulics.recircFlowH;
+    const yBus = 262; // 信号总线水平母线所在 y（设备行下、回水管上之间的净空）
 
     return `<svg viewBox="0 0 ${W} ${H}" class="pid-svg" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="P&ID 带仪表控制点">
       <text x="20" y="34" class="pid-header">管道及仪表流程图 (P&ID) · ${d.species.name}</text>
@@ -77,14 +84,14 @@ RAS.pid = (function () {
       <path d="M ${230 + w / 2} ${y + h} L ${230 + w / 2} ${y + h + 120}" class="pid-line pid-sludge"/>
       <polygon points="${230 + w / 2},${y + h + 120} ${230 + w / 2 - 5},${y + h + 110} ${230 + w / 2 + 5},${y + h + 110}" class="pid-head pid-sludge"/>
 
-      <!-- 仪表 -->
-      ${inst(xs[0] + 30, y - 34, "LT-01", "液位")}
-      ${inst(xs[0] - 6, y + h / 2, "AT-01", "溶氧DO")}
-      ${inst(xs[0] + w + 18, y + h / 2 - 30, "AT-02", "pH")}
-      ${inst(xs[0] + w / 2, y + 30, "TT-01", "温度")}
-      ${inst((xs[0] + w + xs[1]) / 2, y - 34, "FT-01", "流量")}
-      ${inst(xs[3] + w + 16, y + h / 2, "PT-01", "压力")}
-      ${inst(xs[0] + 30, y + h + 120 - 26, "LSH-01", "高液位报警")}
+      <!-- 仪表（置于清晰列，垂直落入信号总线，避免穿越设备）-->
+      ${inst(20, 110, "LT-01", "液位")}
+      ${inst(20, 150, "AT-01", "溶氧DO")}
+      ${inst(215, 120, "TT-01", "温度")}
+      ${inst(215, 160, "FT-01", "流量")}
+      ${inst(215, 200, "AT-02", "pH")}
+      ${inst(787, 120, "PT-01", "压力")}
+      ${inst(70, 328, "LSH-01", "高液位报警")}
 
       <!-- 控制系统 -->
       <g class="pid-dcs">
@@ -93,15 +100,19 @@ RAS.pid = (function () {
         <text x="320" y="${H - 54}" class="pid-sub">LIC-01 液位→FV-01 补水 · AIC-01 溶氧→氧锥 · TIC-01 温度→HE-01 · FIC-01 流量→P-01</text>
         <text x="320" y="${H - 36}" class="pid-sub">联锁：LSH-01 高液位停泵 · DO&lt;${d.species.doMin} 报警 · 备用发电机/纯氧自启</text>
       </g>
-      <!-- 信号线（仪表→DCS）-->
-      ${signal(xs[0] + 30, y - 18, 360, H - 96)}
-      ${signal(xs[0] - 6, y + h / 2 + 16, 380, H - 96)}
-      ${signal(xs[0] + w / 2, y + 46, 400, H - 96)}
-      ${signal((xs[0] + w + xs[1]) / 2, y - 18, 420, H - 96)}
-      ${signal(xs[3] + w + 16, y + h / 2 + 16, 600, H - 96)}
-      ${signal(xs[0] + 30, y + h + 120 - 42, 700, H - 96)}
-      <!-- 控制信号（DCS→阀门）-->
-      ${signal(760, H - 96, 800 + w / 2, y + h + 82)}
+      <!-- 信号总线 + 仪表→总线 正交连接（仅 90° 直角，无斜线）-->
+      ${bus(20, 791, yBus)}
+      ${ortho([[20, 110], [20, yBus]])}
+      ${ortho([[20, 150], [20, yBus]])}
+      ${ortho([[215, 120], [215, yBus]])}
+      ${ortho([[215, 160], [215, yBus]])}
+      ${ortho([[215, 200], [215, yBus]])}
+      ${ortho([[787, 120], [787, yBus]])}
+      ${ortho([[70, 328], [70, yBus]])}
+      <!-- 总线→集中控制系统（单点引入）-->
+      ${ortho([[530, yBus], [530, H - 96]])}
+      <!-- 控制信号（DCS→FV-01 阀门，正交阶梯路由）-->
+      ${ortho([[740, H - 96], [740, 340], [868, 340], [868, 304], [800 + w / 2, 304]])}
 
       <!-- 图例 -->
       <g class="pid-legend" transform="translate(40, ${H - 8})">
