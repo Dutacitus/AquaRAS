@@ -402,18 +402,21 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
 @keyframes floatB { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-46px, 26px) scale(1.06); } }
 
 /* 正交 RAS 回路 SVG（矩形环线） */
-.hero-circuit { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.55; }
-[data-theme="light"] .hero-circuit { opacity: 0.46; }
-/* 底轨 */
-.hc-track { fill: none; stroke: var(--border-strong); stroke-width: 2; opacity: 0.7; }
-.hc-spur { opacity: 0.42; }
-/* 流光：渐变环线 + 白色发光光子缓慢巡游（光子用 SMIL animateMotion 沿环线移动） */
-.hc-flow {
-  fill: none; stroke: url(#hcFlow); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round;
-  opacity: 0.9; filter: drop-shadow(0 0 6px var(--brand-soft));
+.hero-circuit { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.62; }
+[data-theme="light"] .hero-circuit { opacity: 0.52; }
+/* 空心管道：外壁(渐变管壁) + 内芯(暗色透光)形成管状中空，水滴在其中巡游 */
+.hc-pipe-outer {
+  fill: none; stroke: url(#hcFlow); stroke-width: 12; stroke-linecap: round; stroke-linejoin: round;
+  filter: drop-shadow(0 0 5px var(--brand-soft));
 }
-/* 巡游水滴：蓝色水体 + 蓝白双层辉光；速度已调慢至 16s（原 8s） */
-.hc-photon { filter: drop-shadow(0 0 7px #6fd0ff) drop-shadow(0 0 16px rgba(31,143,224,0.8)); }
+.hc-pipe-core {
+  fill: none; stroke: rgba(8,16,30,0.5); stroke-width: 6.5; stroke-linecap: round; stroke-linejoin: round;
+}
+[data-theme="light"] .hc-pipe-core { stroke: rgba(226,232,240,0.5); }
+/* 角部装饰短线 */
+.hc-spur { fill: none; stroke: var(--brand); stroke-width: 2; opacity: 0.4; stroke-linecap: round; }
+/* 巡游水滴：蓝色水体 + 蓝白双层辉光；随管道转向(尖端朝运动方向)；速度 16s */
+.hc-photon { filter: drop-shadow(0 0 6px #6fd0ff) drop-shadow(0 0 14px rgba(31,143,224,0.8)); }
 .hc-spec { pointer-events: none; }
 .hc-node { fill: var(--brand); stroke: var(--surface-2); stroke-width: 2.5; filter: drop-shadow(0 0 6px var(--brand-soft)); }
 .hc-label { fill: var(--text-soft); font-size: 13px; font-weight: 700; text-anchor: middle; font-family: var(--font); letter-spacing: 0.02em; }
