@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AquaRAS · 工厂化循环水养殖工艺设计系统</title>
+  <link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="logo">🌊</div>
+        <div>
+          <h1>AquaRAS 工艺设计系统</h1>
+          <p>工厂化循环水养殖 (RAS) · 需求驱动的参数化工艺设计与 3D 建模</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div class="theme-toggle" id="themeToggle">
+          <button data-theme-set="light">☀ 亮</button>
+          <button data-theme-set="dark">🌙 暗</button>
+          <button data-theme-set="system">🖥 系统</button>
+        </div>
+        <button class="toggle-btn magnetic" id="exportBtn">📄 导出报告</button>
+      </div>
+    </header>
+
+    <!-- Tabs -->
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-tab="input">🎯 设计输入</button>
+      <button class="tab" data-tab="params">📐 工艺参数</button>
+      <button class="tab" data-tab="pfd">🔄 工艺流程图</button>
+      <button class="tab" data-tab="model">🧊 3D 车间模型</button>
+      <button class="tab" data-tab="bom">📦 设备清单</button>
+      <button class="tab" data-tab="econ">💰 经济估算</button>
+      <button class="tab" data-tab="pid">🛠 P&ID 仪表</button>
+      <button class="tab" data-tab="opt">🧮 智能寻优</button>
+      <button class="tab" data-tab="lib">🗂 方案库</button>
+    </nav>
+
+    <!-- ===== Input Panel ===== -->
+    <section class="panel active glass" id="panel-input">
+      <form id="designForm" class="form-grid">
+        <div class="field">
+          <label>养殖品种</label>
+          <select id="species" name="species"></select>
+          <span class="hint" id="speciesHint"></span>
+        </div>
+        <div class="field">
+          <label>目标年产量 <span class="unit">(吨/年)</span></label>
+          <input type="number" id="annualTons" value="100" min="1" step="1" />
+          <span class="hint">商品鱼上市量（活重）</span>
+        </div>
+        <div class="field">
+          <label>设计放养密度 <span class="unit">(kg/m³)</span></label>
+          <input type="number" id="density" step="1" placeholder="按品种默认" />
+          <span class="hint">集约化 RAS 典型 35–70</span>
+        </div>
+        <div class="field">
+          <label>年有效养殖茬次</label>
+          <input type="number" id="cycles" step="0.1" placeholder="按品种默认" />
+          <span class="hint">分级/连续出鱼可 >1</span>
+        </div>
+        <div class="field">
+          <label>日循环次数 <span class="unit">(turns/天)</span></label>
+          <input type="number" id="turns" value="12" min="4" max="40" step="1" />
+          <span class="hint">系统总水量日循环次数</span>
+        </div>
+        <div class="field">
+          <label>补水率 <span class="unit">(% 循环量)</span></label>
+          <input type="number" id="makeup" value="1" min="0.2" max="10" step="0.1" />
+          <span class="hint">新鲜水补充比例（回用率 = 100%−补水率）</span>
+        </div>
+        <div class="field">
+          <label>设计水温 <span class="unit">(℃)</span></label>
+          <input type="number" id="designTemp" step="0.5" placeholder="按品种默认" />
+          <span class="hint">最适生长水温</span>
+        </div>
+        <div class="field">
+          <label>设计安全系数</label>
+          <input type="number" id="safety" value="1.15" min="1" max="1.5" step="0.05" />
+          <span class="hint">单元设备容量冗余</span>
+        </div>
+        <button type="submit" class="btn-primary magnetic" id="computeBtn">⚙ 生成工艺设计方案</button>
+      </form>
+      <div class="note">
+        <span class="ic">💡</span>
+        <div><b>设计逻辑：</b>输入产能目标后，引擎按质量守恒推导养殖池容积、水循环量、生物滤池(MBBR)、增氧、CO₂脱除、固废处理等全套参数，并生成可交互 3D 车间模型。参数基准来自 RAS 工程文献与行业经验（见文档参考文献）。</div>
+      </div>
+    </section>
+
+    <!-- ===== Params Panel ===== -->
+    <section class="panel" id="panel-params"></section>
+
+    <!-- ===== PFD Panel ===== -->
+    <section class="panel glass" id="panel-pfd">
+      <div class="pfd-wrap" id="pfdHost"></div>
+    </section>
+
+    <!-- ===== Model Panel ===== -->
+    <section class="panel glass" id="panel-model">
+      <div class="model-toolbar">
+        <button class="toggle-btn on magnetic" id="rotateBtn">🔄 自动旋转</button>
+        <button class="toggle-btn magnetic" id="rebuildBtn">🧊 重建模型</button>
+        <span class="spacer"></span>
+        <span style="font-size:12.5px;color:var(--text-soft)">拖拽旋转 · 滚轮缩放 · 右键平移</span>
+      </div>
+      <div id="model3d"></div>
+    </section>
+
+    <!-- ===== BOM Panel ===== -->
+    <section class="panel glass" id="panel-bom"></section>
+
+    <!-- ===== Economics Panel ===== -->
+    <section class="panel glass" id="panel-econ"></section>
+
+    <!-- ===== P&ID Panel ===== -->
+    <section class="panel glass" id="panel-pid">
+      <div class="pfd-wrap" id="pidHost"></div>
+    </section>
+
+    <!-- ===== Optimizer Panel ===== -->
+    <section class="panel glass" id="panel-opt">
+      <div class="form-grid">
+        <div class="field">
+          <label>约束 — 预算上限 <span class="unit">(万元)</span></label>
+          <input type="number" id="optBudget" placeholder="如 400，留空=不限" />
+          <span class="hint">CAPEX 上限</span>
+        </div>
+        <div class="field">
+          <label>约束 — 场地面积上限 <span class="unit">(m²)</span></label>
+          <input type="number" id="optArea" placeholder="如 2000，留空=不限" />
+          <span class="hint">车间总面积上限</span>
+        </div>
+        <div class="field">
+          <label>约束 — 能耗上限 <span class="unit">(kWh/kg)</span></label>
+          <input type="number" id="optEnergy" step="0.1" placeholder="如 4，留空=不限" />
+          <span class="hint">比能耗上限</span>
+        </div>
+        <div class="field">
+          <label>优化目标</label>
+          <select id="optObjective">
+            <option value="minCost">最低投资成本</option>
+            <option value="minEnergy">最低能耗</option>
+            <option value="maxCapacity">最大产能（给定预算）</option>
+          </select>
+          <span class="hint">网格搜索取最优</span>
+        </div>
+        <button type="button" class="btn-primary magnetic" id="optRun">🧮 开始寻优</button>
+      </div>
+      <div id="optResult"></div>
+    </section>
+
+    <!-- ===== Scheme Library Panel ===== -->
+    <section class="panel glass" id="panel-lib">
+      <div style="padding:22px 26px 0">
+        <div class="field" style="max-width:460px">
+          <label>方案名称</label>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <input id="libName" placeholder="如 鲈鱼100t-方案A" style="flex:1;min-width:200px" />
+            <button id="libSave" class="toggle-btn magnetic on">💾 保存当前方案</button>
+          </div>
+          <span class="hint">云端方案库的本地演示（localStorage）；接入 Laravel 后端即可多端同步</span>
+        </div>
+      </div>
+      <div id="libList" style="padding:14px 26px"></div>
+      <div id="libCompare" style="padding:0 26px 20px"></div>
+      <div style="padding:0 26px 26px;display:flex;gap:10px;flex-wrap:wrap">
+        <button id="libExport" class="toggle-btn magnetic">⬇ 导出 JSON</button>
+        <button id="libImportBtn" class="toggle-btn magnetic">⬆ 导入 JSON</button>
+        <input id="libImport" type="file" accept="application/json" class="hidden" />
+      </div>
+    </section>
+
+    <footer class="footer">
+      AquaRAS · 参数化循环水养殖工艺设计原型 · 计算结果为工程估算，实际工程需结合场地与规范深化设计 ·
+      <a href="design-doc.md">软件设计文档</a>
+    </footer>
+  </div>
+
+  <!-- Vendor (local, offline-capable) -->
+  <script src="vendor/three.min.js"></script>
+  <script src="vendor/OrbitControls.js"></script>
+  <!-- App scripts (classic, loaded in order) -->
+  <script src="assets/js/knowledge.js"></script>
+  <script src="assets/js/engine.js"></script>
+  <script src="assets/js/pfd.js"></script>
+  <script src="assets/js/pid.js"></script>
+  <script src="assets/js/model3d.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
