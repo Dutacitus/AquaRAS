@@ -187,11 +187,16 @@ body {
 .pfd-caption { font-size: 12.5px; fill: var(--text-soft); }
 .pfd-title { font-size: 14px; font-weight: 700; fill: var(--text); text-anchor: middle; }
 .pfd-sub { font-size: 11.5px; fill: var(--text-soft); text-anchor: middle; }
-.pfd-box { fill: var(--surface-2); stroke: var(--border-strong); stroke-width: 1.5; }
+.pfd-box { fill: var(--surface-2); stroke: var(--border-strong); stroke-width: 1.6; transition: stroke-width .18s ease, stroke .18s ease; }
+.pfd-node { cursor: default; }
+.pfd-node:hover .pfd-box { stroke-width: 2.8; }
+.pfd-node:hover .pfd-title { fill: var(--brand); }
 .pfd-line { stroke: var(--text-soft); stroke-width: 2.2; fill: none; }
 .pfd-head { fill: var(--text-soft); }
 .pfd-return { stroke: var(--brand); stroke-dasharray: 6 5; }
+.pfd-return.pfd-head { fill: var(--brand); }
 .pfd-flow-label { font-size: 11px; fill: var(--text-faint); text-anchor: middle; }
+.pfd-flow-label.side { text-anchor: start; fill: var(--text-soft); font-weight: 600; }
 .pfd-node.c1 .pfd-box { stroke: var(--brand); }
 .pfd-node.c2 .pfd-box { stroke: var(--accent); }
 .pfd-node.c3 .pfd-box { stroke: #7fb069; }
