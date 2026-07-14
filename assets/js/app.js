@@ -38,15 +38,45 @@
   }
 
   /* ---------------- 标签导航 ---------------- */
+  function activateTab(name) {
+    const tab = document.querySelector(`#tabs .tab[data-tab="${name}"]`);
+    if (!tab) return;
+    document.querySelectorAll("#tabs .tab").forEach((t) => t.classList.toggle("active", t === tab));
+    document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
+    document.getElementById("panel-" + name).classList.add("active");
+    if (name === "model") ensureModel();
+  }
   function initTabs() {
     document.querySelectorAll("#tabs .tab").forEach((tab) => {
-      tab.addEventListener("click", () => {
-        const name = tab.dataset.tab;
-        document.querySelectorAll("#tabs .tab").forEach((t) => t.classList.toggle("active", t === tab));
-        document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
-        document.getElementById("panel-" + name).classList.add("active");
-        if (name === "model") ensureModel();
-      });
+      tab.addEventListener("click", () => activateTab(tab.dataset.tab));
+    });
+  }
+
+  /* ---------------- PFD ↔ P&ID 联动高亮 ---------------- */
+  function clearLink() {
+    document.querySelectorAll("#pfdHost [data-key], #pidHost [data-key]")
+      .forEach((el) => { el.classList.remove("linked", "link-flash"); });
+  }
+  function flashOnce(el) {
+    el.classList.remove("link-flash");
+    // 强制重绘以重启动画
+    void el.offsetWidth;
+    el.classList.add("link-flash");
+    el.addEventListener("animationend", () => el.classList.remove("link-flash"), { once: true });
+  }
+  function initLinking() {
+    document.addEventListener("click", (e) => {
+      const el = e.target.closest("[data-key]");
+      if (!el) return;
+      const host = el.closest("#pfdHost") || el.closest("#pidHost");
+      if (!host) return;
+      const key = el.dataset.key;
+      if (!key) return;
+      clearLink();
+      const matches = document.querySelectorAll(`#pfdHost [data-key="${key}"], #pidHost [data-key="${key}"]`);
+      matches.forEach((m) => { m.classList.add("linked"); flashOnce(m); });
+      // 切换至对侧图，使联动高亮可见
+      activateTab(host.id === "pfdHost" ? "pid" : "pfd");
     });
   }
 
@@ -607,7 +637,7 @@
   /* ---------------- 初始化 ---------------- */
   function init() {
     initTheme(); initSpecies(); initTabs(); initMagnetic();
-    initModelControls(); initExport(); initOptimizer(); initLibrary();
+    initModelControls(); initExport(); initOptimizer(); initLibrary(); initLinking();
     document.getElementById("designForm").addEventListener("submit", (e) => {
       e.preventDefault(); compute();
       document.querySelector('#tabs .tab[data-tab="params"]').click();

@@ -30,6 +30,7 @@ RAS.model3d = (function () {
     light: { bg: 0xeef2f7, floor: 0xd7e0ea, tank: 0xb9c4d0, water: 0x2f80ed, bio: 0x7fb069, eq: 0x9aa7b4, steel: 0x8a97a6 },
     dark:  { bg: 0x0b1220, floor: 0x121b2b, tank: 0x223047, water: 0x1e88e5, bio: 0x4caf50, eq: 0x2a3a4f, steel: 0x394a5e },
   };
+  const Y_BRIDGE = 6.4;   // 地上综合管桥标高（与地下管廊分层呼应；模块级常量，供 build 与图例共用）
 
   function init(el) {
     container = el;
@@ -338,11 +339,41 @@ RAS.model3d = (function () {
       c.position.set(x, 0.05, (z1 + z2) / 2); layers.struct.add(c);
     }
 
+    // 地上综合管桥（设备接口专用；正交走线，与地下管廊呼应）
+    // 沿一段 (x1,z1)->(x2,z2) 在 Y_BRIDGE 标高铺设桥架：底板 + 双侧导轨 + 等距吊柱
+    const rackColor = 0x55657a, railColor = 0x6b7c92;
+    function rackRun(x1, z1, x2, z2) {
+      const dx = x2 - x1, dz = z2 - z1, len = Math.hypot(dx, dz);
+      if (len < 0.01) return;
+      const ang = -Math.atan2(dz, dx);
+      const cx = (x1 + x2) / 2, cz = (z1 + z2) / 2;
+      const px = -dz / len, pz = dx / len;          // 垂直于走向的单位向量
+      // 底板
+      const deck = box(len, 0.16, 1.15, rackColor, { rough: 0.7, metal: 0.45 });
+      deck.position.set(cx, Y_BRIDGE, cz); deck.rotation.y = ang; layers.struct.add(deck);
+      // 双侧导轨
+      [-0.46, 0.46].forEach((off) => {
+        const rail = box(len, 0.22, 0.12, railColor, { rough: 0.6, metal: 0.5 });
+        rail.position.set(cx + px * off, Y_BRIDGE + 0.16, cz + pz * off);
+        rail.rotation.y = ang; layers.struct.add(rail);
+      });
+      // 等距吊柱（地面 → 桥架）
+      const n = Math.max(1, Math.round(len / 5));
+      for (let s = 0; s <= n; s++) {
+        const t = s / n, hx = x1 + dx * t, hz = z1 + dz * t;
+        const post = box(0.18, Y_BRIDGE, 0.18, rackColor, { rough: 0.7, metal: 0.4 });
+        post.position.set(hx, Y_BRIDGE / 2, hz); layers.struct.add(post);
+      }
+    }
+
     // 池心坐标表（用于逐池立管）
     const tankXZ = [];
     for (let i = 0; i < cols; i++)
       for (let j = 0; j < rows; j++)
         tankXZ.push([-totalW / 2 + gap / 2 + i * gap, -totalL / 2 + gap / 2 + j * gap]);
+    // 首座生物滤池列中心 x（桥架 N-S 走向对齐）
+    const xb0 = -totalW / 2 + 0.5 * (totalW / bf.units);
+    const xbLast = -totalW / 2 + (bf.units - 0.5) * (totalW / bf.units);
 
     /* ---- 水体（排水收集：西管廊 + 逐排横管；回水配水：北管廊 + 逐列立管） ---- */
     // 逐排排水横管（E-W, 地下, 深度 drain）
@@ -358,29 +389,31 @@ RAS.model3d = (function () {
     addTube("water", [[xE, Yd.drain, zS], [xE, Yd.drain, 3]], COL.water, rMain * 0.6);
     // 设备侧地下横管 → 提升泵进口
     addTube("water", [[xE, Yd.drain, 3], [xEq - 5.5, Yd.drain, 3]], COL.water, rMain * 0.6);
-    // 提升泵（泵坑）→ 生物滤池顶（设备间特殊跨接，地上立管）
+    // 提升泵（泵坑）→ 地上综合管桥 → 生物滤池顶（设备接口，规整桥架走线）
+    // 竖向立管：泵坑 → 桥架标高
+    addTube("water", [[xEq - 5.5, Yd.drain, 3], [xEq - 5.5, 1.4, 3], [xEq - 5.5, Y_BRIDGE, 3]], COL.water, rMain * 0.6);
+    // 桥架 E-W：泵侧 → 首座滤池列
+    addTube("water", [[xEq - 5.5, Y_BRIDGE, 3], [xb0, Y_BRIDGE, 3]], COL.water, rMain);
+    // 桥架 N-S：滤池列 → 生物滤池排
+    addTube("water", [[xb0, Y_BRIDGE, 3], [xb0, Y_BRIDGE, zBio]], COL.water, rMain);
+    // 桥架沿滤池排 E-W 分支接入各滤池顶（立管入池）
     for (let b = 0; b < bf.units; b++) {
       const xb = -totalW / 2 + (b + 0.5) * (totalW / bf.units);
-      addTube("water", [
-        [xEq - 5.5, Yd.drain, 3], [xEq - 5.5, 1.4, 3],
-        [xEq - 4, 1.4, 3], [xEq - 4, yBio + 0.6, 3],
-        [xEq - 4, yBio + 0.6, zBio - 3], [xb, yBio + 0.6, zBio - 3],
-        [xb, yBio + 0.6, zBio], [xb, yBio + 0.15, zBio]
-      ], COL.water, rMain);
+      addTube("water", [[xb0, Y_BRIDGE, zBio], [xb, Y_BRIDGE, zBio], [xb, yBio + 0.6, zBio], [xb, yBio + 0.15, zBio]], COL.water, rMain);
     }
-    // 生物滤池 → 脱气塔（地上高位跨接）
+    // 生物滤池 → 脱气塔（溢流经桥架汇管，规整正交走线）
+    // 各滤池溢流立管上桥 → 西端桥架干管汇集
     for (let b = 0; b < bf.units; b++) {
       const xb = -totalW / 2 + (b + 0.5) * (totalW / bf.units);
-      addTube("water", [
-        [xb, yBio + 0.15, zBio], [xb, yBio + 0.6, zBio],
-        [xb, yBio + 0.6, zDeg], [0, yBio + 0.6, zDeg], [0, yDeg + 0.15, zDeg]
-      ], COL.water, rMain * 0.55);
+      addTube("water", [[xb, yBio + 0.15, zBio], [xb, Y_BRIDGE, zBio], [xb, Y_BRIDGE, zBio]], COL.water, rMain * 0.55);
     }
-    // 脱气塔 → 紫外 → 北回水管廊（地上短跨 + 立管入地）
+    addTube("water", [[xb0, Y_BRIDGE, zBio], [-totalW / 2, Y_BRIDGE, zBio]], COL.water, rMain * 0.55);
+    addTube("water", [[-totalW / 2, Y_BRIDGE, zBio], [-totalW / 2, Y_BRIDGE, zDeg]], COL.water, rMain * 0.55);
+    addTube("water", [[-totalW / 2, Y_BRIDGE, zDeg], [0, Y_BRIDGE, zDeg], [0, yDeg + 0.15, zDeg]], COL.water, rMain * 0.55);
+    // 脱气塔 → 紫外（桥架：南 → 东 → 立管入地接回水管廊）
     addTube("water", [
-      [0, 0.4, zDeg], [0, 0.6, zDeg], [0, 0.6, zDeg - 2],
-      [0, 1.0, zDeg - 2], [0, 1.0, 0], [uvX, 1.0, 0],
-      [uvX, 1.0, zN], [uvX, Yd.ret, zN]
+      [0, yDeg + 0.15, zDeg], [0, Y_BRIDGE, zDeg], [0, Y_BRIDGE, 0], [uvX, Y_BRIDGE, 0],
+      [uvX, 1.0, 0], [uvX, 1.0, zN], [uvX, Yd.ret, zN]
     ], COL.water, rMain * 0.55);
     // 北回水管廊（E-W, 地下, 深度 ret）
     addTube("water", [[-totalW / 2 - 0.5, Yd.ret, zN], [totalW / 2 + 0.5, Yd.ret, zN]], COL.water, rMain * 0.7);
@@ -458,17 +491,27 @@ RAS.model3d = (function () {
     trenchCoverZ(zS, zN, xE, 1.7, 0.26);
     trenchCover(-totalW / 2 - 0.5, totalW / 2 + 0.5, zN, 1.7, 0.26);
 
-    /* ================= 流向动画（沿真实路由） ================= */
+    /* ---- 地上综合管桥（设备接口专用；与地下管廊正交呼应） ---- */
+    rackRun(xEq - 5.5, 3, xb0, 3);          // 泵侧 → 首座滤池列 (E-W)
+    rackRun(xb0, 3, xb0, zBio);             // 滤池列 (N-S)
+    rackRun(-totalW / 2, zBio, xbLast, zBio); // 滤池排 (E-W，含供水支与溢流汇)
+    rackRun(-totalW / 2, zBio, -totalW / 2, zDeg); // 西端干管 (N-S)
+    rackRun(-totalW / 2, zDeg, 0, zDeg);    // 脱气塔前 (E-W)
+    rackRun(0, zDeg, 0, 0);                  // 脱气塔 → 紫外 (N-S)
+    rackRun(0, 0, uvX, 0);                   // 紫外前 (E-W)
+
+    /* ================= 流向动画（沿真实路由：地下管廊 + 地上综合管桥） ================= */
     const x0 = tankXZ[Math.floor(tankXZ.length / 2)][0];
     const z0 = tankXZ[Math.floor(tankXZ.length / 2)][1];
-    const xb0 = -totalW / 2 + 0.5 * (totalW / bf.units);
     const loop = [
       [x0, 0.1, z0], [x0, Yd.drain, z0], [xW, Yd.drain, z0], [xW, Yd.drain, zS],
       [xE, Yd.drain, zS], [xE, Yd.drain, 3], [xEq - 5.5, Yd.drain, 3], [xEq - 5.5, 1.4, 3],
-      [xEq - 4, 1.4, 3], [xEq - 4, yBio + 0.6, 3], [xEq - 4, yBio + 0.6, zBio - 3], [xb0, yBio + 0.6, zBio - 3],
-      [xb0, yBio + 0.6, zBio], [xb0, yBio + 0.6, zDeg], [0, yBio + 0.6, zDeg], [0, yDeg + 0.15, zDeg],
-      [0, 0.4, zDeg], [0, 0.6, zDeg], [0, 0.6, zDeg - 2], [0, 1.0, zDeg - 2],
-      [0, 1.0, 0], [uvX, 1.0, 0], [uvX, 1.0, zN], [uvX, Yd.ret, zN],
+      [xEq - 5.5, Y_BRIDGE, 3], [xb0, Y_BRIDGE, 3], [xb0, Y_BRIDGE, zBio],
+      [xb0, yBio + 0.6, zBio], [xb0, yBio + 0.15, zBio],
+      [xb0, Y_BRIDGE, zBio], [-totalW / 2, Y_BRIDGE, zBio], [-totalW / 2, Y_BRIDGE, zDeg],
+      [0, Y_BRIDGE, zDeg], [0, yDeg + 0.15, zDeg], [0, 0.4, zDeg],
+      [0, Y_BRIDGE, zDeg], [0, Y_BRIDGE, 0], [uvX, Y_BRIDGE, 0], [uvX, 1.0, 0],
+      [uvX, 1.0, zN], [uvX, Yd.ret, zN],
       [x0, Yd.ret, zN], [x0, Yd.ret, z0], [x0, yWS + 0.4, z0], [x0, 0.1, z0],
     ];
     loop._closed = true;
@@ -495,8 +538,9 @@ RAS.model3d = (function () {
     root.add(makeLabel(`设备/泵房`, xEq, 8.2, 0, "#e2e8f0"));
     root.add(makeLabel(`污泥处理`, xSludge, 4.0, zSludge, "#e8c9a8"));
     root.add(makeLabel(`北回水管廊 (地下 -${Math.abs(Yd.ret)}m)`, 0, 1.2, zN, "#bfe3ff"));
+    root.add(makeLabel(`地上综合管桥 (+${Y_BRIDGE}m)`, xb0, Y_BRIDGE + 1.6, zBio, "#cbd5e1"));
     root.add(makeLabel(`西排水管廊 / 东气电管廊 (地下)`, 0, 0.9, -totalL / 2 - 6, "#94a3b8"));
-    root.add(makeLabel(`← 水体(地下) │ 气体(地下) │ 污水(地下) │ 电路(地下) →`, 0, 0.5, -totalL / 2 - 9, "#94a3b8"));
+    root.add(makeLabel(`← 水体(地下+桥架) │ 气体(地下) │ 污水(地下) │ 电路(地下) →`, 0, 0.5, -totalL / 2 - 9, "#94a3b8"));
 
     scene.add(root);
 
@@ -520,7 +564,7 @@ RAS.model3d = (function () {
     ];
     legendEl.innerHTML = `<div class="ml-title">管线图例</div>` + items.map((it) =>
       `<div class="ml-item"><span class="ml-sw" style="background:#${it[1].toString(16).padStart(6, "0")}"></span>${it[0]}</div>`
-    ).join("") + `<div class="ml-note">● 流动光点表示流向 · 全线走地下管廊(正交分层) · 仅设备接口用立管</div>`;
+    ).join("") + `<div class="ml-note">● 流动光点表示流向 · 全线正交：水体/气/污/电走地下管廊分层；设备接口经地上综合管桥(标高 +${Y_BRIDGE}m)规整走线</div>`;
   }
 
   /* ---------- 动画 ---------- */

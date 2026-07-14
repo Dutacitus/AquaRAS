@@ -6,9 +6,9 @@
 window.RAS = window.RAS || {};
 
 RAS.pfd = (function () {
-  function node(x, y, w, h, title, sub, cls) {
+  function node(x, y, w, h, title, sub, cls, key) {
     return `
-      <g class="pfd-node ${cls || ""}">
+      <g class="pfd-node ${cls || ""}" data-key="${key || ""}">
         <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="14" class="pfd-box" filter="url(#pfdShadow)"/>
         <text x="${x + w / 2}" y="${y + h / 2 - 4}" class="pfd-title">${title}</text>
         <text x="${x + w / 2}" y="${y + h / 2 + 14}" class="pfd-sub">${sub}</text>
@@ -49,11 +49,11 @@ RAS.pfd = (function () {
       <text x="24" y="58" class="pid-caption">${d.species.name} · 目标 ${d._raw.annual / 1000} 吨/年 · 循环量 ${Q} m³/h · 回用率 ${d.hydraulics.waterReuse}%</text>
 
       <!-- 主流程节点 -->
-      ${node(xs[0], eqY, eqW, eqH, "养殖池组", `${d.culture.tankCount} 个 · Ø${d.culture.tankD}m`, "c1")}
-      ${node(xs[1], eqY, eqW, eqH, "转鼓微滤机", `${d.solids.units} 台 · ${d.solids.screen}µm`, "c2")}
-      ${node(xs[2], eqY, eqW, eqH, "MBBR 生物滤池", `${d.biofilter.units} 座 · ${d.biofilter.totalVol}m³`, "c3")}
-      ${node(xs[3], eqY, eqW, eqH, "增氧 + CO₂脱除", `供氧 ${d.oxygen.o2Supply}kg/h`, "c4")}
-      ${node(xs[4], eqY, eqW, eqH, "紫外消毒", `${d.oxygen.degasserType}`, "c5")}
+      ${node(xs[0], eqY, eqW, eqH, "养殖池组", `${d.culture.tankCount} 个 · Ø${d.culture.tankD}m`, "c1", "tk")}
+      ${node(xs[1], eqY, eqW, eqH, "转鼓微滤机", `${d.solids.units} 台 · ${d.solids.screen}µm`, "c2", "dr")}
+      ${node(xs[2], eqY, eqW, eqH, "MBBR 生物滤池", `${d.biofilter.units} 座 · ${d.biofilter.totalVol}m³`, "c3", "bf")}
+      ${node(xs[3], eqY, eqW, eqH, "增氧 + CO₂脱除", `供氧 ${d.oxygen.o2Supply}kg/h`, "c4", "ot")}
+      ${node(xs[4], eqY, eqW, eqH, "紫外消毒", `${d.oxygen.degasserType}`, "c5", "uv")}
 
       <!-- 主流程箭头（上排 左→右，流量标注置于节点行上方净空）-->
       ${arrow(xs[0] + eqW, cy, xs[1], cy)}
@@ -71,10 +71,10 @@ RAS.pfd = (function () {
       <text x="730" y="${yRet - 8}" class="pfd-flow-label">净化回水 ${Q} m³/h</text>
 
       <!-- 换热（回水管上）-->
-      ${node(540, yRet - 26, 120, 52, "换热器", `${d.species.designTemp}℃ 控温`, "c8")}
+      ${node(540, yRet - 26, 120, 52, "换热器", `${d.species.designTemp}℃ 控温`, "c8", "he")}
 
       <!-- 分支：新鲜补水（立管自补水罐上行接回水管）-->
-      ${node(xs[4], 400, eqW, eqH, "新鲜补水", `${make} m³/h`, "c6")}
+      ${node(xs[4], 400, eqW, eqH, "新鲜补水", `${make} m³/h`, "c6", "makeup")}
       <g class="pfd-arrow pfd-makeup">
         <path d="M ${uvCx} 400 L ${uvCx} ${yRet}" class="pfd-line"/>
         <polygon points="${uvCx},${yRet} ${uvCx - 5},${yRet + 10} ${uvCx + 5},${yRet + 10}" class="pfd-head"/>
@@ -82,7 +82,7 @@ RAS.pfd = (function () {
       <text x="${uvCx + 14}" y="356" class="pfd-flow-label side">补水 ${make} m³/h</text>
 
       <!-- 分支：排污（正交绕开回水管，自微滤机底左侧引入污泥处理）-->
-      ${node(xs[1], 400, eqW, eqH, "污泥处理", "浓缩 + 脱水", "c7")}
+      ${node(xs[1], 400, eqW, eqH, "污泥处理", "浓缩 + 脱水", "c7", "sludge")}
       <g class="pfd-arrow pfd-sludge">
         <path d="M ${xs[1] + eqW / 2} ${eqY + eqH} L ${xs[1] + eqW / 2} 290 L 315 290 L 315 400 L ${xs[1]} 400" class="pfd-line"/>
         <polygon points="${xs[1]},400 ${xs[1] - 1},390 ${xs[1] + 9},390" class="pfd-head"/>
