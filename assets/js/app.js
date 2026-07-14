@@ -109,13 +109,12 @@
       safety: num("safety", 1.15),
     };
   }
+  function renderAll(d) {
+    renderParams(d); renderPFD(d); renderPID(d); renderBOM(d); renderEcon(d);
+  }
   function compute() {
     currentDesign = E.compute(readInputs());
-    renderParams(currentDesign);
-    renderPFD(currentDesign);
-    renderPID(currentDesign);
-    renderBOM(currentDesign);
-    renderEcon(currentDesign);
+    renderAll(currentDesign);
   }
 
   /* ---------------- 渲染：工艺参数 ---------------- */
@@ -337,35 +336,83 @@
       <div>寻优基于网格搜索：在品种经验区间内遍历决策变量，按约束过滤后取目标最优。生产目标固定时，<b>最低成本</b>与<b>最低能耗</b>通常对应更优的密度/循环组合；<b>最大产能</b>则在给定预算下反推可承受的最大年产量。</div></div></div>`;
   }
 
-  /* ============== 方案库（localStorage 演示云端保存/对比） ============== */
-  function compactSummary(d) {
-    return {
-      species: d.species.name, speciesKey: d.species.key, annual: d._raw.annual,
-      tankCount: d.culture.tankCount, tankD: d.culture.tankD, totalTankVol: d.culture.totalTankVol,
-      recircFlowH: d.hydraulics.recircFlowH, waterReuse: d.hydraulics.waterReuse,
-      biofilterVol: d.biofilter.totalVol, o2Supply: d.oxygen.o2Supply,
-      totalPower: d.energy.totalPower, energyIntensity: d.energy.energyIntensity,
-      buildingArea: d.building.buildingArea, actualYield: d.culture.actualYield,
-      capexTotal: d.economics.capexTotal, opexTotal: d.economics.opexTotal, costPerKg: d.economics.costPerKg,
-    };
-  }
+  /* ============== 方案库（云端 Laravel 同步 + 本地回退） ============== */
+  const cloud = window.RAS.cloud;
+  function compactSummary(d) { return cloud.summarize(d); } // 与云端摘要同口径
   function loadSchemes() { try { return JSON.parse(localStorage.getItem(LIB_KEY)) || []; } catch (e) { return []; } }
   function saveSchemes(arr) { localStorage.setItem(LIB_KEY, JSON.stringify(arr)); }
-  function renderLibList() {
-    const schemes = loadSchemes();
+  function isCloud() { return cloud.getMode() === "cloud" && !!cloud.getBase(); }
+
+  let libItems = []; // 当前展示的方案（本地或云端归一化后的 scheme 列表）
+
+  function setStatus(txt, kind) {
+    const el = document.getElementById("libStatus");
+    if (!el) return;
+    el.textContent = txt; el.className = "lib-status " + (kind || "muted");
+  }
+
+  /* —— 抽象存储层：本地 / 云端自动切换，云端异常自动回退本地 —— */
+  async function fetchSchemes() {
+    if (!isCloud()) return { items: loadSchemes(), mode: "local", error: null };
+    try {
+      const store = new cloud.CloudStore(cloud.getBase());
+      const items = await store.list();
+      return { items, mode: "cloud", error: null };
+    } catch (e) {
+      return { items: loadSchemes(), mode: "local-fallback", error: e.message };
+    }
+  }
+  async function persistScheme(scheme) {
+    if (!isCloud()) {
+      const arr = loadSchemes();
+      const i = arr.findIndex((x) => x.id === scheme.id);
+      if (i >= 0) arr[i] = scheme; else arr.push(scheme);
+      saveSchemes(arr); return scheme;
+    }
+    const store = new cloud.CloudStore(cloud.getBase());
+    // 后端无 update 端点：覆盖即 删旧 + 建新
+    if (scheme._source === "cloud" && scheme._cloudId) {
+      await store.remove(scheme._cloudId);
+    }
+    const id = await store.create(cloud.toPayload(scheme));
+    scheme._source = "cloud"; scheme._cloudId = id; scheme.id = "c" + id;
+    return scheme;
+  }
+  async function deleteScheme(scheme) {
+    if (isCloud() && scheme._source === "cloud" && scheme._cloudId) {
+      const store = new cloud.CloudStore(cloud.getBase());
+      await store.remove(scheme._cloudId);
+    } else {
+      saveSchemes(loadSchemes().filter((x) => x.id !== scheme.id));
+    }
+  }
+
+  async function refreshLib() {
+    const { items, mode, error } = await fetchSchemes();
+    libItems = items;
+    renderLibUI();
+    if (mode === "cloud") setStatus("已连接云端 · 共 " + items.length + " 个方案", "ok");
+    else if (mode === "local-fallback") setStatus("云端不可用，已回退本地：" + (error || ""), "warn");
+    else setStatus("本地模式 · 共 " + items.length + " 个方案", "muted");
+  }
+
+  function renderLibUI() {
     const host = document.getElementById("libList");
-    if (!schemes.length) {
-      host.innerHTML = `<div class="note" style="margin:8px 0"><span class="ic">📭</span><div>暂无保存的方案。在上方输入名称后点击「保存当前方案」。</div></div>`;
+    const items = libItems;
+    if (!items.length) {
+      host.innerHTML = `<div class="note" style="margin:8px 0"><span class="ic">📭</span><div>暂无方案。输入名称后点「保存当前方案」。云端模式需先填写 API 地址并选「云端」。</div></div>`;
       document.getElementById("libCompare").innerHTML = "";
       return;
     }
-    const rows = schemes.map((s) => {
+    const rows = items.map((s) => {
       const inB = compareBasket.includes(s.id);
+      const tag = s._source === "cloud" ? `<span class="src-tag cloud">云端</span>` : `<span class="src-tag local">本地</span>`;
+      const sm = s.summary || {};
       return `<tr>
-        <td><b>${s.name}</b><br><span style="font-size:11.5px;color:var(--text-faint)">${s.summary.species} · ${new Date(s.createdAt).toLocaleString("zh-CN")}</span></td>
-        <td class="num">${s.summary.actualYield} t</td>
-        <td class="num">${E.rmb(s.summary.capexTotal)}</td>
-        <td class="num">${s.summary.energyIntensity} kWh/kg</td>
+        <td><b>${s.name}</b> ${tag}<br><span style="font-size:11.5px;color:var(--text-faint)">${(sm.species) || ""} · ${new Date(s.createdAt).toLocaleString("zh-CN")}</span></td>
+        <td class="num">${sm.actualYield != null ? sm.actualYield + " t" : "-"}</td>
+        <td class="num">${sm.capexTotal != null ? E.rmb(sm.capexTotal) : "-"}</td>
+        <td class="num">${sm.energyIntensity != null ? sm.energyIntensity + " kWh/kg" : "-"}</td>
         <td>
           <button class="toggle-btn magnetic" data-act="load" data-id="${s.id}">载入</button>
           <button class="toggle-btn magnetic ${inB ? "on" : ""}" data-act="cmp" data-id="${s.id}">${inB ? "✓ 对比" : "对比"}</button>
@@ -377,19 +424,22 @@
       <tbody>${rows}</tbody></table></div>`;
     rebindMagnetic(host);
     host.querySelectorAll("button[data-act]").forEach((btn) => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", async () => {
         const id = btn.dataset.id, act = btn.dataset.act;
+        const s = libItems.find((x) => x.id === id);
+        if (!s) return;
         if (act === "load") {
-          const s = loadSchemes().find((x) => x.id === id);
-          if (s) { applyInputs(s.inputs); compute(); document.querySelector('#tabs .tab[data-tab="params"]').click(); }
+          if (s.result) { currentDesign = s.result; renderAll(currentDesign); }
+          else { applyInputs(s.inputs); compute(); }
+          document.querySelector('#tabs .tab[data-tab="params"]').click();
         } else if (act === "del") {
-          saveSchemes(loadSchemes().filter((x) => x.id !== id));
+          await deleteScheme(s);
           compareBasket = compareBasket.filter((x) => x !== id);
-          renderLibList();
+          await refreshLib();
         } else if (act === "cmp") {
           if (compareBasket.includes(id)) compareBasket = compareBasket.filter((x) => x !== id);
           else { compareBasket.push(id); if (compareBasket.length > 2) compareBasket.shift(); }
-          renderLibList(); renderCompare();
+          renderLibUI(); renderCompare();
         }
       });
     });
@@ -397,9 +447,9 @@
   function renderCompare() {
     const host = document.getElementById("libCompare");
     if (compareBasket.length < 2) { host.innerHTML = ""; return; }
-    const schemes = loadSchemes();
-    const a = schemes.find((s) => s.id === compareBasket[0]);
-    const b = schemes.find((s) => s.id === compareBasket[1]);
+    const a = libItems.find((s) => s.id === compareBasket[0]);
+    const b = libItems.find((s) => s.id === compareBasket[1]);
+    if (!a || !b || !a.summary || !b.summary) { host.innerHTML = ""; return; }
     const metrics = [
       ["品种", "species", (v) => v], ["产能(t)", "actualYield", (v) => v],
       ["养殖池数", "tankCount", (v) => v], ["总水体(m³)", "totalTankVol", (v) => Math.round(v)],
@@ -432,16 +482,61 @@
     document.getElementById("designTemp").value = inputs.designTemp || "";
     document.getElementById("safety").value = inputs.safety;
   }
+  function mergeSchemes(local, incoming) {
+    const map = {};
+    local.forEach((s) => { if (s && s.id) map[s.id] = s; });
+    (incoming || []).forEach((s) => { if (s && s.id) map[s.id] = s; });
+    return Object.values(map);
+  }
+
   function initLibrary() {
-    document.getElementById("libSave").addEventListener("click", () => {
+    // 数据源：本地 / 云端
+    const setModeUI = () => {
+      const m = cloud.getMode();
+      document.getElementById("srcLocal").classList.toggle("on", m === "local");
+      document.getElementById("srcCloud").classList.toggle("on", m === "cloud");
+      document.getElementById("apiUrl").disabled = (m !== "cloud");
+    };
+    const applyMode = async (m) => {
+      cloud.setMode(m); setModeUI(); await refreshLib();
+    };
+    document.getElementById("srcLocal").addEventListener("click", () => applyMode("local"));
+    document.getElementById("srcCloud").addEventListener("click", () => {
+      if (!cloud.getBase()) document.getElementById("apiUrl").focus();
+      applyMode("cloud");
+    });
+    const apiInput = document.getElementById("apiUrl");
+    apiInput.value = cloud.getBase();
+    apiInput.addEventListener("change", (e) => {
+      cloud.setBase(e.target.value);
+      if (cloud.getMode() === "cloud") refreshLib();
+    });
+    document.getElementById("libRefresh").addEventListener("click", () => refreshLib());
+
+    // 保存当前方案（云端创建 / 失败回退本地）
+    document.getElementById("libSave").addEventListener("click", async () => {
       const name = (document.getElementById("libName").value || "").trim() || `方案 ${new Date().toLocaleDateString("zh-CN")} ${new Date().toLocaleTimeString("zh-CN")}`;
       if (!currentDesign) compute();
-      const schemes = loadSchemes();
-      const s = { id: "s" + Date.now(), name, createdAt: Date.now(), inputs: readInputs(), summary: compactSummary(currentDesign) };
-      schemes.push(s); saveSchemes(schemes);
-      document.getElementById("libName").value = "";
-      renderLibList();
+      const scheme = {
+        id: (cloud.getMode() === "cloud" ? "c" : "s") + Date.now(),
+        _source: "local",
+        name, createdAt: Date.now(),
+        inputs: readInputs(),
+        result: currentDesign,
+        summary: compactSummary(currentDesign),
+      };
+      try {
+        await persistScheme(scheme);
+        document.getElementById("libName").value = "";
+        setStatus("已保存「" + name + "」", "ok");
+      } catch (e) {
+        const arr = loadSchemes(); arr.push(scheme); saveSchemes(arr);
+        setStatus("云端保存失败，已存本地：" + e.message, "warn");
+      }
+      await refreshLib();
     });
+
+    // 导入/导出（本地备份，跨端可移植 JSON）
     document.getElementById("libExport").addEventListener("click", () => {
       const data = JSON.stringify(loadSchemes(), null, 2);
       const blob = new Blob([data], { type: "application/json" });
@@ -453,12 +548,17 @@
       const file = e.target.files[0]; if (!file) return;
       const reader = new FileReader();
       reader.onload = () => {
-        try { const arr = JSON.parse(reader.result); saveSchemes(arr); renderLibList(); }
-        catch (err) { alert("JSON 解析失败"); }
+        try {
+          const arr = JSON.parse(reader.result);
+          saveSchemes(mergeSchemes(loadSchemes(), Array.isArray(arr) ? arr : [arr]));
+          refreshLib();
+        } catch (err) { alert("JSON 解析失败"); }
       };
       reader.readAsText(file);
     });
-    renderLibList();
+
+    setModeUI();
+    refreshLib();
   }
 
   /* ---------------- 报告导出 ---------------- */
