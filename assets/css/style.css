@@ -401,22 +401,21 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
 @keyframes floatA { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(40px, 30px) scale(1.08); } }
 @keyframes floatB { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-46px, 26px) scale(1.06); } }
 
-/* 封闭椭圆 RAS 回路 SVG */
-.hero-circuit { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.6; }
-[data-theme="light"] .hero-circuit { opacity: 0.5; }
-/* 极淡外环，增加纵深层次（不参与流光，仅装饰） */
-.hc-halo { fill: none; stroke: var(--brand); stroke-width: 0.8; opacity: 0.16; }
-/* 精细底轨 */
-.hc-track { fill: none; stroke: var(--border-strong); stroke-width: 1; opacity: 0.45; }
-/* 流光：精细亮线，慢速沿封闭椭圆行进（pathLength=100 归一化，循环无缝） */
+/* 正交 RAS 回路 SVG（矩形环线） */
+.hero-circuit { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.55; }
+[data-theme="light"] .hero-circuit { opacity: 0.46; }
+/* 底轨 */
+.hc-track { fill: none; stroke: var(--border-strong); stroke-width: 2; opacity: 0.7; }
+.hc-spur { opacity: 0.42; }
+/* 流光：单个光点沿矩形环线缓慢移动（pathLength=100 归一化，循环无缝） */
 .hc-flow {
-  fill: none; stroke: url(#hcFlow); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
-  stroke-dasharray: 12 88; filter: drop-shadow(0 0 6px var(--brand-soft));
-  animation: hcFlow 9s linear infinite;
+  fill: none; stroke: url(#hcFlow); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round;
+  stroke-dasharray: 0.01 99.99; filter: drop-shadow(0 0 8px var(--brand));
+  animation: hcFlow 8s linear infinite;
 }
 @keyframes hcFlow { to { stroke-dashoffset: -100; } }
-.hc-node { fill: var(--brand); stroke: var(--surface-2); stroke-width: 1.5; filter: drop-shadow(0 0 5px var(--brand-soft)); }
-.hc-label { fill: var(--text-soft); font-size: 12px; font-weight: 700; text-anchor: middle; font-family: var(--font); letter-spacing: 0.02em; }
+.hc-node { fill: var(--brand); stroke: var(--surface-2); stroke-width: 2.5; filter: drop-shadow(0 0 6px var(--brand-soft)); }
+.hc-label { fill: var(--text-soft); font-size: 13px; font-weight: 700; text-anchor: middle; font-family: var(--font); letter-spacing: 0.02em; }
 
 /* 柔和暗角，仅极淡压暗四角，保证中心文字清晰且角部标签可见 */
 .hero-scrim { position: absolute; inset: 0;

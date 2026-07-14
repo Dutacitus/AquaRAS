@@ -35,27 +35,25 @@
         <span class="hero-aurora a3"></span>
         <svg class="hero-circuit" viewBox="0 0 1200 600" preserveAspectRatio="xMidYMid meet">
           <defs>
-            <linearGradient id="hcFlow" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stop-color="#38bdf8">
-                <animate attributeName="stop-color" values="#38bdf8;#818cf8;#2dd4bf;#38bdf8" dur="14s" repeatCount="indefinite" />
-              </stop>
-              <stop offset="100%" stop-color="#2dd4bf">
-                <animate attributeName="stop-color" values="#2dd4bf;#38bdf8;#818cf8;#2dd4bf" dur="14s" repeatCount="indefinite" />
-              </stop>
+            <linearGradient id="hcFlow" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="var(--brand)" />
+              <stop offset="55%" stop-color="var(--brand-2)" />
+              <stop offset="100%" stop-color="var(--accent)" />
             </linearGradient>
           </defs>
-          <!-- 封闭椭圆流线：精细描边、慢速流光、微微渐变动态色；中心与四角均留白，不与文字/图框重合 -->
+          <!-- 正交 RAS 水循环矩形环线：贴边、中心留白给文字，避免重合 -->
           <g class="hc-loop">
-            <ellipse class="hc-halo" cx="600" cy="300" rx="545" ry="240" />
-            <path class="hc-track" pathLength="100" d="M 95 300 a 505 215 0 1 0 1010 0 a 505 215 0 1 0 -1010 0" />
-            <path class="hc-flow" pathLength="100" d="M 95 300 a 505 215 0 1 0 1010 0 a 505 215 0 1 0 -1010 0" />
+            <path class="hc-track" d="M 120 55 H 1080 V 545 H 120 Z" />
+            <path class="hc-flow" pathLength="100" d="M 120 55 H 1080 V 545 H 120 Z" />
+            <!-- 角部正交支线（科技细节，不穿越中心） -->
+            <path class="hc-track hc-spur" d="M 120 55 L 92 55 M 120 55 L 120 27 M 1080 55 L 1108 55 M 1080 55 L 1080 27 M 120 545 L 92 545 M 120 545 L 120 573 M 1080 545 L 1108 545 M 1080 545 L 1080 573" />
           </g>
-          <!-- 四节点 + 标签：置于椭圆四象限外侧留白区（y 130/474 远高/低于居中文字，x 243/957 远离中心） -->
+          <!-- 节点 + 标签（仅置于四角，远离居中文字） -->
           <g class="hc-nodes">
-            <circle class="hc-node" cx="243" cy="148" r="4" /><text class="hc-label" x="243" y="130">养殖池</text>
-            <circle class="hc-node" cx="957" cy="148" r="4" /><text class="hc-label" x="957" y="130">MBBR</text>
-            <circle class="hc-node" cx="957" cy="452" r="4" /><text class="hc-label" x="957" y="474">增氧</text>
-            <circle class="hc-node" cx="243" cy="452" r="4" /><text class="hc-label" x="243" y="474">除固</text>
+            <circle class="hc-node" cx="120" cy="55" r="8" /><text class="hc-label" x="120" y="20">养殖池</text>
+            <circle class="hc-node" cx="1080" cy="55" r="8" /><text class="hc-label" x="1080" y="20">MBBR</text>
+            <circle class="hc-node" cx="1080" cy="545" r="8" /><text class="hc-label" x="1080" y="586">增氧</text>
+            <circle class="hc-node" cx="120" cy="545" r="8" /><text class="hc-label" x="120" y="586">除固</text>
           </g>
         </svg>
         <div class="hero-scrim"></div>
