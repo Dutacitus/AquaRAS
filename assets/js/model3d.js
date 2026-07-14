@@ -198,20 +198,24 @@ RAS.model3d = (function () {
     // 高程定义（落差核心）
     const yWS = H * 0.82;            // 池内水面
     const yTankTop = H;
-    const yFloorP = 0.35;            // 地面管中心高
     const yBio = 3.6;                // 生物滤池(高位)高度
     const yDeg = 4.6;                // 脱气塔高度
-    const yRetH = H + 1.5;           // 回水配水堰(高于池顶)
-    const yGasH = H + 2.9;           // 气体总管(更高)
-    const yElecH = H + 3.6;          // 电缆桥架(最高)
     const zFront = -totalL / 2 - 1.2;     // 养殖区前(南)排水侧
     const zBio = totalL / 2 + D * 1.1;    // 生物滤池(北)
     const zDeg = zBio + 5.5;              // 脱气塔
     const xEq = totalW / 2 + Math.max(D * 1.8, 14);  // 设备/泵房(东)
-    const zBack = totalL / 2 + 0.8;       // 回水/气/电 总管位于池区后侧
 
-    /* ---------- 地面 + 网格 ---------- */
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(totalW + 60, totalL + 70), mat(T.floor, { rough: 0.96 }));
+    /* ---------- 地下管廊分层参数（真实施工：正交路由 + 分层 + 从地下走） ---------- */
+    // 各管线在管廊内的垂直分层（负值=地坪以下），避免不同介质管路同深交叉
+    const Yd = { drain: -0.8, ret: -1.15, gas: -1.5, sludge: -1.85, elec: -2.2 };
+    const yTbot = -2.7;                   // 管廊底
+    const xW = -totalW / 2 - 2.4;         // 西管廊(排水收集 + 污泥, N-S 主干)
+    const xE = totalW / 2 + 2.4;          // 东管廊(气体 + 电缆 + 设备, N-S 主干)
+    const zN = totalL / 2 + 2.4;          // 北管廊(回水配水, E-W 主干)
+    const zS = -totalL / 2 - 2.4;         // 南管廊(微滤/泵房接口, E-W 主干)
+
+    /* ---------- 地面（半透明，可见地下管廊） + 网格 ---------- */
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(totalW + 60, totalL + 70), mat(T.floor, { rough: 0.9, opacity: 0.16, side: THREE.DoubleSide }));
     floor.rotation.x = -Math.PI / 2; floor.position.y = 0;
     layers.struct.add(floor);
     const grid = new THREE.GridHelper(Math.max(totalW, totalL) + 60, Math.round((Math.max(totalW, totalL) + 60) / 6), 0x000000, 0x000000);
@@ -238,9 +242,7 @@ RAS.model3d = (function () {
         // 水面亮面
         const surf = new THREE.Mesh(new THREE.CircleGeometry(r * 0.9, 36), surfMat);
         surf.rotation.x = -Math.PI / 2; surf.position.set(x, yWS + 0.12, z); layers.struct.add(surf);
-        // 池中心排水短管（落差起点）
-        const drain = tube([[x, 0.1, z], [x, yFloorP, z], [x, yFloorP, zFront]], COL.water, 0.22);
-        layers.water.add(drain);
+        // 池中心排水立管在"管线"段统一生成（垂直落入地下排水管廊）
       }
     }
 
@@ -322,104 +324,168 @@ RAS.model3d = (function () {
     const press = box(3, 1.6, 5, 0x7a6650, { rough: 0.7, metal: 0.3 });
     press.position.set(xSludge - 4.5, 0.9, zSludge); layers.struct.add(press);
 
-    /* ================= 管线 ================= */
+    /* ================= 管线（真实施工：正交路由 + 地下管廊 + 分层） ================= */
     const rMain = Math.max(0.28, Math.min(0.72, design.hydraulics.recircFlowH / 360));
-    const rDrop = 0.22;
+    const rDrop = 0.2;
 
-    // 排水总管（沿前侧贯通）
-    addTube("water", [[-totalW / 2 - 2, yFloorP, zFront], [totalW / 2 + 2, yFloorP, zFront]], COL.water, rMain * 0.8);
-    // 微滤机 → 泵坑
-    for (let k = 0; k < drumUnits; k++) {
-      const x = -totalW / 2 + (k + 0.5) * (totalW / drumUnits);
-      addTube("water", [[x, 0.6, zFront - 2.2], [x, 0.8, zFront - 4], [xEq - 5.5, 0.9, 3]], COL.water, rMain * 0.7);
+    // 管廊盖板（标识走向；地面半透明可见下层）
+    function trenchCover(x1, x2, z, w, op) {
+      const c = box(Math.abs(x2 - x1), 0.06, w, 0x0b1220, { rough: 0.9, opacity: op != null ? op : 0.3 });
+      c.position.set((x1 + x2) / 2, 0.05, z); layers.struct.add(c);
     }
-    // 泵提升 → 生物滤池顶（高位）
+    function trenchCoverZ(z1, z2, x, w, op) {
+      const c = box(w, 0.06, Math.abs(z2 - z1), 0x0b1220, { rough: 0.9, opacity: op != null ? op : 0.3 });
+      c.position.set(x, 0.05, (z1 + z2) / 2); layers.struct.add(c);
+    }
+
+    // 池心坐标表（用于逐池立管）
+    const tankXZ = [];
+    for (let i = 0; i < cols; i++)
+      for (let j = 0; j < rows; j++)
+        tankXZ.push([-totalW / 2 + gap / 2 + i * gap, -totalL / 2 + gap / 2 + j * gap]);
+
+    /* ---- 水体（排水收集：西管廊 + 逐排横管；回水配水：北管廊 + 逐列立管） ---- */
+    // 逐排排水横管（E-W, 地下, 深度 drain）
+    for (let j = 0; j < rows; j++) {
+      const z = -totalL / 2 + gap / 2 + j * gap;
+      addTube("water", [[xW, Yd.drain, z], [totalW / 2 + 0.5, Yd.drain, z]], COL.water, rMain * 0.5);
+    }
+    // 西管廊（N-S 排水主干）
+    addTube("water", [[xW, Yd.drain, zN], [xW, Yd.drain, zS]], COL.water, rMain * 0.7);
+    // 南管廊（E-W）把西管廊接到东设备侧
+    addTube("water", [[xW, Yd.drain, zS], [xE, Yd.drain, zS]], COL.water, rMain * 0.7);
+    // 东竖管廊（N-S, 靠设备段）
+    addTube("water", [[xE, Yd.drain, zS], [xE, Yd.drain, 3]], COL.water, rMain * 0.6);
+    // 设备侧地下横管 → 提升泵进口
+    addTube("water", [[xE, Yd.drain, 3], [xEq - 5.5, Yd.drain, 3]], COL.water, rMain * 0.6);
+    // 提升泵（泵坑）→ 生物滤池顶（设备间特殊跨接，地上立管）
     for (let b = 0; b < bf.units; b++) {
       const xb = -totalW / 2 + (b + 0.5) * (totalW / bf.units);
-      addTube("water", [[xEq - 4, 1.4, 3], [xEq - 4, yBio + 0.6, 3], [xb, yBio + 0.6, zBio - 3], [xb, yBio + 0.15, zBio]], COL.water, rMain);
+      addTube("water", [
+        [xEq - 5.5, Yd.drain, 3], [xEq - 5.5, 1.4, 3],
+        [xEq - 4, 1.4, 3], [xEq - 4, yBio + 0.6, 3],
+        [xEq - 4, yBio + 0.6, zBio - 3], [xb, yBio + 0.6, zBio - 3],
+        [xb, yBio + 0.6, zBio], [xb, yBio + 0.15, zBio]
+      ], COL.water, rMain);
     }
-    // 生物滤池底 → 脱气塔顶
-    addTube("water", [[-totalW / 2 + totalW / 2, 0.4, zBio], [0, 0.4, zBio + 2], [0, yDeg + 0.15, zDeg]], COL.water, rMain);
-    // 脱气塔底 → 紫外 → 回水配水堰(高位)
-    addTube("water", [[0, 0.4, zDeg], [0, 0.6, zDeg - 2], [uvX, 1.0, 0], [uvX, yRetH, 0], [uvX, yRetH, zBack], [-totalW / 2 - 2, yRetH, zBack]], COL.water, rMain);
-    // 回水配水堰 → 各池（落差：高位 → 池内水面）
+    // 生物滤池 → 脱气塔（地上高位跨接）
+    for (let b = 0; b < bf.units; b++) {
+      const xb = -totalW / 2 + (b + 0.5) * (totalW / bf.units);
+      addTube("water", [
+        [xb, yBio + 0.15, zBio], [xb, yBio + 0.6, zBio],
+        [xb, yBio + 0.6, zDeg], [0, yBio + 0.6, zDeg], [0, yDeg + 0.15, zDeg]
+      ], COL.water, rMain * 0.55);
+    }
+    // 脱气塔 → 紫外 → 北回水管廊（地上短跨 + 立管入地）
+    addTube("water", [
+      [0, 0.4, zDeg], [0, 0.6, zDeg], [0, 0.6, zDeg - 2],
+      [0, 1.0, zDeg - 2], [0, 1.0, 0], [uvX, 1.0, 0],
+      [uvX, 1.0, zN], [uvX, Yd.ret, zN]
+    ], COL.water, rMain * 0.55);
+    // 北回水管廊（E-W, 地下, 深度 ret）
+    addTube("water", [[-totalW / 2 - 0.5, Yd.ret, zN], [totalW / 2 + 0.5, Yd.ret, zN]], COL.water, rMain * 0.7);
+    // 逐列回水立管（N-S, 地下）→ 各池（向上进入池内）
     for (let i = 0; i < cols; i++) {
-      for (let j = 0; j < rows; j++) {
-        const x = -totalW / 2 + gap / 2 + i * gap;
-        const z = -totalL / 2 + gap / 2 + j * gap;
-        addTube("water", [[x, yRetH, zBack], [x, yRetH, z], [x, yWS + 0.25, z]], COL.water, rDrop);
-      }
+      const x = -totalW / 2 + gap / 2 + i * gap;
+      addTube("water", [[x, Yd.ret, zN], [x, Yd.ret, zS]], COL.water, rMain * 0.45);
     }
-    // 补水（新水）接入回水堰
-    addTube("water", [[xEq, 0.6, -eqD / 2 - 1], [xEq, yRetH, -eqD / 2 - 1], [xEq, yRetH, zBack], [totalW / 2 + 2, yRetH, zBack]], COL.makeup, rMain * 0.6);
+    // 各池回水入口（立管：地下 → 池内水面之上）
+    for (const [x, z] of tankXZ)
+      addTube("water", [[x, Yd.ret, z], [x, yWS + 0.4, z]], COL.water, rDrop);
+    // 各池排水出口（立管：池底 → 地下排水管廊）
+    for (const [x, z] of tankXZ)
+      addTube("water", [[x, 0.1, z], [x, Yd.drain, z]], COL.water, rDrop);
+    // 补水（新水）从设备侧接入北回水管廊
+    addTube("water", [[xEq, 0.6, -eqD / 2 - 1], [xEq, Yd.ret, -eqD / 2 - 1], [xEq, Yd.ret, zN], [totalW / 2 + 0.5, Yd.ret, zN]], COL.makeup, rMain * 0.5);
 
-    // 气体：纯氧发生器 → 高位气总管 → 各池底部氧气锥（逆流注入）
-    addTube("gas", [[xEq, 1.2, -eqD / 2 + 3], [xEq, yGasH, -eqD / 2 + 3], [xEq, yGasH, zBack + 0.4], [-totalW / 2 - 2, yGasH, zBack + 0.4]], COL.gas, 0.18);
-    for (let i = 0; i < cols; i++) {
-      for (let j = 0; j < rows; j++) {
-        const x = -totalW / 2 + gap / 2 + i * gap;
-        const z = -totalL / 2 + gap / 2 + j * gap;
-        addTube("gas", [[x, yGasH, zBack + 0.4], [x, yGasH, z], [x, 0.5, z]], COL.gas, 0.16);
-        // 氧气锥（池底）
-        const cone = cyl(0.45, 0.28, 0.9, 0x2fe0a0, 16, { rough: 0.3, metal: 0.4, opacity: 0.9 });
-        cone.position.set(x, 0.6, z); layers.gas.add(cone);
-      }
+    /* ---- 气体（纯氧）：东管廊 + 逐排横管 + 各池氧气锥 ---- */
+    addTube("gas", [[xE, Yd.gas, zS], [xE, Yd.gas, zN]], COL.gas, 0.16);
+    for (let j = 0; j < rows; j++) {
+      const z = -totalL / 2 + gap / 2 + j * gap;
+      addTube("gas", [[xW, Yd.gas, z], [xE, Yd.gas, z]], COL.gas, 0.16);
     }
-    // CO₂ 排放（脱气塔顶 → 高空排出）
-    addTube("gas", [[0, yDeg + 0.2, zDeg], [0, yDeg + 1.4, zDeg], [0, yDeg + 1.6, zDeg + 1.2]], COL.co2, 0.2);
+    // 纯氧发生器 → 东管廊（立管下地）
+    addTube("gas", [[xEq, 1.2, -eqD / 2 + 3], [xEq, Yd.gas, -eqD / 2 + 3], [xE, Yd.gas, -eqD / 2 + 3]], COL.gas, 0.16);
+    // 各池氧气锥（立管：地下 → 池底）
+    for (const [x, z] of tankXZ) {
+      addTube("gas", [[x, Yd.gas, z], [x, 0.5, z]], COL.gas, 0.14);
+      const cone = cyl(0.45, 0.28, 0.9, 0x2fe0a0, 16, { rough: 0.3, metal: 0.4, opacity: 0.9 });
+      cone.position.set(x, 0.6, z); layers.gas.add(cone);
+    }
+    // CO₂ 排放（脱气塔顶 → 高空排气，地上特殊立管）
+    addTube("gas", [[0, yDeg + 0.2, zDeg], [0, yDeg + 1.4, zDeg], [0, yDeg + 1.6, zDeg], [0, yDeg + 1.6, zDeg + 1.2]], COL.co2, 0.2);
 
-    // 污水：微滤机反洗 + 生物滤池排泥 → 污泥池 → 脱水
+    /* ---- 污水（污泥）：西管廊(污泥层) + 微滤反洗/滤池排泥 → 污泥池 → 脱水 ---- */
+    addTube("sludge", [[xW, Yd.sludge, zS], [xW, Yd.sludge, zSludge]], COL.sludge, 0.2);
     for (let k = 0; k < drumUnits; k++) {
       const x = -totalW / 2 + (k + 0.5) * (totalW / drumUnits);
-      addTube("sludge", [[x, 0.5, zFront - 2.2], [x, 0.3, zFront - 4], [xSludge, 0.4, zSludge]], COL.sludge, 0.2);
+      addTube("sludge", [[x, 0.5, zFront - 2.2], [x, Yd.sludge, zFront - 2.2], [x, Yd.sludge, zS], [xW, Yd.sludge, zS]], COL.sludge, 0.2);
     }
     for (let b = 0; b < bf.units; b++) {
       const xb = -totalW / 2 + (b + 0.5) * (totalW / bf.units);
-      addTube("sludge", [[xb, 0.2, zBio], [xb, 0.3, zBio - 2], [xSludge + 1, 0.4, zSludge]], COL.sludge, 0.2);
+      addTube("sludge", [[xb, 0.2, zBio], [xb, Yd.sludge, zBio], [xW, Yd.sludge, zBio]], COL.sludge, 0.2);
     }
+    addTube("sludge", [[xW, Yd.sludge, zSludge], [xSludge, Yd.sludge, zSludge]], COL.sludge, 0.24);
     addTube("sludge", [[xSludge, 0.8, zSludge], [xSludge - 4.5, 0.8, zSludge]], COL.sludge, 0.24);
 
-    // 电路：自控柜 → 高位电缆桥架（矩形） → 各池传感器、泵、滤池
-    // 桥架四边
-    const ex1 = -totalW / 2 - 2, ex2 = totalW / 2 + 2, ez1 = -totalL / 2 - 2, ez2 = zBack + 1.2;
-    addTube("elec", [[ex1, yElecH, ez1], [ex2, yElecH, ez1]], COL.elec, 0.12);
-    addTube("elec", [[ex1, yElecH, ez2], [ex2, yElecH, ez2]], COL.elec, 0.12);
-    addTube("elec", [[ex1, yElecH, ez1], [ex1, yElecH, ez2]], COL.elec, 0.12);
-    addTube("elec", [[ex2, yElecH, ez1], [ex2, yElecH, ez2]], COL.elec, 0.12);
-    // 桥架 → 各池
-    for (let i = 0; i < cols; i++) {
-      for (let j = 0; j < rows; j++) {
-        const x = -totalW / 2 + gap / 2 + i * gap;
-        const z = -totalL / 2 + gap / 2 + j * gap;
-        addTube("elec", [[x, yElecH, ez2], [x, yElecH, z], [x, yTankTop + 0.25, z]], COL.elec, 0.1);
-        // 池边传感器盒
-        const sbox = box(0.5, 0.5, 0.5, 0x1f2937, { rough: 0.5 });
-        sbox.position.set(x + r * 0.7, yTankTop + 0.3, z); layers.elec.add(sbox);
-      }
+    /* ---- 电路：东管廊(电缆层) + 逐排线槽 + 各池传感器/泵/滤池 ---- */
+    addTube("elec", [[xE, Yd.elec, zS], [xE, Yd.elec, zN]], COL.elec, 0.1);
+    for (let j = 0; j < rows; j++) {
+      const z = -totalL / 2 + gap / 2 + j * gap;
+      addTube("elec", [[xW, Yd.elec, z], [xE, Yd.elec, z]], COL.elec, 0.1);
     }
-    // 桥架 → 泵/滤池/设备
-    addTube("elec", [[ex2, yElecH, ez1], [xEq, yElecH, ez1], [xEq, 3.2, 0]], COL.elec, 0.1);
-    addTube("elec", [[ex1, yElecH, ez2], [-totalW / 2, yElecH, zBio], [-totalW / 2, yBio * 0.6, zBio]], COL.elec, 0.1);
+    // 自控柜 → 东电缆管廊
+    addTube("elec", [[xEq, 1.6, eqD / 2 - 2], [xEq, Yd.elec, eqD / 2 - 2], [xE, Yd.elec, eqD / 2 - 2]], COL.elec, 0.1);
+    // 各池传感器（立管：地下 → 池顶）
+    for (const [x, z] of tankXZ) {
+      addTube("elec", [[x, Yd.elec, z], [x, yTankTop + 0.3, z]], COL.elec, 0.1);
+      const sbox = box(0.5, 0.5, 0.5, 0x1f2937, { rough: 0.5 });
+      sbox.position.set(x + r * 0.7, yTankTop + 0.3, z); layers.elec.add(sbox);
+    }
+    // 泵/滤池供电立管
+    addTube("elec", [[xEq - 4, Yd.elec, 3], [xEq - 4, 3.2, 3]], COL.elec, 0.1);
+    for (let b = 0; b < bf.units; b++) {
+      const xb = -totalW / 2 + (b + 0.5) * (totalW / bf.units);
+      addTube("elec", [[xb, Yd.elec, zBio], [xb, yBio * 0.6, zBio]], COL.elec, 0.1);
+    }
 
-    /* ================= 流向动画 ================= */
-    // 主循环回路（代表中心列）
-    const xc = 0;
-    const zc0 = -totalL / 2 + gap / 2;
-    addFlow("water", [
-      [xc, 0.6, zFront - 2.2], [xEq - 5.5, 0.9, 3], [xEq - 4, yBio + 0.6, 3],
-      [xc, yBio + 0.6, zBio - 3], [xc, yBio + 0.15, zBio], [xc, 0.4, zBio],
-      [0, 0.4, zDeg], [uvX, 1.0, 0], [uvX, yRetH, 0], [uvX, yRetH, zBack],
-      [xc, yRetH, zBack], [xc, yWS + 0.25, zc0], [xc, 0.6, zc0], [xc, 0.6, zFront - 2.2],
-    ], COL.water, 5, 0.018, 0.34);
-    // 气体流向
-    addFlow("gas", [
-      [xEq, 1.2, -eqD / 2 + 3], [xEq, yGasH, -eqD / 2 + 3], [xEq, yGasH, zBack + 0.4],
-      [xc, yGasH, zBack + 0.4], [xc, yGasH, -totalL / 2 + gap / 2], [xc, 0.5, -totalL / 2 + gap / 2],
-    ], COL.gas, 3, 0.03, 0.26);
-    // 污泥流向
-    addFlow("sludge", [
-      [0, 0.5, zFront - 2.2], [0, 0.3, zFront - 4], [xSludge, 0.4, zSludge], [xSludge - 4.5, 0.8, zSludge],
-    ], COL.sludge, 2, 0.02, 0.24);
+    /* ---- 管廊盖板（地面可见走向） ---- */
+    for (let j = 0; j < rows; j++) {
+      const z = -totalL / 2 + gap / 2 + j * gap;
+      trenchCover(xW, xE, z, 1.7, 0.26);
+    }
+    trenchCoverZ(zS, zN, xW, 1.7, 0.26);
+    trenchCoverZ(zS, zN, xE, 1.7, 0.26);
+    trenchCover(-totalW / 2 - 0.5, totalW / 2 + 0.5, zN, 1.7, 0.26);
+
+    /* ================= 流向动画（沿真实路由） ================= */
+    const x0 = tankXZ[Math.floor(tankXZ.length / 2)][0];
+    const z0 = tankXZ[Math.floor(tankXZ.length / 2)][1];
+    const xb0 = -totalW / 2 + 0.5 * (totalW / bf.units);
+    const loop = [
+      [x0, 0.1, z0], [x0, Yd.drain, z0], [xW, Yd.drain, z0], [xW, Yd.drain, zS],
+      [xE, Yd.drain, zS], [xE, Yd.drain, 3], [xEq - 5.5, Yd.drain, 3], [xEq - 5.5, 1.4, 3],
+      [xEq - 4, 1.4, 3], [xEq - 4, yBio + 0.6, 3], [xEq - 4, yBio + 0.6, zBio - 3], [xb0, yBio + 0.6, zBio - 3],
+      [xb0, yBio + 0.6, zBio], [xb0, yBio + 0.6, zDeg], [0, yBio + 0.6, zDeg], [0, yDeg + 0.15, zDeg],
+      [0, 0.4, zDeg], [0, 0.6, zDeg], [0, 0.6, zDeg - 2], [0, 1.0, zDeg - 2],
+      [0, 1.0, 0], [uvX, 1.0, 0], [uvX, 1.0, zN], [uvX, Yd.ret, zN],
+      [x0, Yd.ret, zN], [x0, Yd.ret, z0], [x0, yWS + 0.4, z0], [x0, 0.1, z0],
+    ];
+    loop._closed = true;
+    addFlow("water", loop, COL.water, 6, 0.012, 0.34);
+    // 气体流向（发生器 → 东管廊 → 池底氧气锥）
+    const gasPath = [
+      [xEq, 1.2, -eqD / 2 + 3], [xEq, Yd.gas, -eqD / 2 + 3], [xE, Yd.gas, -eqD / 2 + 3],
+      [xE, Yd.gas, z0], [x0, Yd.gas, z0], [x0, 0.5, z0],
+    ];
+    addFlow("gas", gasPath, COL.gas, 3, 0.03, 0.26);
+    // 污泥流向（微滤 → 西管廊 → 污泥池）
+    const sludgePath = [
+      [tankXZ[0][0], 0.5, zFront - 2.2], [tankXZ[0][0], Yd.sludge, zFront - 2.2],
+      [tankXZ[0][0], Yd.sludge, zS], [xW, Yd.sludge, zS], [xW, Yd.sludge, zSludge],
+      [xSludge, Yd.sludge, zSludge], [xSludge, 0.8, zSludge], [xSludge - 4.5, 0.8, zSludge],
+    ];
+    addFlow("sludge", sludgePath, COL.sludge, 2, 0.02, 0.24);
 
     /* ================= 标签 ================= */
     root.add(makeLabel(`养殖池 ${design.culture.tankCount} 个`, 0, yTankTop + 4.5, -totalL / 2, "#e2e8f0"));
@@ -428,8 +494,9 @@ RAS.model3d = (function () {
     root.add(makeLabel(`转鼓微滤机 ×${drumUnits}`, 0, 4.2, zFront - 2.2, "#e2e8f0"));
     root.add(makeLabel(`设备/泵房`, xEq, 8.2, 0, "#e2e8f0"));
     root.add(makeLabel(`污泥处理`, xSludge, 4.0, zSludge, "#e8c9a8"));
-    root.add(makeLabel(`回水配水堰 (+${yRetH.toFixed(1)}m)`, 0, yRetH + 1.4, zBack, "#bfe3ff"));
-    root.add(makeLabel(`← 水体  │  气体  │  污水  │  电路 →`, 0, 0.6, -totalL / 2 - 8, "#94a3b8"));
+    root.add(makeLabel(`北回水管廊 (地下 -${Math.abs(Yd.ret)}m)`, 0, 1.2, zN, "#bfe3ff"));
+    root.add(makeLabel(`西排水管廊 / 东气电管廊 (地下)`, 0, 0.9, -totalL / 2 - 6, "#94a3b8"));
+    root.add(makeLabel(`← 水体(地下) │ 气体(地下) │ 污水(地下) │ 电路(地下) →`, 0, 0.5, -totalL / 2 - 9, "#94a3b8"));
 
     scene.add(root);
 
@@ -453,7 +520,7 @@ RAS.model3d = (function () {
     ];
     legendEl.innerHTML = `<div class="ml-title">管线图例</div>` + items.map((it) =>
       `<div class="ml-item"><span class="ml-sw" style="background:#${it[1].toString(16).padStart(6, "0")}"></span>${it[0]}</div>`
-    ).join("") + `<div class="ml-note">● 流动光点表示流向 · 高位塔/堰体现落差</div>`;
+    ).join("") + `<div class="ml-note">● 流动光点表示流向 · 全线走地下管廊(正交分层) · 仅设备接口用立管</div>`;
   }
 
   /* ---------- 动画 ---------- */
