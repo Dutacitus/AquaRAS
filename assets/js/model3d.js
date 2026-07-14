@@ -215,6 +215,15 @@ RAS.model3d = (function () {
     const zN = totalL / 2 + 2.4;          // 北管廊(回水配水, E-W 主干)
     const zS = -totalL / 2 - 2.4;         // 南管廊(微滤/泵房接口, E-W 主干)
 
+    /* ---------- 厂房围护包络（墙面 + 人字形屋面 + 综合管桥上拉吊柱） ---------- */
+    const wallH = 9;                         // 墙高（檐口标高）
+    const ridgeH = 13;                       // 屋脊标高（人字形顶点）
+    const ceilY = wallH;                     // 天棚梁标高（吊柱上端挂靠，= 檐口）
+    const bx0 = -totalW / 2 - 16, bx1 = xEq + 7;   // 厂房 X 向包络（含西污泥池 / 东设备房）
+    const bz0 = -totalL / 2 - 6,  bz1 = zDeg + 3;  // 厂房 Z 向包络（含南微滤 / 北脱气塔）
+    const bcx = (bx0 + bx1) / 2, bcz = (bz0 + bz1) / 2;
+    const bW = bx1 - bx0, bL = bz1 - bz0;
+
     /* ---------- 地面（半透明，可见地下管廊） + 网格 ---------- */
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(totalW + 60, totalL + 70), mat(T.floor, { rough: 0.9, opacity: 0.16, side: THREE.DoubleSide }));
     floor.rotation.x = -Math.PI / 2; floor.position.y = 0;
@@ -357,12 +366,16 @@ RAS.model3d = (function () {
         rail.position.set(cx + px * off, Y_BRIDGE + 0.16, cz + pz * off);
         rail.rotation.y = ang; layers.struct.add(rail);
       });
-      // 等距吊柱（地面 → 桥架）
+      // 天棚梁（吊柱上端挂靠，与屋面/檐口结构相连；标高 ceilY）
+      const cbeam = box(len, 0.2, 0.5, railColor, { rough: 0.6, metal: 0.5 });
+      cbeam.position.set(cx, ceilY, cz); cbeam.rotation.y = ang; layers.struct.add(cbeam);
+      // 等距吊柱（上拉：天棚 → 桥架，吊挂而非落地）
       const n = Math.max(1, Math.round(len / 5));
+      const hH = ceilY - Y_BRIDGE;
       for (let s = 0; s <= n; s++) {
         const t = s / n, hx = x1 + dx * t, hz = z1 + dz * t;
-        const post = box(0.18, Y_BRIDGE, 0.18, rackColor, { rough: 0.7, metal: 0.4 });
-        post.position.set(hx, Y_BRIDGE / 2, hz); layers.struct.add(post);
+        const post = box(0.16, hH, 0.16, rackColor, { rough: 0.7, metal: 0.4 });
+        post.position.set(hx, Y_BRIDGE + hH / 2, hz); layers.struct.add(post);
       }
     }
 
@@ -502,6 +515,46 @@ RAS.model3d = (function () {
     rackRun(0, zDeg, 0, 0);                  // 脱气塔 → 紫外 (N-S)
     rackRun(0, 0, uvX, 0);                   // 紫外前 (E-W)
 
+    /* ================= 厂房围护：墙面 + 人字形屋面 + 檐口/角柱 ================= */
+    // 四面墙（半透明，内部设备/管线仍可见）
+    [[bcx, bz0, bW, 0.3], [bcx, bz1, bW, 0.3], [bx0, bcz, 0.3, bL], [bx1, bcz, 0.3, bL]].forEach(([px, pz, w, d]) => {
+      const wll = box(w, wallH, d, 0xc4cdd8, { rough: 0.9, metal: 0.15, opacity: 0.12, side: THREE.DoubleSide });
+      wll.position.set(px, wallH / 2, pz); layers.struct.add(wll);
+    });
+    // 檐口梁（四周边框，wallH 标高）+ 四角柱，强化建筑轮廓
+    const eN = box(bW, 0.3, 0.3, T.steel, { rough: 0.5, metal: 0.5 }); eN.position.set(bcx, wallH, bz0); layers.struct.add(eN);
+    const eS = box(bW, 0.3, 0.3, T.steel, { rough: 0.5, metal: 0.5 }); eS.position.set(bcx, wallH, bz1); layers.struct.add(eS);
+    const eW = box(0.3, 0.3, bL, T.steel, { rough: 0.5, metal: 0.5 }); eW.position.set(bx0, wallH, bcz); layers.struct.add(eW);
+    const eE = box(0.3, 0.3, bL, T.steel, { rough: 0.5, metal: 0.5 }); eE.position.set(bx1, wallH, bcz); layers.struct.add(eE);
+    [[bx0, bz0], [bx1, bz0], [bx0, bz1], [bx1, bz1]].forEach(([px, pz]) => {
+      const col = box(0.5, wallH, 0.5, T.steel, { rough: 0.5, metal: 0.5 });
+      col.position.set(px, wallH / 2, pz); layers.struct.add(col);
+    });
+    // 人字形屋面：两坡，屋脊沿 X(宽向)，檐口落墙顶(wallH)，脊在中心(ridgeH)
+    function roofSlope(x1, y1, x2, y2) {
+      const dx = x2 - x1, dy = y2 - y1, L = Math.hypot(dx, dy);
+      const slab = box(L, 0.3, bL, 0xb6c1cd, { rough: 0.85, metal: 0.2, opacity: 0.42, side: THREE.DoubleSide });
+      slab.position.set((x1 + x2) / 2, (y1 + y2) / 2, bcz);
+      slab.rotation.z = Math.atan2(dy, dx);
+      layers.struct.add(slab);
+    }
+    roofSlope(bx0, wallH, bcx, ridgeH);
+    roofSlope(bcx, ridgeH, bx1, wallH);
+    const ridge = box(bW, 0.5, 0.5, T.steel, { rough: 0.5, metal: 0.5 });
+    ridge.position.set(bcx, ridgeH, bcz); layers.struct.add(ridge);
+    // 山墙（人字形端面）三角填充
+    const gableMat = mat(0xc4cdd8, { rough: 0.9, metal: 0.15, opacity: 0.2, side: THREE.DoubleSide });
+    function gable(z) {
+      const sh = new THREE.Shape();
+      sh.moveTo(bx0, wallH); sh.lineTo(bcx, ridgeH); sh.lineTo(bx1, wallH); sh.lineTo(bx0, wallH);
+      const g = new THREE.ShapeGeometry(sh);
+      const m = new THREE.Mesh(g, gableMat);
+      m.position.z = z; layers.struct.add(m);
+    }
+    gable(bz0); gable(bz1);
+    // 标签
+    root.add(makeLabel('厂房围护 · 人字形屋面', bcx, ridgeH + 1.6, bcz, '#cbd5e1'));
+
     /* ================= 流向动画（沿真实路由：地下管廊 + 地上综合管桥） ================= */
     const x0 = tankXZ[Math.floor(tankXZ.length / 2)][0];
     const z0 = tankXZ[Math.floor(tankXZ.length / 2)][1];
@@ -553,7 +606,7 @@ RAS.model3d = (function () {
 
     // 相机归位
     controls.target.set(0, 2.4, 0);
-    const dist = Math.max(totalW, totalL, yDeg) * 1.15 + 34;
+    const dist = Math.max(totalW, totalL, bW, bL, yDeg) * 1.1 + 40;
     camera.position.set(dist * 0.75, dist * 0.62, dist * 0.78);
     controls.update();
 
