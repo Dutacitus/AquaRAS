@@ -602,7 +602,7 @@
       w.document.write(`<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
         <title>AquaRAS 工艺设计报告</title>
         <style>body{font-family:system-ui,'Microsoft YaHei',sans-serif;color:#0f172a;max-width:900px;margin:30px auto;padding:0 20px;line-height:1.6}
-        h1{font-size:24px;border-bottom:3px solid #1e88e5;padding-bottom:8px}h2{font-size:18px;margin-top:28px;color:#1e88e5}
+        h1{font-size:24px;border-bottom:3px solid #0ea5e9;padding-bottom:8px}h2{font-size:18px;margin-top:28px;color:#0ea5e9}
         .kv{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #eee}.kv b{color:#475569}
         table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border:1px solid #ddd;padding:8px 10px;text-align:left;font-size:14px}th{background:#f1f5f9}
         </style></head><body>

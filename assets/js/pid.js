@@ -147,6 +147,11 @@ RAS.pid = (function () {
         <rect x="230" y="-16" width="14" height="14" rx="3" class="pid-valve-box" transform="rotate(45 237 -9)"/><text x="250" y="-4" class="pid-sub">控制阀</text>
         <line x1="330" y1="-8" x2="356" y2="-8" class="pid-signal"/><text x="362" y="-4" class="pid-sub">信号线</text>
         <line x1="430" y1="-8" x2="456" y2="-8" class="pid-control"/><text x="462" y="-4" class="pid-sub">控制信号</text>
+        <g class="pid-swu-wrap">
+          <rect x="560" y="-16" width="208" height="22" rx="11" class="pid-swu"/>
+          <circle cx="576" cy="-5" r="4.5" class="pid-swu-dot"/>
+          <text x="588" y="-1" class="pid-swu-txt">比水耗 ${d.hydraulics.specificWaterUse} m³/kg</text>
+        </g>
       </g>
     </svg>`;
   }

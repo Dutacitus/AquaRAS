@@ -99,6 +99,11 @@ RAS.pfd = (function () {
         <text x="250" y="-2" class="pfd-sub">补水</text>
         <rect x="330" y="-14" width="14" height="14" rx="3" class="pfd-box c7"/>
         <text x="350" y="-2" class="pfd-sub">排污</text>
+        <g class="pfd-swu-wrap">
+          <rect x="430" y="-16" width="208" height="22" rx="11" class="pfd-swu"/>
+          <circle cx="446" cy="-5" r="4.5" class="pfd-swu-dot"/>
+          <text x="458" y="-1" class="pfd-swu-txt">比水耗 ${d.hydraulics.specificWaterUse} m³/kg</text>
+        </g>
       </g>
     </svg>`;
   }
