@@ -404,20 +404,25 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
 /* 正交 RAS 回路 SVG（矩形环线） */
 .hero-circuit { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.62; }
 [data-theme="light"] .hero-circuit { opacity: 0.52; }
-/* 空心管道：外壁(渐变管壁) + 内芯(暗色透光)形成管状中空，水滴在其中巡游 */
-/* 空心管道：半透明玻璃管壁(模糊边线) + 通透内腔，水滴在其中穿行 */
+/* 液态玻璃空心管道：极透管壁 + 柔光晕 + 高光内线，水滴贴壁穿行 */
 .hc-pipe-outer {
-  fill: none; stroke: url(#hcFlow); stroke-opacity: 0.34; stroke-width: 16; stroke-linecap: round; stroke-linejoin: round;
-  filter: blur(2.5px) drop-shadow(0 0 10px rgba(120,200,255,0.55));
+  fill: none; stroke: url(#hcFlow); stroke-opacity: 0.18; stroke-width: 16; stroke-linecap: round; stroke-linejoin: round;
+  filter: blur(1.6px) drop-shadow(0 0 9px rgba(150,210,255,0.5));
 }
 .hc-pipe-core {
-  fill: none; stroke: rgba(214,238,255,0.10); stroke-width: 10; stroke-linecap: round; stroke-linejoin: round;
+  fill: none; stroke: rgba(220,240,255,0.06); stroke-width: 10.4; stroke-linecap: round; stroke-linejoin: round;
 }
-[data-theme="light"] .hc-pipe-core { stroke: rgba(148,163,184,0.14); }
+[data-theme="light"] .hc-pipe-core { stroke: rgba(148,163,184,0.10); }
+/* 玻璃高光内线（液态玻璃的边缘反射） */
+.hc-pipe-rim {
+  fill: none; stroke: rgba(205,238,255,0.55); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+  filter: drop-shadow(0 0 3px rgba(150,210,255,0.7));
+}
 /* 角部装饰短线 */
 .hc-spur { fill: none; stroke: var(--brand); stroke-width: 2; opacity: 0.4; stroke-linecap: round; }
-/* 巡游水滴：蓝色水体 + 蓝白双层辉光；随管道转向(尖端朝运动方向)；速度 16s */
-.hc-photon { filter: drop-shadow(0 0 8px #6fd0ff) drop-shadow(0 0 18px rgba(31,143,224,0.85)); }
+/* 巡游水滴：液态蓝玻璃珠 + 蓝白双层辉光；贴满管腔；随管道转向(尖端朝运动方向)；速度 16s */
+.hc-drop { stroke: rgba(225,245,255,0.55); stroke-width: 0.8; }
+.hc-photon { filter: drop-shadow(0 0 10px #6fd0ff) drop-shadow(0 0 20px rgba(31,143,224,0.9)); }
 .hc-spec { pointer-events: none; }
 .hc-node { fill: var(--brand); stroke: var(--surface-2); stroke-width: 2.5; filter: drop-shadow(0 0 6px var(--brand-soft)); }
 .hc-label { fill: var(--text-soft); font-size: 13px; font-weight: 700; text-anchor: middle; font-family: var(--font); letter-spacing: 0.02em; }
