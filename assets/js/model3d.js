@@ -422,9 +422,11 @@ RAS.model3d = (function () {
       const x = -totalW / 2 + gap / 2 + i * gap;
       addTube("water", [[x, Yd.ret, zN], [x, Yd.ret, zS]], COL.water, rMain * 0.45);
     }
-    // 各池回水入口（立管：地下 → 池内水面之上）
+    // 各池回水入口（立管：地下 → 池沿上方 → 拐入池内落入水面之下，明确接在对应养殖池上，不再悬空）
     for (const [x, z] of tankXZ)
-      addTube("water", [[x, Yd.ret, z], [x, yWS + 0.4, z]], COL.water, rDrop);
+      addTube("water", [
+        [x, Yd.ret, z], [x, H + 0.3, z], [x + r * 0.5, H + 0.3, z], [x + r * 0.5, yWS - 0.2, z]
+      ], COL.water, rDrop);
     // 各池排水出口（立管：池底 → 地下排水管廊）
     for (const [x, z] of tankXZ)
       addTube("water", [[x, 0.1, z], [x, Yd.drain, z]], COL.water, rDrop);
@@ -512,7 +514,9 @@ RAS.model3d = (function () {
       [0, Y_BRIDGE, zDeg], [0, yDeg + 0.15, zDeg], [0, 0.4, zDeg],
       [0, Y_BRIDGE, zDeg], [0, Y_BRIDGE, 0], [uvX, Y_BRIDGE, 0], [uvX, 1.0, 0],
       [uvX, 1.0, zN], [uvX, Yd.ret, zN],
-      [x0, Yd.ret, zN], [x0, Yd.ret, z0], [x0, yWS + 0.4, z0], [x0, 0.1, z0],
+      [x0, Yd.ret, zN], [x0, Yd.ret, z0],
+      [x0, H + 0.3, z0], [x0 + r * 0.5, H + 0.3, z0], [x0 + r * 0.5, yWS - 0.2, z0],
+      [x0, 0.1, z0],
     ];
     loop._closed = true;
     addFlow("water", loop, COL.water, 6, 0.012, 0.34);
