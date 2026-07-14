@@ -412,8 +412,9 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
   fill: none; stroke: url(#hcFlow); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round;
   opacity: 0.9; filter: drop-shadow(0 0 6px var(--brand-soft));
 }
-/* 巡游光子：白色实心核 + 柔和蓝色光晕；速度已调慢至 16s（原 8s） */
-.hc-photon { filter: drop-shadow(0 0 8px #ffffff) drop-shadow(0 0 18px var(--brand)); }
+/* 巡游水滴：蓝色水体 + 蓝白双层辉光；速度已调慢至 16s（原 8s） */
+.hc-photon { filter: drop-shadow(0 0 7px #6fd0ff) drop-shadow(0 0 16px rgba(31,143,224,0.8)); }
+.hc-spec { pointer-events: none; }
 .hc-node { fill: var(--brand); stroke: var(--surface-2); stroke-width: 2.5; filter: drop-shadow(0 0 6px var(--brand-soft)); }
 .hc-label { fill: var(--text-soft); font-size: 13px; font-weight: 700; text-anchor: middle; font-family: var(--font); letter-spacing: 0.02em; }
 
