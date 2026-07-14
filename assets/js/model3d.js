@@ -447,8 +447,8 @@ RAS.model3d = (function () {
       const cone = cyl(0.45, 0.28, 0.9, 0x2fe0a0, 16, { rough: 0.3, metal: 0.4, opacity: 0.9 });
       cone.position.set(x, 0.6, z); layers.gas.add(cone);
     }
-    // CO₂ 排放（脱气塔顶 → 高空排气，地上特殊立管）
-    addTube("gas", [[0, yDeg + 0.2, zDeg], [0, yDeg + 1.4, zDeg], [0, yDeg + 1.6, zDeg], [0, yDeg + 1.6, zDeg + 1.2]], COL.co2, 0.2);
+    // CO₂ 排放（脱气塔顶 → 高空排气，地上特殊立管；底部没入塔顶，明确接在脱气塔上，不再悬空）
+    addTube("gas", [[0, yDeg - 0.3, zDeg], [0, yDeg + 1.4, zDeg], [0, yDeg + 1.6, zDeg], [0, yDeg + 1.6, zDeg + 1.2]], COL.co2, 0.2);
 
     /* ---- 污水（污泥）：西管廊(污泥层) + 微滤反洗/滤池排泥 → 污泥池 → 脱水 ---- */
     addTube("sludge", [[xW, Yd.sludge, zS], [xW, Yd.sludge, zSludge]], COL.sludge, 0.2);
