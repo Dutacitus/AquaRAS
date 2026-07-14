@@ -418,7 +418,7 @@ RAS.model3d = (function () {
     // 各滤池溢流立管上桥 → 西端桥架干管汇集
     for (let b = 0; b < bf.units; b++) {
       const xb = -totalW / 2 + (b + 0.5) * (totalW / bf.units);
-      addTube("water", [[xb, yBio + 0.15, zBio], [xb, Y_BRIDGE, zBio], [xb, Y_BRIDGE, zBio]], COL.water, rMain * 0.55);
+      addTube("water", [[xb, yBio + 0.15, zBio], [xb, Y_BRIDGE, zBio]], COL.water, rMain * 0.55);
     }
     addTube("water", [[xb0, Y_BRIDGE, zBio], [-totalW / 2, Y_BRIDGE, zBio]], COL.water, rMain * 0.55);
     addTube("water", [[-totalW / 2, Y_BRIDGE, zBio], [-totalW / 2, Y_BRIDGE, zDeg]], COL.water, rMain * 0.55);
