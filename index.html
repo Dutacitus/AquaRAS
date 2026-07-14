@@ -40,11 +40,11 @@
               <stop offset="55%" stop-color="var(--brand-2)" />
               <stop offset="100%" stop-color="var(--accent)" />
             </linearGradient>
-            <radialGradient id="hcPhoton" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stop-color="#ffffff" stop-opacity="1" />
-              <stop offset="38%" stop-color="#ffffff" stop-opacity="0.92" />
-              <stop offset="70%" stop-color="#bfe9ff" stop-opacity="0.45" />
-              <stop offset="100%" stop-color="#bfe9ff" stop-opacity="0" />
+            <radialGradient id="hcPhoton" cx="35%" cy="28%" r="80%">
+              <stop offset="0%" stop-color="#eaf8ff" stop-opacity="1" />
+              <stop offset="28%" stop-color="#5ec4ff" stop-opacity="1" />
+              <stop offset="62%" stop-color="#1f8fe0" stop-opacity="1" />
+              <stop offset="100%" stop-color="#0a5cab" stop-opacity="0.96" />
             </radialGradient>
           </defs>
           <!-- 正交 RAS 水循环矩形环线：贴边、中心留白给文字，避免重合 -->
@@ -61,10 +61,10 @@
             <circle class="hc-node" cx="1080" cy="545" r="8" /><text class="hc-label" x="1080" y="586">增氧</text>
             <circle class="hc-node" cx="120" cy="545" r="8" /><text class="hc-label" x="120" y="586">除固</text>
           </g>
-          <!-- 沿环线巡游的白色发光光子（SMIL animateMotion，速度已调慢至 16s） -->
+          <!-- 沿环线巡游的蓝色水滴（SMIL animateMotion，速度已调慢至 16s） -->
           <g class="hc-photon">
-            <circle r="13" fill="url(#hcPhoton)" />
-            <circle r="3.4" fill="#ffffff" />
+            <path class="hc-drop" d="M 0 -15 C 5 -5 11 -1 11 5 A 11 11 0 1 1 -11 5 C -11 -1 -5 -5 0 -15 Z" fill="url(#hcPhoton)" />
+            <ellipse class="hc-spec" cx="-3.5" cy="-6" rx="3.6" ry="5" fill="#ffffff" opacity="0.62" />
             <animateMotion dur="16s" repeatCount="indefinite" rotate="0">
               <mpath href="#hcPath" />
             </animateMotion>
