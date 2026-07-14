@@ -68,7 +68,7 @@ RAS.engine = (function () {
     const recircFlowH = recircFlow / 24;
     const makeupFlow = recircFlow * makeup;
     const makeupFlowH = makeupFlow / 24;
-    const specificWaterUse = makeupFlow / annual;
+    const specificWaterUse = (makeupFlow * 365) / annual;   // 年补水总量 / 年产量 → m³/kg
     const waterReuse = 1 - makeup;
 
     // —— 4. 生物滤池 (MBBR) ——
