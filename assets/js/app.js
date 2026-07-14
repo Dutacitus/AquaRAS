@@ -276,6 +276,12 @@
     document.getElementById("rebuildBtn").addEventListener("click", () => {
       if (currentDesign) RAS.model3d.build(currentDesign, root.getAttribute("data-theme"));
     });
+    // 管线图层显隐
+    const bind = (id, layer) => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener("change", () => RAS.model3d.setLayer(layer, el.checked));
+    };
+    bind("lyWater", "water"); bind("lyGas", "gas"); bind("lySludge", "sludge"); bind("lyElec", "elec");
   }
 
   /* ============== 智能寻优 ============== */

@@ -105,6 +105,12 @@
         <button class="toggle-btn on magnetic" id="rotateBtn">🔄 自动旋转</button>
         <button class="toggle-btn magnetic" id="rebuildBtn">🧊 重建模型</button>
         <span class="spacer"></span>
+        <span class="layer-toggles">
+          <label><input type="checkbox" id="lyWater" checked /> <i class="dot dot-water"></i>水体</label>
+          <label><input type="checkbox" id="lyGas" checked /> <i class="dot dot-gas"></i>气体</label>
+          <label><input type="checkbox" id="lySludge" checked /> <i class="dot dot-sludge"></i>污水</label>
+          <label><input type="checkbox" id="lyElec" checked /> <i class="dot dot-elec"></i>电路</label>
+        </span>
         <span style="font-size:12.5px;color:var(--text-soft)">拖拽旋转 · 滚轮缩放 · 右键平移</span>
       </div>
       <div id="model3d"></div>

@@ -212,6 +212,27 @@ body {
 .toggle-btn:hover { color: var(--text); transform: translateY(-1px); }
 .toggle-btn.on { background: linear-gradient(135deg, var(--brand), var(--brand-2)); color: #fff; border-color: transparent; }
 
+/* 管线图层开关 */
+.layer-toggles { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+.layer-toggles label { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--text-soft); cursor: pointer; user-select: none; }
+.layer-toggles input { accent-color: var(--brand); width: 15px; height: 15px; }
+.dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; box-shadow: 0 0 6px rgba(0,0,0,.25); }
+.dot-water { background: #2f9be0; } .dot-makeup { background: #7fd4ff; }
+.dot-gas { background: #2fe0a0; } .dot-co2 { background: #9aa7b4; }
+.dot-sludge { background: #9c5a32; } .dot-elec { background: #f4c430; }
+
+/* 3D 图例 */
+.model-legend {
+  position: absolute; left: 14px; bottom: 14px; z-index: 5; pointer-events: none;
+  background: rgba(15,23,42,0.72); backdrop-filter: blur(8px); color: #e2e8f0;
+  border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 10px 12px;
+  font-size: 12px; max-width: 200px; line-height: 1.5;
+}
+.model-legend .ml-title { font-weight: 700; margin-bottom: 6px; font-size: 12.5px; }
+.model-legend .ml-item { display: flex; align-items: center; gap: 7px; }
+.model-legend .ml-sw { width: 12px; height: 12px; border-radius: 3px; flex: none; box-shadow: 0 0 5px rgba(0,0,0,.3); }
+.model-legend .ml-note { margin-top: 6px; font-size: 11px; color: #94a3b8; border-top: 1px solid rgba(255,255,255,.1); padding-top: 5px; }
+
 /* ---------- Table (BOM / economics) ---------- */
 .table-wrap { padding: 8px 0; overflow-x: auto; }
 table.data { width: 100%; border-collapse: collapse; font-size: 14px; }
