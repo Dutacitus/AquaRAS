@@ -407,13 +407,13 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
 /* 底轨 */
 .hc-track { fill: none; stroke: var(--border-strong); stroke-width: 2; opacity: 0.7; }
 .hc-spur { opacity: 0.42; }
-/* 流光：单个光点沿矩形环线缓慢移动（pathLength=100 归一化，循环无缝） */
+/* 流光：渐变环线 + 白色发光光子缓慢巡游（光子用 SMIL animateMotion 沿环线移动） */
 .hc-flow {
-  fill: none; stroke: url(#hcFlow); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round;
-  stroke-dasharray: 0.01 99.99; filter: drop-shadow(0 0 8px var(--brand));
-  animation: hcFlow 8s linear infinite;
+  fill: none; stroke: url(#hcFlow); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round;
+  opacity: 0.9; filter: drop-shadow(0 0 6px var(--brand-soft));
 }
-@keyframes hcFlow { to { stroke-dashoffset: -100; } }
+/* 巡游光子：白色实心核 + 柔和蓝色光晕；速度已调慢至 16s（原 8s） */
+.hc-photon { filter: drop-shadow(0 0 8px #ffffff) drop-shadow(0 0 18px var(--brand)); }
 .hc-node { fill: var(--brand); stroke: var(--surface-2); stroke-width: 2.5; filter: drop-shadow(0 0 6px var(--brand-soft)); }
 .hc-label { fill: var(--text-soft); font-size: 13px; font-weight: 700; text-anchor: middle; font-family: var(--font); letter-spacing: 0.02em; }
 
