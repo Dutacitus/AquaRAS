@@ -27,6 +27,58 @@
       </div>
     </header>
 
+    <!-- ===== Hero 首屏 ===== -->
+    <section class="hero glass" id="hero">
+      <div class="hero-bg" aria-hidden="true">
+        <span class="hero-aurora a1"></span>
+        <span class="hero-aurora a2"></span>
+        <span class="hero-aurora a3"></span>
+        <div class="hero-grid"></div>
+        <svg class="hero-circuit" viewBox="0 0 1200 520" preserveAspectRatio="xMidYMid slice">
+          <defs>
+            <linearGradient id="hcFlow" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="var(--brand)" />
+              <stop offset="55%" stop-color="var(--brand-2)" />
+              <stop offset="100%" stop-color="var(--accent)" />
+            </linearGradient>
+          </defs>
+          <!-- 正交 RAS 水循环回路 -->
+          <path class="hc-track" d="M 180 140 H 1020 Q 1060 140 1060 180 V 340 Q 1060 380 1020 380 H 180 Q 140 380 140 340 V 180 Q 140 140 180 140 Z" />
+          <path class="hc-flow" d="M 180 140 H 1020 Q 1060 140 1060 180 V 340 Q 1060 380 1020 380 H 180 Q 140 380 140 340 V 180 Q 140 140 180 140 Z" />
+          <!-- 中心十字管 -->
+          <path class="hc-track" d="M 600 140 V 380 M 140 260 H 1060" />
+          <path class="hc-flow hc-flow2" d="M 600 140 V 380" />
+          <!-- 节点 -->
+          <g class="hc-nodes">
+            <circle class="hc-node" cx="160" cy="160" r="9" /><text class="hc-label" x="160" y="188">养殖池</text>
+            <circle class="hc-node" cx="1040" cy="160" r="9" /><text class="hc-label" x="1040" y="188">MBBR</text>
+            <circle class="hc-node" cx="1040" cy="360" r="9" /><text class="hc-label" x="1040" y="388">增氧</text>
+            <circle class="hc-node" cx="160" cy="360" r="9" /><text class="hc-label" x="160" y="388">除固</text>
+            <circle class="hc-node hc-core" cx="600" cy="260" r="11" /><text class="hc-label" x="600" y="288">循环·UV</text>
+          </g>
+        </svg>
+        <div class="hero-scrim"></div>
+      </div>
+
+      <div class="hero-inner">
+        <div class="hero-eyebrow"><span class="pulse"></span>参数化 RAS 工艺设计引擎 · v1.0</div>
+        <h1 class="hero-title">工厂化循环水养殖<br /><span class="grad">智能工艺设计系统</span></h1>
+        <p class="hero-sub">输入产能目标，引擎按质量守恒自动推导养殖池、生物滤池 (MBBR)、纯氧增氧、CO₂ 脱除、固废处理等全套参数，并实时生成可交互 3D 车间模型。</p>
+        <div class="hero-cta-row">
+          <button class="hero-cta primary magnetic" data-goto="input">⚙ 开始设计</button>
+          <button class="hero-cta ghost magnetic" data-goto="model">🧊 查看 3D 模型</button>
+        </div>
+        <div class="hero-stats" id="heroStats">
+          <div class="hero-stat"><div class="hs-v" id="hsReuse">99<small>%</small></div><div class="hs-k">水回用率</div></div>
+          <div class="hero-stat"><div class="hs-v" id="hsSwu">0.51<small>m³/kg</small></div><div class="hs-k">比水耗</div></div>
+          <div class="hero-stat"><div class="hs-v" id="hsYield">100<small>t/a</small></div><div class="hs-k">设计产能</div></div>
+          <div class="hero-stat"><div class="hs-v" id="hsSpecies">鲈鱼</div><div class="hs-k">养殖品种</div></div>
+        </div>
+      </div>
+
+      <a class="hero-scroll" href="#tabs" aria-label="向下滚动查看"><span></span></a>
+    </section>
+
     <!-- Tabs -->
     <nav class="tabs" id="tabs">
       <button class="tab active" data-tab="input">🎯 设计输入</button>

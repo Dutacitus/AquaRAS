@@ -140,7 +140,15 @@
     };
   }
   function renderAll(d) {
-    renderParams(d); renderPFD(d); renderPID(d); renderBOM(d); renderEcon(d);
+    renderParams(d); renderPFD(d); renderPID(d); renderBOM(d); renderEcon(d); renderHero(d);
+  }
+  function setHero(id, html) { const el = document.getElementById(id); if (el) el.innerHTML = html; }
+  function renderHero(d) {
+    if (!d) return;
+    setHero("hsReuse", `${d.hydraulics.waterReuse}<small>%</small>`);
+    setHero("hsSwu", `${d.hydraulics.specificWaterUse}<small>m³/kg</small>`);
+    setHero("hsYield", `${(d._raw.annual / 1000)}<small>t/a</small>`);
+    setHero("hsSpecies", d.species.name);
   }
   function compute() {
     currentDesign = E.compute(readInputs());
@@ -638,6 +646,12 @@
   function init() {
     initTheme(); initSpecies(); initTabs(); initMagnetic();
     initModelControls(); initExport(); initOptimizer(); initLibrary(); initLinking();
+    document.querySelectorAll("[data-goto]").forEach((b) => {
+      b.addEventListener("click", () => {
+        const tab = document.querySelector(`#tabs .tab[data-tab="${b.dataset.goto}"]`);
+        if (tab) tab.click();
+      });
+    });
     document.getElementById("designForm").addEventListener("submit", (e) => {
       e.preventDefault(); compute();
       document.querySelector('#tabs .tab[data-tab="params"]').click();
