@@ -54,7 +54,8 @@ RAS.engine = (function () {
     const actualYield = density * cycles * totalTankVol;
 
     // —— 2. 投喂与氮负荷 ——
-    const fcr = sp.fcr;
+    // 饲料系数可由使用者自定义（不同养殖水平差异大），留空/非法时回退品种默认
+    const fcr = (inputs.fcr && inputs.fcr > 0) ? inputs.fcr : sp.fcr;
     const annualFeed = annual * fcr;
     const dailyFeedAvg = annualFeed / 365;
     const dailyFeedPeak = dailyFeedAvg * 1.8;
@@ -142,7 +143,7 @@ RAS.engine = (function () {
 
     return {
       species: sp,
-      inputs: { annual, density, cycles, turns, makeup, sf, temp, elec },
+      inputs: { annual, density, cycles, turns, makeup, sf, temp, elec, fcr },
       culture: {
         tankVolumeNeed: round(tankVolumeNeed),
         tankD, tankH,

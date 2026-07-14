@@ -133,6 +133,7 @@
       annualTons: num("annualTons", 100),
       targetDensity: document.getElementById("density").value ? num("density") : null,
       cycles: document.getElementById("cycles").value ? num("cycles") : null,
+      fcr: document.getElementById("fcr").value ? num("fcr") : null,
       recircTurns: num("turns", 12),
       makeupRate: num("makeup", 1) / 100,
       designTemp: document.getElementById("designTemp").value ? num("designTemp") : null,
@@ -515,6 +516,7 @@
     document.getElementById("annualTons").value = inputs.annualTons;
     document.getElementById("density").value = inputs.targetDensity || "";
     document.getElementById("cycles").value = inputs.cycles || "";
+    document.getElementById("fcr").value = (inputs.fcr != null) ? inputs.fcr : "";
     document.getElementById("turns").value = inputs.recircTurns;
     document.getElementById("makeup").value = (inputs.makeupRate * 100).toFixed(1);
     document.getElementById("designTemp").value = inputs.designTemp || "";
