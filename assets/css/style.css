@@ -171,6 +171,19 @@ body::before {
 }
 .field .unit { color: var(--text-faint); font-size: 12px; }
 
+/* 地区气温预设快捷按钮 */
+.region-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.region-chips .chip {
+  font-size: 11.5px; padding: 4px 10px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text-soft);
+  font-family: inherit; font-weight: 600; transition: all 0.18s ease;
+}
+.region-chips .chip:hover { border-color: var(--brand); color: var(--brand); }
+.region-chips .chip.on {
+  background: var(--brand); border-color: var(--brand); color: #fff;
+  box-shadow: 0 2px 8px var(--brand-soft);
+}
+
 .btn-primary {
   grid-column: 1 / -1; justify-self: start; margin-top: 4px;
   border: none; cursor: pointer; font-family: inherit;

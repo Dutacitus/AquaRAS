@@ -121,6 +121,28 @@
     updHint();
   }
 
+  /* ---------------- 地区气温预设 ---------------- */
+  function initRegionChips() {
+    const chips = document.getElementById("regionChips");
+    if (!chips) return;
+    chips.querySelectorAll(".chip").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const t = parseFloat(btn.dataset.t);
+        document.getElementById("ambient").value = t;
+        chips.querySelectorAll(".chip").forEach((b) => b.classList.remove("on"));
+        btn.classList.add("on");
+        const form = document.getElementById("designForm");
+        if (form) form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event("submit", { cancelable: true }));
+      });
+    });
+    const amb = document.getElementById("ambient");
+    if (amb && !chips.querySelector(".chip.on")) {
+      const cur = parseFloat(amb.value);
+      const match = [...chips.querySelectorAll(".chip")].find((b) => parseFloat(b.dataset.t) === cur);
+      if (match) match.classList.add("on");
+    }
+  }
+
   /* ---------------- 输入读取 / 计算 ---------------- */
   function readInputs() {
     const num = (id, def) => {
@@ -137,6 +159,7 @@
       recircTurns: num("turns", 12),
       makeupRate: num("makeup", 1) / 100,
       designTemp: document.getElementById("designTemp").value ? num("designTemp") : null,
+      ambientTemp: document.getElementById("ambient").value ? num("ambient", 15) : 15,
       safety: num("safety", 1.15),
       salePrice: document.getElementById("salePrice").value.trim() ? num("salePrice") : null,
       feedPrice: document.getElementById("feedPrice").value.trim() ? num("feedPrice") : null,
@@ -291,7 +314,9 @@
         metricCard("年耗电量", en.annualEnergy, "MWh", "全系统"),
         metricCard("水泵功率", en.pumpPower, "kW", "循环泵"),
         metricCard("增氧功率", en.oxyPower, "kW", "制氧/液氧"),
-        metricCard("控温功率", en.hvacPower, "kW", "热泵/制冷"),
+        metricCard("控温功率", en.hvacPower, "kW", (en.hvacMode === "cool" ? "制冷主导" : "加热主导"), "accent"),
+        metricCard("地区平均气温", en.ambientTemp, "℃", `设定 ${d.inputs.temp}℃ · 温差 ${(d.inputs.temp - en.ambientTemp) >= 0 ? "+" : ""}${(d.inputs.temp - en.ambientTemp).toFixed(1)}`, "brand"),
+        metricCard("温控热负荷", en.thermalLoadW, "kW", "围护+补水升温", "brand"),
       ])}
       ${section("建筑规模", "Building", [
         metricCard("养殖区占地", b.tankFootprint, "m²", "含通道"),
@@ -325,7 +350,7 @@
       ["CO₂ 脱除塔", "1 座", `${ox.degasserType}`, "填料式"],
       ["循环水泵", "≥2 台", `${hy.recircFlowH} m³/h，一用一备`, "变频"],
       ["紫外消毒", "1 套", "30 mJ/cm²", "在线"],
-      ["换热/控温", "1 套", `${d.inputs.temp}℃ 恒温（热泵 COP≈4）`, "按需制冷/加热"],
+      ["换热/控温", "1 套", `${d.inputs.temp}℃ 恒温 · ${d.energy.hvacMode === "cool" ? "制冷" : "加热"}主导（环境温度 ${d.energy.ambientTemp}℃）`, "热泵/冷水机组"],
       ["自控与监测", "1 套", "DO/pH/温度/TAN/流量 IoT", "PLC+SCADA"],
       ["污泥处理", "1 套", "浓缩+脱水", "固液分离"],
       ["备用系统", "1 套", "柴油发电机+备用纯氧", "安全保障"],
@@ -457,7 +482,7 @@
       ["生物滤池 (MBBR)", "按 TAN 负荷与硝化速率确定反应器容积与悬浮填料量，并叠加安全系数。"],
       ["增氧与脱碳", "按饲料氧耗配置供氧能力，按 CO₂ 产生量配置脱气塔，维持溶氧与气体平衡。"],
       ["固废处理", "按循环流量配置微滤机台数与单台处理量，并配置污泥浓缩/脱水单元。"],
-      ["能耗估算", "按水泵、增氧、脱气、控温、辅助等系统功率需求估算总装机与单位鱼比能耗。"],
+      ["能耗估算", "按水泵、增氧、脱气、控温、辅助等系统功率需求估算总装机与单位鱼比能耗。控温负荷随<strong>地区全年平均气温</strong>变化：净热需求 = 围护传热(建筑面积×U值×温差) + 补水升温(补水流量×比热×温差) − 内部得热(泵损+照明/代谢)；若环境低于设定温则加热、高于则制冷，分别按热泵 COP 与冷水机组 COP 折算电耗。"],
       ["建筑规模", "按养殖区与设备区占地估算车间总面积与体积（含通道与辅助用房）。"],
       ["经济与校核", "汇总 CAPEX/OPEX（含水费）得出单位成本、盈利与回收期，并以稳态质量平衡校核水质可行性。"],
     ].map((s, i) => `<li><span class="doc-step-n">${i+1}</span><div><b>${s[0]}</b>　${s[1]}</div></li>`).join("");
@@ -824,6 +849,7 @@
     document.getElementById("turns").value = inputs.recircTurns;
     document.getElementById("makeup").value = (inputs.makeupRate * 100).toFixed(1);
     document.getElementById("designTemp").value = inputs.designTemp || "";
+    document.getElementById("ambient").value = (inputs.ambientTemp != null) ? inputs.ambientTemp : 15;
     document.getElementById("safety").value = inputs.safety;
     document.getElementById("salePrice").value = (inputs.salePrice != null) ? inputs.salePrice : "";
     document.getElementById("feedPrice").value = (inputs.feedPrice != null) ? inputs.feedPrice : "";
@@ -961,7 +987,7 @@
 
   /* ---------------- 初始化 ---------------- */
   function init() {
-    initTheme(); initSpecies(); initTabs(); initMagnetic();
+    initTheme(); initSpecies(); initRegionChips(); initTabs(); initMagnetic();
     initModelControls(); initExport(); initOptimizer(); initLibrary(); initLinking();
     renderDoc();
     document.querySelectorAll("[data-goto]").forEach((b) => {

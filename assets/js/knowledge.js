@@ -37,9 +37,9 @@
  */
 window.RAS_KNOWLEDGE = {
   meta: {
-    version: "1.3.0",
+    version: "1.4.0",
     title: "RAS 工艺设计知识库",
-    note: "v1.1.0 校准经济性/价格；v1.2.0 校准工程模型系数（生物滤池/氧气/微滤机/脱气/能耗/建筑/补水）；v1.3.0 重构投资估算模型：引入规模经济(六 tenths 法则)+间接费(EPCM/调试/不可预见/其他)+土地与营运资金，并补全 UV 消毒与 CO₂ 脱气塔 CAPEX 分项。用户可自定义的单价与输入保持 v1.1.0。",
+    note: "v1.1.0 校准经济性/价格；v1.2.0 校准工程模型系数；v1.3.0 重构投资估算(规模经济+间接费+UV/脱气塔)；v1.4.0 HVAC 能耗模型气候化：以「地区全年平均气温」驱动温控负荷 = 围护传热 + 补水加热 − 内部得热，按制热/制冷分 COP(制热 4.0 / 制冷 3.5)，U 值 0.6 W/m²·K。用户可自定义地区气温与单价。",
   },
 
   // 通用循环水水质控制目标（集约化淡水 RAS 设计阈值）
@@ -89,7 +89,10 @@ window.RAS_KNOWLEDGE = {
       eff: 0.70,         // 水泵效率
     },
     heat: {
-      cop: 4.0,          // 热泵性能系数（加热与制冷均近似，EER 等效）
+      copHeat: 4.0,      // 热泵制热 COP（现代热泵 >4.0，aquaculture 制热目标）
+      copCool: 3.5,      // 制冷机 EER（水产冷水机目标 COP 3.5–4.5，取 3.5 保守）
+      uEnvelope: 0.6,   // W/(m²·K) 车间围护传热系数（保温夹芯板，文献 0.31–0.9；取 0.6）
+      internalLoadW: 4, // W/m³ 室内恒定得热（照明/控制/鱼代谢/轻微曝气，向制冷负荷叠加、抵消制热）
     },
     misc: {
       loadW: 3,          // W/m³ 杂项设备负荷（照明/控制/输送等）
@@ -110,11 +113,30 @@ window.RAS_KNOWLEDGE = {
     height: 6,           // m 车间层高
   },
 
+  // 气候模型（v1.4.0）：地区全年平均气温驱动 HVAC 负荷
+  // - defaultAmbient：无地区输入时的兜底均温（温带中值）
+  // - regions：中国主要城市全年平均气温预设（°C，中国气象局多年均值近似），供前端一键填入
+  // - 引擎按 (设定温 − 均温) 计算围护传热与补水加热，分制热/制冷 COP
+  climate: {
+    defaultAmbient: 15,  // °C 默认全年平均气温（温带，未指定地区时）
+    cpWater: 4186,       // J/(kg·K) 水比热容
+    regions: {
+      harbin:    { name: "哈尔滨", ambient: 4 },
+      beijing:   { name: "北京",   ambient: 12 },
+      shanghai:  { name: "上海",   ambient: 17 },
+      guangzhou: { name: "广州",   ambient: 22 },
+      kunming:   { name: "昆明",   ambient: 15 },
+      wuhan:     { name: "武汉",   ambient: 17 },
+      chengdu:   { name: "成都",   ambient: 16 },
+    },
+  },
+
   // 品种数据库（默认运行于室内集约化 RAS）
   // feedPrice: 元/kg 该品种专用饲料（2025，受鱼粉价格驱动；引擎默认优先采用，表单可覆盖）
   // marketPrice: 元/kg 出厂参考价（2025 批发/塘头中值；RAS 精品溢价更高，可在表单覆盖）
   // o2PerFeed: kg O2 / kg 饲料（品种/温度相关氧耗系数；salmon 冷水低，温水高）
-  // hvacLoadW: W / m³ 养殖水体 温控负荷（冷水品种制冷主导，显著更高）
+  // designTemp: ℃ 设定养殖水温（= 温控负荷的"目标温度"，与环境均温共同决定 HVAC 能耗）
+  //   注：原固定 hvacLoadW 已于 v1.4.0 移除，HVAC 改为随 (designTemp − 地区均温) 气候化计算
   species: {
     bass: {
       key: "bass",
@@ -133,7 +155,6 @@ window.RAS_KNOWLEDGE = {
       doMin: 5.0,
       tanMax: 1.0,
       o2PerFeed: 1.0,      // 温水高氧耗端
-      hvacLoadW: 12,       // 温水以补水加热为主，负荷低
       note: "建议三级分级养殖；对溶氧敏感，需稳定 >5 mg/L；适温 20–28℃。",
       marketPrice: 28,    // 元/kg 出厂参考价（2025 批发/塘头中值；RAS 精品 55–68）
     },
@@ -154,7 +175,6 @@ window.RAS_KNOWLEDGE = {
       doMin: 6.0,
       tanMax: 0.8,
       o2PerFeed: 0.7,      // 冷水(14℃)氧耗系数低（文献 ~0.6 呼吸 + 硝化）
-      hvacLoadW: 30,       // 冷水制冷主导，温控负荷高
       note: "冷水品种，需强制冷与高溶氧(>6 mg/L)；能耗主要来自制冷。",
       marketPrice: 60,    // 元/kg 出厂参考价（2025 养殖端；进口冰鲜批发 68–98）
     },
@@ -175,7 +195,6 @@ window.RAS_KNOWLEDGE = {
       doMin: 6.0,
       tanMax: 0.9,
       o2PerFeed: 0.8,
-      hvacLoadW: 25,
       note: "冷水品种，对氨氮与低温敏感，需全年控温。",
       marketPrice: 40,    // 元/kg 出厂参考价（2025 批发中值）
     },
@@ -196,7 +215,6 @@ window.RAS_KNOWLEDGE = {
       doMin: 5.5,
       tanMax: 0.9,
       o2PerFeed: 0.8,
-      hvacLoadW: 20,
       note: "低换水、平面池或圆角池；半咸水养殖需注意盐度稳定。",
       marketPrice: 54,    // 元/kg 出厂参考价（2025 批发 ~52，工厂化精品更高）
     },
@@ -217,7 +235,6 @@ window.RAS_KNOWLEDGE = {
       doMin: 4.0,
       tanMax: 1.2,
       o2PerFeed: 0.9,
-      hvacLoadW: 10,
       note: "耐低氧、耐高密度；生长快、茬次多，单位体积产量高。",
       marketPrice: 16,    // 元/kg 出厂参考价（2025 批发 ~15–16）
     },
@@ -238,7 +255,6 @@ window.RAS_KNOWLEDGE = {
       doMin: 5.0,
       tanMax: 1.0,
       o2PerFeed: 0.9,
-      hvacLoadW: 12,
       note: "甲壳类对 NO2 极敏感；需分级、强增氧与生物絮团(BFT)可选工艺。",
       marketPrice: 46,    // 元/kg 出厂参考价（2025 批发 44–60）
     },

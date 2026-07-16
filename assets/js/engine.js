@@ -103,14 +103,35 @@ RAS.engine = (function () {
     const drumUnits = Math.max(1, Math.ceil(recircFlowH / 300));
     const drumEachFlow = recircFlowH / drumUnits;
 
-    // —— 7. 能耗估算（比能耗系数法，物理可解释）——
+    // —— 7. 能耗估算（比能耗系数法，物理可解释；HVAC 随地区气温变化）——
     const pu = K.equipment.pump;
     const pumpQ = recircFlowH / 3600;                                       // m³/s
     const pumpPower = (1000 * 9.81 * pumpQ * pu.head) / (pu.eff * 1000);    // kW（流体力学公式，随流量/扬程）
     const oxyPower = o2Supply * ox.specificEnergy;                          // kW（kWh/kg O2 比能耗）
     const fanPower = co2Hour * deg.fanEnergy;                               // kW（kg/h CO2 × kWh/kg CO2）
-    const hvacPower = (totalTankVol * sp.hvacLoadW / 1000) / K.equipment.heat.cop; // kW（品种热负荷 / 热泵 COP）
     const miscPower = totalTankVol * K.equipment.misc.loadW / 1000;         // kW（杂项 W/m³）
+    // 温控负荷（气候相关）：围护传热 + 补水加热 − 内部得热；按制热/制冷分 COP
+    const heat = K.equipment.heat, cl = K.climate;
+    const amb = (inputs.ambientTemp != null && inputs.ambientTemp !== "" && !isNaN(Number(inputs.ambientTemp)))
+      ? Number(inputs.ambientTemp) : cl.defaultAmbient;                    // 地区全年平均气温(℃)
+    const lift = temp - amb;                                                // >0 需加热；<0 需制冷
+    const bldArea = totalTankVol * K.building.areaPerM3;                    // m² 建筑面积（与第8节一致，内联避免 TDZ）
+    const UA = bldArea * heat.uEnvelope;                                    // W/℃ 围护传热系数
+    const envelopeW = UA * lift;                                            // 围护得失热(带符号)
+    const makeupKgH = makeupFlowH * 1000;                                   // kg/h 补水质量流量（makeupFlowH 为 m³/h）
+    const makeupW = makeupKgH * cl.cpWater * lift / 3600;                   // 补水从 amb 加热/冷却到设定温(W)
+    const internalW = pumpPower * 1000 * 0.12 + totalTankVol * heat.internalLoadW; // 室内得热(泵损+照明/代谢)
+    const rawLoadW = envelopeW + makeupW;                                   // 净热需求(带符号，+需热/−需冷)
+    let hvacPower, hvacMode, thermalLoadW;
+    if (rawLoadW >= 0) {
+      thermalLoadW = Math.max(0, rawLoadW - internalW);                     // 制热：内部得热抵消
+      hvacPower = thermalLoadW / 1000 / heat.copHeat;
+      hvacMode = "heat";
+    } else {
+      thermalLoadW = -rawLoadW + internalW;                                 // 制冷：内部得热叠加
+      hvacPower = thermalLoadW / 1000 / heat.copCool;
+      hvacMode = "cool";
+    }
     const totalPower = pumpPower + oxyPower + fanPower + hvacPower + miscPower;
     const energyIntensity = (totalPower * 24 * 365) / annual;
     const annualEnergy = totalPower * 24 * 365 / 1000;
@@ -322,6 +343,9 @@ RAS.engine = (function () {
         oxyPower: round(oxyPower, 1),
         fanPower: round(fanPower, 1),
         hvacPower: round(hvacPower, 1),
+        hvacMode: hvacMode,
+        thermalLoadW: round(thermalLoadW),
+        ambientTemp: amb,
         miscPower: round(miscPower, 1),
         totalPower: round(totalPower, 1),
         energyIntensity: round(energyIntensity, 2),
