@@ -102,6 +102,7 @@
       <button class="tab" data-tab="model">🧊 3D 车间模型</button>
       <button class="tab" data-tab="bom">📦 设备清单</button>
       <button class="tab" data-tab="econ">💰 经济估算</button>
+      <button class="tab" data-tab="doc">📖 设计计算书</button>
       <button class="tab" data-tab="pid">🛠 P&ID 仪表</button>
       <button class="tab" data-tab="opt">🧮 智能寻优</button>
       <button class="tab" data-tab="lib">🗂 方案库</button>
@@ -155,6 +156,37 @@
           <input type="number" id="safety" value="1.15" min="1" max="1.5" step="0.05" />
           <span class="hint">单元设备容量冗余</span>
         </div>
+        <div class="field">
+          <label>预估鱼价 <span class="unit">(元/kg)</span></label>
+          <input type="number" id="salePrice" step="0.5" min="1" placeholder="默认 22" />
+          <span class="hint">用于盈利与回收期估算，留空用默认价</span>
+        </div>
+        <div class="subhead">运营成本单价（可选，留空用系统默认）</div>
+        <div class="field">
+          <label>饲料单价 <span class="unit">(元/kg)</span></label>
+          <input type="number" id="feedPrice" step="0.1" min="0" placeholder="默认 9.5" />
+          <span class="hint">商品配合饲料采购价</span>
+        </div>
+        <div class="field">
+          <label>苗种单价 <span class="unit">(元/尾)</span></label>
+          <input type="number" id="fingerlingPrice" step="0.05" min="0" placeholder="默认 0.8" />
+          <span class="hint">按出塘尾数折算</span>
+        </div>
+        <div class="field">
+          <label>电价 <span class="unit">(元/kWh)</span></label>
+          <input type="number" id="elecPrice" step="0.05" min="0" placeholder="默认 0.75" />
+          <span class="hint">工业/农业用电到户价</span>
+        </div>
+        <div class="field">
+          <label>水价 <span class="unit">(元/m³)</span></label>
+          <input type="number" id="waterPrice" step="0.1" min="0" placeholder="默认 5.0" />
+          <span class="hint">生产补水水价</span>
+        </div>
+        <div class="field">
+          <label>人工单价 <span class="unit">(元/人·年)</span></label>
+          <input type="number" id="laborPerYear" step="5000" min="0" placeholder="默认 120000" />
+          <span class="hint">单人年综合用工成本</span>
+        </div>
         <button type="submit" class="btn-primary magnetic" id="computeBtn">⚙ 生成工艺设计方案</button>
       </form>
       <div class="note">
@@ -195,6 +227,9 @@
     <!-- ===== Economics Panel ===== -->
     <section class="panel glass" id="panel-econ"></section>
 
+    <!-- ===== Design Doc Panel ===== -->
+    <section class="panel glass" id="panel-doc"></section>
+
     <!-- ===== P&ID Panel ===== -->
     <section class="panel glass" id="panel-pid">
       <div class="pfd-wrap" id="pidHost"></div>
@@ -224,9 +259,10 @@
           <select id="optObjective">
             <option value="minCost">最低投资成本</option>
             <option value="minEnergy">最低能耗</option>
+            <option value="pareto">成本-能耗 Pareto 前沿</option>
             <option value="maxCapacity">最大产能（给定预算）</option>
           </select>
-          <span class="hint">网格搜索取最优</span>
+          <span class="hint">网格搜索取最优 / Pareto 前沿</span>
         </div>
         <button type="button" class="btn-primary magnetic" id="optRun">🧮 开始寻优</button>
       </div>
@@ -266,7 +302,7 @@
 
     <footer class="footer">
       AquaRAS · 参数化循环水养殖工艺设计原型 · 计算结果为工程估算，实际工程需结合场地与规范深化设计 ·
-      <a href="design-doc.md">软件设计文档</a>
+      <a href="javascript:void(0)" data-goto="doc">设计计算书</a>
     </footer>
   </div>
 

@@ -32,7 +32,17 @@ window.RAS = window.RAS || {};
       actualYield: d.culture.actualYield,
       capexTotal: d.economics.capexTotal,
       opexTotal: d.economics.opexTotal,
+      opexWater: d.economics.opexWater,
       costPerKg: d.economics.costPerKg,
+      salePrice: d.economics.salePrice,
+      revenue: d.economics.revenue,
+      grossProfit: d.economics.grossProfit,
+      paybackYears: d.economics.paybackYears,
+      roi: d.economics.roi,
+      marginRate: d.economics.marginRate,
+      wqStatus: d.waterQuality ? d.waterQuality.status : null,
+      no3: d.waterQuality ? d.waterQuality.checks.find((c) => c.key === "no3").value : null,
+      co2: d.waterQuality ? d.waterQuality.checks.find((c) => c.key === "co2").value : null,
     };
   }
 

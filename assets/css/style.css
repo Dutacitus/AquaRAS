@@ -438,8 +438,170 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
   .section-title { font-size: 15px; }
 }
 
+/* —— 敏感度分析 · 龙卷风图 —— */
+.sn-wrap { margin-top: 4px; }
+.sn-ctrl { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.sn-ctrl label { font-size: 13px; color: var(--text-soft); }
+.tornado { display: flex; flex-direction: column; gap: 10px; }
+.tornado-row { display: grid; grid-template-columns: 120px 1fr 150px; gap: 10px; align-items: center; }
+.tornado-label { font-size: 13px; color: var(--text-soft); text-align: right; }
+.tornado-track { position: relative; height: 22px; background: var(--bg-soft, rgba(255,255,255,.05)); border-radius: 6px; }
+.sn-bar { position: absolute; top: 0; height: 100%; border-radius: 5px; overflow: hidden; display: flex; }
+.sn-seg { height: 100%; }
+.sn-good { background: linear-gradient(90deg, var(--brand), var(--brand-2)); }
+.sn-bad { background: linear-gradient(90deg, #fb7185, #ef4444); }
+.tornado-base { position: absolute; top: -4px; width: 2px; height: 30px; background: var(--text); opacity: .55; }
+.tornado-val { font-size: 11.5px; color: var(--text-faint); line-height: 1.35; }
+.tornado-axis { padding: 6px 0 0 130px; font-size: 12px; color: var(--text-soft); }
+
+/* —— 成本-能耗 Pareto 前沿图 —— */
+.pareto-wrap { margin-top: 4px; }
+.pareto-svg { width: 100%; max-width: 680px; height: auto; background: var(--bg-soft, rgba(255,255,255,.03));
+  border-radius: 12px; border: 1px solid var(--border-soft, rgba(255,255,255,.08)); }
+.pareto-axis { stroke: var(--text-faint); stroke-width: 1; }
+.pareto-axis-label { fill: var(--text-soft); font-size: 12px; }
+.pareto-al { fill: var(--text-faint); font-size: 11px; }
+.pareto-line { fill: none; stroke: var(--brand); stroke-width: 2; stroke-linejoin: round; }
+.pareto-dot { fill: var(--brand-2); stroke: #fff; stroke-width: .6; }
+.pareto-cloud { fill: var(--text-faint); opacity: .28; }
+.pareto-tl { fill: var(--text-soft); font-size: 10px; text-anchor: middle; }
+.pareto-base { fill: var(--accent); stroke: #fff; stroke-width: 1.2; }
+.pareto-base-dot { color: var(--accent); }
+@media (max-width: 720px) {
+  .tornado-row { grid-template-columns: 90px 1fr 96px; }
+  .tornado-val { font-size: 10.5px; }
+}
+
+/* —— 引擎自检区块 —— */
+.doc-selftest .btn-primary { margin-top: 4px; }
+.selfcheck-result { }
+.sc-summary { padding: 14px 18px; border-radius: 14px; margin-bottom: 12px; }
+.sc-pass { background: rgba(34,197,94,.12); border: 1px solid rgba(34,197,94,.4); }
+.sc-fail { background: rgba(239,68,68,.12); border: 1px solid rgba(239,68,68,.4); }
+.sc-big { font-weight: 700; font-size: 18px; letter-spacing: .5px; }
+[data-theme="dark"] .sc-pass .sc-big { color: #4ade80; }
+[data-theme="light"] .sc-pass .sc-big { color: #15803d; }
+.sc-fail .sc-big { color: #dc2626; }
+.sc-scheme { font-size: 13px; opacity: .85; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.sc-checks { display: flex; flex-direction: column; gap: 6px; }
+.sc-row { display: flex; align-items: center; gap: 10px; padding: 7px 12px; border-radius: 9px;
+  background: var(--border-soft); font-size: 13.5px; }
+.sc-ok .sc-badge { color: #16a34a; }
+.sc-fail .sc-badge { color: #dc2626; }
+.sc-badge { font-weight: 700; font-size: 15px; }
+.sc-name { font-weight: 500; }
+.sc-detail { margin-left: auto; opacity: .6; font-variant-numeric: tabular-nums; }
+[data-theme="light"] .sc-row { background: #eef2f7; }
+
 /* hidden helper */
 .hidden { display: none !important; }
+
+/* —— CAPEX 子项分解（默认折叠，点击展开一级） —— */
+.cap-top > td { vertical-align: top; padding: 0 !important; }
+.cap-det { border-radius: 10px; overflow: hidden; }
+.cap-det > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 14px;
+  padding: 12px 14px; font-weight: 600;
+}
+.cap-det > summary::-webkit-details-marker { display: none; }
+.cap-det > summary::before {
+  content: "▸"; color: var(--brand); font-size: 12px; margin-right: 6px;
+  display: inline-block; transition: transform 0.2s ease;
+}
+.cap-det[open] > summary::before { transform: rotate(90deg); }
+.cap-det > summary:hover { background: var(--surface-2); }
+.cap-name { font-weight: 600; }
+.cap-qty { font-size: 11.5px; color: var(--text-faint); white-space: nowrap; }
+.cap-amt { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--text); white-space: nowrap; }
+.cap-subtable { width: 100%; border-collapse: collapse; margin: 0 0 4px; }
+.cap-subtable td { padding: 7px 14px 7px 34px; color: var(--text-soft); font-size: 13px;
+  border-top: 1px dashed var(--border-soft); }
+.cap-subtable td:last-child { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+.cap-subtable tr:last-child td { border-bottom: 1px dashed var(--border-soft); }
+[data-theme="light"] .cap-subtable td { color: #51607a; }
+
+/* 表单分组标题 */
+.subhead {
+  grid-column: 1 / -1; margin-top: 6px; padding: 12px 0 6px;
+  font-size: 13px; font-weight: 800; letter-spacing: 0.02em; color: var(--brand);
+  border-top: 1px solid var(--border-soft);
+}
+
+/* 文本按钮（展开全部/折叠全部等） */
+.link-btn {
+  border: 1px solid var(--border-strong); background: var(--surface-2);
+  color: var(--brand); font: inherit; font-size: 12.5px; font-weight: 700;
+  padding: 6px 14px; border-radius: 999px; cursor: pointer;
+  transition: all 0.2s ease; white-space: nowrap;
+}
+.link-btn:hover { background: var(--brand-soft); border-color: var(--brand); }
+
+/* —— 设计计算书 —— */
+.doc-hero { padding: 24px 26px 4px; }
+.doc-title { font-size: 22px; margin: 0 0 8px; letter-spacing: .3px; }
+.doc-lead { margin: 0; color: var(--text-soft); line-height: 1.7; max-width: 880px; }
+.doc-section { padding: 18px 26px 0; }
+.doc-section h3 { font-size: 17px; margin: 0 0 10px; color: var(--brand-2); }
+.doc-p { color: var(--text-soft); line-height: 1.75; max-width: 900px; margin: 0 0 12px; }
+.doc-refs { display: flex; flex-direction: column; gap: 6px; max-width: 900px; }
+.doc-refs span { font-size: 12.5px; color: var(--text-faint); padding: 6px 10px;
+  background: var(--card-soft); border: 1px solid var(--border-soft); border-radius: 8px; }
+.doc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 14px 26px 0; }
+.doc-card { background: var(--card-soft); border: 1px solid var(--border-soft);
+  border-radius: 14px; padding: 16px 18px; }
+.doc-card h4 { margin: 0 0 10px; font-size: 14.5px; color: var(--text); }
+.doc-table { margin: 0; }
+.doc-table th, .doc-table td { padding: 7px 10px; font-size: 13px; }
+.doc-cap { font-size: 11.5px; color: var(--text-faint); margin: 10px 0 0; line-height: 1.5; }
+.doc-steps { list-style: none; margin: 12px 0 0; padding: 0; max-width: 900px;
+  display: flex; flex-direction: column; gap: 10px; }
+.doc-steps li { display: flex; gap: 12px; align-items: flex-start;
+  background: var(--card-soft); border: 1px solid var(--border-soft);
+  border-radius: 12px; padding: 12px 14px; line-height: 1.6; }
+.doc-step-n { flex: 0 0 26px; height: 26px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--brand), var(--brand-2));
+  color: #fff; display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700; }
+.doc-steps li b { color: var(--text); }
+.doc-steps li div { color: var(--text-soft); font-size: 13.5px; }
+.doc-confidential { margin: 18px 26px 26px; padding: 18px 20px;
+  border: 1px solid var(--border-strong); border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--card-soft));
+  border-left: 4px solid var(--accent); }
+.doc-confidential .doc-lock { font-size: 15px; font-weight: 700; margin: 0 0 8px; color: var(--accent); }
+.doc-confidential p { margin: 0 0 10px; color: var(--text-soft); line-height: 1.7; font-size: 13.5px; }
+.doc-confidential p:last-child { margin-bottom: 0; }
+.doc-confidential .doc-cap { color: var(--text-faint); }
+
+/* 响应式：设计计算书双列在窄屏堆叠 */
+@media (max-width: 720px) {
+  .doc-grid { grid-template-columns: 1fr; }
+}
+
+/* ============================================================
+   水质可行性校核 — 状态徽章
+   ============================================================ */
+.wq-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; padding: 0 26px; }
+.wq-item { position: relative; padding: 16px 16px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface); overflow: hidden; box-shadow: inset 0 1px 0 rgba(255,255,255,0.12); }
+.wq-item::before { content: ""; position: absolute; left: 0; top: 0; height: 3px; width: 100%; background: var(--accent); opacity: 0.7; }
+.wq-item.wq-ok::before { background: linear-gradient(90deg, #22c55e, #34d399); }
+.wq-item.wq-warn::before { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+.wq-item.wq-fail::before { background: linear-gradient(90deg, #f43f5e, #fb7185); }
+.wq-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.wq-name { font-size: 12.5px; font-weight: 700; color: var(--text-soft); }
+.wq-pill { font-size: 10.5px; font-weight: 800; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+.wq-pill.wq-ok { background: rgba(34,197,94,.18); color: #22c55e; }
+.wq-pill.wq-warn { background: rgba(245,158,11,.20); color: #f59e0b; }
+.wq-pill.wq-fail { background: rgba(244,63,94,.20); color: #f43f5e; }
+.wq-val { font-family: var(--font-num); font-size: 26px; font-weight: 700; letter-spacing: -0.02em; margin-top: 8px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.wq-val small { font-family: var(--font); font-size: 12.5px; font-weight: 600; color: var(--text-faint); margin-left: 5px; }
+.wq-lim { font-size: 11.5px; color: var(--text-faint); margin-top: 5px; }
+.wq-note { font-size: 11.5px; color: var(--text-soft); margin-top: 6px; }
+.badge.wq-ok { color: #22c55e; background: rgba(34,197,94,.16); }
+.badge.wq-warn { color: #f59e0b; background: rgba(245,158,11,.18); }
+.badge.wq-fail { color: #f43f5e; background: rgba(244,63,94,.18); }
+@media (max-width: 720px) { .wq-grid { padding: 0 14px; } }
 
 /* ============================================================
    Hero 首屏 — 高级科技感头图

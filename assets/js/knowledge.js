@@ -85,6 +85,7 @@ window.RAS_KNOWLEDGE = {
       doMin: 5.0,
       tanMax: 1.0,
       note: "建议三级分级养殖；对溶氧敏感，需稳定 >5 mg/L；适温 20–28℃。",
+      marketPrice: 24,    // 元/kg 出厂参考价（可在表单覆盖）
     },
     salmon: {
       key: "salmon",
@@ -101,6 +102,7 @@ window.RAS_KNOWLEDGE = {
       doMin: 6.0,
       tanMax: 0.8,
       note: "冷水品种，需强制冷与高溶氧(>6 mg/L)；能耗主要来自制冷。",
+      marketPrice: 46,    // 元/kg 出厂参考价（可在表单覆盖）
     },
     trout: {
       key: "trout",
@@ -117,6 +119,7 @@ window.RAS_KNOWLEDGE = {
       doMin: 6.0,
       tanMax: 0.9,
       note: "冷水品种，对氨氮与低温敏感，需全年控温。",
+      marketPrice: 36,    // 元/kg 出厂参考价（可在表单覆盖）
     },
     turbot: {
       key: "turbot",
@@ -133,6 +136,7 @@ window.RAS_KNOWLEDGE = {
       doMin: 5.5,
       tanMax: 0.9,
       note: "低换水、平面池或圆角池；半咸水养殖需注意盐度稳定。",
+      marketPrice: 50,    // 元/kg 出厂参考价（可在表单覆盖）
     },
     tilapia: {
       key: "tilapia",
@@ -149,6 +153,7 @@ window.RAS_KNOWLEDGE = {
       doMin: 4.0,
       tanMax: 1.2,
       note: "耐低氧、耐高密度；生长快、茬次多，单位体积产量高。",
+      marketPrice: 14,    // 元/kg 出厂参考价（可在表单覆盖）
     },
     shrimp: {
       key: "shrimp",
@@ -165,6 +170,7 @@ window.RAS_KNOWLEDGE = {
       doMin: 5.0,
       tanMax: 1.0,
       note: "甲壳类对 NO2 极敏感；需分级、强增氧与生物絮团(BFT)可选工艺。",
+      marketPrice: 40,    // 元/kg 出厂参考价（可在表单覆盖）
     },
   },
 
@@ -180,10 +186,24 @@ window.RAS_KNOWLEDGE = {
       controls: 200,     // 自控+监测(IoT)
       building: 900,     // 车间土建(含保温)
       hvac: 300,         // 控温(热泵/制冷)
+      salePrice: 22,    // 元/kg 预估鱼价（用于盈利/回收期估算，可在表单覆盖）
+    },
+    // CAPEX 各投资项一级分解：子单价之和 == 对应 capexPerM3 主单价（保证与总额一致）
+    // qty: 工程量单位（"m3"=养殖水体 m³，"m2"=车间面积 m²）
+    capexDetail: {
+      tanks:    { qty: "m3", subs: [["池体(PP/FRP/混凝土)", 220], ["支架与基础", 50], ["进出水与集排污", 50], ["池内曝气推流", 30]] },
+      biofilter:{ qty: "m3", subs: [["反应器壳体", 120], ["悬浮填料", 90], ["曝气系统", 50], ["进出水与回流", 20]] },
+      solids:   { qty: "m3", subs: [["转鼓微滤机", 70], ["污泥浓缩脱水", 35], ["反洗水回收", 15]] },
+      oxygen:   { qty: "m3", subs: [["制氧/液氧站", 150], ["氧气锥(LHO)", 60], ["管路与监测", 50]] },
+      pumps:    { qty: "m3", subs: [["循环水泵(一用一备)", 90], ["管路阀门管件", 45], ["流量计控制阀", 15]] },
+      controls: { qty: "m3", subs: [["PLC/SCADA", 80], ["在线监测(DO/pH/TAN)", 90], ["电气布线", 30]] },
+      building: { qty: "m2", subs: [["主体结构", 450], ["围护保温屋顶", 280], ["地坪防渗排水", 120], ["照明消防辅助", 50]] },
+      hvac:     { qty: "m3", subs: [["热泵/制冷机组", 180], ["换热器管路", 70], ["保温与控制", 50]] },
     },
     opex: {
       feedPrice: 9.5,      // 元/kg 饲料
       fingerlingPrice: 0.8,// 元/尾 苗种(按出塘尾数折算)
+      waterPrice: 5.0,     // 元/m³ 生产补水（工业/处理水，可按地区覆盖）
       laborPerYear: 120000,// 元/人·年
       laborCount: 4,       // 基准人数
       maintenanceRate: 0.04,// 维护占 CAPEX 比例/年
