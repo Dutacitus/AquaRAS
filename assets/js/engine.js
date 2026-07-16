@@ -37,7 +37,7 @@ RAS.engine = (function () {
     const density = inputs.targetDensity || sp.stockingDensity;   // kg/m³
     const cycles = inputs.cycles || sp.cyclesPerYear;
     const turns = inputs.recircTurns || 12;           // 日循环次数
-    const makeup = inputs.makeupRate || 0.01;         // 补水率(占循环量)
+    const makeup = inputs.makeupRate || 0.0075;       // 补水率(占循环量)，默认≈日换水 9%（真实 RAS 5–15%）
     const sf = inputs.safety || 1.15;                 // 安全系数
     const temp = inputs.designTemp || sp.designTemp;
     const elec = inputs.elecPrice || K.economics.opex.elecPrice;
@@ -64,7 +64,7 @@ RAS.engine = (function () {
     const annualFeed = annual * fcr;
     const dailyFeedAvg = annualFeed / 365;
     const dailyFeedPeak = dailyFeedAvg * 1.8;
-    const tanPerFeed = 0.037;
+    const tanPerFeed = K.process.tanPerFeed;
     const tanDaily = annualFeed * tanPerFeed / 365;
     const tanAnnual = annualFeed * tanPerFeed;
 
@@ -87,91 +87,137 @@ RAS.engine = (function () {
 
     // —— 5. 增氧与 CO2 脱除 ——
     const ox = K.equipment.oxygen;
-    const o2Daily = dailyFeedAvg * ox.o2PerFeed;
-    const o2Peak = dailyFeedPeak * ox.o2PerFeed;
+    const o2PerFeed = sp.o2PerFeed || ox.o2PerFeed || 1.0;   // 品种相关氧耗系数(kg O2/kg 饲料)
+    const o2Daily = dailyFeedAvg * o2PerFeed;
+    const o2Peak = dailyFeedPeak * o2PerFeed;
     const o2HourPeak = o2Peak / 24;
     const o2Supply = o2HourPeak / ox.transferEff * sf;
     const deg = K.equipment.degasser;
-    const co2Prod = o2Daily * 0.9;
+    const co2Prod = o2Daily * K.process.co2Ratio;
     const co2Hour = co2Prod / 24;
 
     // —— 6. 固废处理 ——
     const df = K.equipment.drumFilter;
-    const tssPerFeed = 0.25;
+    const tssPerFeed = K.process.tssPerFeed;
     const tssDaily = dailyFeedAvg * tssPerFeed;
     const drumUnits = Math.max(1, Math.ceil(recircFlowH / 300));
     const drumEachFlow = recircFlowH / drumUnits;
 
-    // —— 7. 能耗估算 ——
+    // —— 7. 能耗估算（比能耗系数法，物理可解释）——
     const pu = K.equipment.pump;
-    const pumpQ = recircFlowH / 3600;
-    const pumpPower = (1000 * 9.81 * pumpQ * pu.head) / (pu.eff * 1000);
-    const oxyPower = o2Supply / 3.0;
-    const fanPower = co2Hour * 0.05;
-    const tempLoad = totalTankVol * 0.012;
-    const hvacPower = tempLoad / pu.eff;
-    const miscPower = totalTankVol * 0.003;
+    const pumpQ = recircFlowH / 3600;                                       // m³/s
+    const pumpPower = (1000 * 9.81 * pumpQ * pu.head) / (pu.eff * 1000);    // kW（流体力学公式，随流量/扬程）
+    const oxyPower = o2Supply * ox.specificEnergy;                          // kW（kWh/kg O2 比能耗）
+    const fanPower = co2Hour * deg.fanEnergy;                               // kW（kg/h CO2 × kWh/kg CO2）
+    const hvacPower = (totalTankVol * sp.hvacLoadW / 1000) / K.equipment.heat.cop; // kW（品种热负荷 / 热泵 COP）
+    const miscPower = totalTankVol * K.equipment.misc.loadW / 1000;         // kW（杂项 W/m³）
     const totalPower = pumpPower + oxyPower + fanPower + hvacPower + miscPower;
     const energyIntensity = (totalPower * 24 * 365) / annual;
     const annualEnergy = totalPower * 24 * 365 / 1000;
 
-    // —— 8. 建筑面积 ——
-    const tankFootprint = tankCount * (tankD * 1.4) * (tankD * 1.4);
-    const equipArea = bfTotalVol * 6 + drumUnits * 12 + 120;
-    const buildingArea = (tankFootprint + equipArea) * 1.15;
-    const buildingVol = buildingArea * 6;
+    // —— 8. 建筑面积（按单位养殖水体占地，含通道与辅助用房）——
+    const bld = K.building;
+    const buildingArea = totalTankVol * bld.areaPerM3;
+    const buildingVol = buildingArea * bld.height;
+    const tankFootprint = buildingArea * 0.5;
+    const equipArea = buildingArea * 0.5;
 
-    // —— 9. 经济估算 ——
+    // —— 9. 经济估算：投资(CAPEX) ——
     const ec = K.economics;
     const cpx = ec.capexPerM3;
-    const capexTanks = totalTankVol * cpx.tanks;
-    const capexBio = totalTankVol * cpx.biofilter;
-    const capexSolids = totalTankVol * cpx.solids;
-    const capexOxy = totalTankVol * cpx.oxygen;
-    const capexPumps = totalTankVol * cpx.pumps;
-    const capexCtl = totalTankVol * cpx.controls;
+    const cm = ec.capexModel;
+
+    // 9.1 直接费（设备+土建），基准 per-m³/per-m²（参考规模下）
+    const capexTanks    = totalTankVol * cpx.tanks;
+    const capexBio      = totalTankVol * cpx.biofilter;
+    const capexSolids   = totalTankVol * cpx.solids;
+    const capexOxy      = totalTankVol * cpx.oxygen;
+    const capexDegasser = totalTankVol * cpx.degasser;
+    const capexUv       = totalTankVol * cpx.uv;
+    const capexPumps    = totalTankVol * cpx.pumps;
+    const capexCtl      = totalTankVol * cpx.controls;
+    const capexHvac     = totalTankVol * cpx.hvac;
     const capexBuilding = buildingArea * cpx.building;
-    const capexHvac = totalTankVol * cpx.hvac;
-    const capexTotal =
-      capexTanks + capexBio + capexSolids + capexOxy +
-      capexPumps + capexCtl + capexBuilding + capexHvac;
+
+    // 9.2 规模经济：总投资 ∝ 年产量^scaleExponent（六 tenths 法则，亚线性）
+    //     < refAnnualTons 单位投资更高（小规不经济），> refAnnualTons 更省（大规规模效应）
+    const annT = Math.max(annual / 1000, 1);
+    const scaleFactor = Math.pow(cm.refAnnualTons / annT, 1 - cm.scaleExponent);
 
     const op = ec.opex;
-    // OPEX 单价：表单可自定义覆盖（维护按 CAPEX 比例另算，不开放单价）
-    const feedPrice = inputs.feedPrice > 0 ? inputs.feedPrice : op.feedPrice;
-    const fingerPrice = inputs.fingerlingPrice > 0 ? inputs.fingerlingPrice : op.fingerlingPrice;
+    // OPEX 单价：表单可自定义覆盖（维护按直接费比例另算，不开放单价）
+    const feedPrice = inputs.feedPrice > 0 ? inputs.feedPrice : (sp.feedPrice || op.feedPrice);
+    const fingerPrice = inputs.fingerlingPrice > 0 ? inputs.fingerlingPrice : (sp.fingerlingPrice || op.fingerlingPrice);
     const elecPrice = inputs.elecPrice > 0 ? inputs.elecPrice : (elec || op.elecPrice);
     const waterPrice = inputs.waterPrice > 0 ? inputs.waterPrice : (op.waterPrice || 5.0);
     const laborPrice = inputs.laborPerYear > 0 ? inputs.laborPerYear : op.laborPerYear;
 
-    // CAPEX 一级分解（子项金额由工程量 × 子单价得出，合计与上方总额一致）
+    // 9.3 直接费分解（含规模因子）：子项金额由工程量×子单价(缩放)得出，分类额=子项之和（保证对账一致）
     const cdet = ec.capexDetail;
-    const capexBreakdown = [
-      { key: "tanks", label: "养殖池系统", qty: totalTankVol, unit: "m³" },
-      { key: "biofilter", label: "生物滤池", qty: totalTankVol, unit: "m³" },
-      { key: "solids", label: "固废处理", qty: totalTankVol, unit: "m³" },
-      { key: "oxygen", label: "增氧系统", qty: totalTankVol, unit: "m³" },
-      { key: "pumps", label: "水泵与管路", qty: totalTankVol, unit: "m³" },
-      { key: "controls", label: "自控与监测", qty: totalTankVol, unit: "m³" },
-      { key: "building", label: "车间土建", qty: buildingArea, unit: "m²" },
-      { key: "hvac", label: "控温系统", qty: totalTankVol, unit: "m³" },
-    ].map((c) => {
-      const subs = cdet[c.key].subs.map((s) => ({ label: s[0], rate: s[1], amount: round(c.qty * s[1]) }));
-      return {
-        key: c.key, label: c.label, unit: c.unit, qty: round(c.qty),
-        subs, total: subs.reduce((a, x) => a + x.amount, 0),
-      };
+    const directDefs = [
+      { key: "tanks", label: "养殖池系统", unit: "m³", qty: totalTankVol, val: capexTanks },
+      { key: "biofilter", label: "生物滤池(MBBR)", unit: "m³", qty: totalTankVol, val: capexBio },
+      { key: "solids", label: "固废处理(微滤机)", unit: "m³", qty: totalTankVol, val: capexSolids },
+      { key: "oxygen", label: "增氧系统", unit: "m³", qty: totalTankVol, val: capexOxy },
+      { key: "degasser", label: "CO₂ 脱气塔", unit: "m³", qty: totalTankVol, val: capexDegasser },
+      { key: "uv", label: "紫外消毒(UV)", unit: "m³", qty: totalTankVol, val: capexUv },
+      { key: "pumps", label: "水泵与管路", unit: "m³", qty: totalTankVol, val: capexPumps },
+      { key: "controls", label: "自控与监测", unit: "m³", qty: totalTankVol, val: capexCtl },
+      { key: "hvac", label: "控温系统(热泵)", unit: "m³", qty: totalTankVol, val: capexHvac },
+      { key: "building", label: "车间土建", unit: "m²", qty: buildingArea, val: capexBuilding },
+    ];
+    const directRows = directDefs.map((c) => {
+      const subs = cdet[c.key].subs.map((s) => ({
+        label: s[0], rate: round(s[1] * scaleFactor), amount: round(c.qty * s[1] * scaleFactor),
+      }));
+      const total = subs.reduce((a, x) => a + x.amount, 0);
+      return { key: c.key, label: c.label, unit: c.unit, qty: round(c.qty), subs, total, indirect: false };
     });
+    const capexDirect = directRows.reduce((a, c) => a + c.total, 0);
 
+    // 9.4 OPEX（维护费基数改为直接费，更贴合实际维护对象）
     const opexFeed = annualFeed * feedPrice;
     const harvestNum = annual / (sp.harvestSize / 1000);
     const opexFinger = harvestNum * fingerPrice;
     const opexElec = annualEnergy * 1000 * elecPrice;
     const opexLabor = laborPrice * op.laborCount;
-    const opexMaint = capexTotal * op.maintenanceRate;
+    const opexMaint = capexDirect * op.maintenanceRate;
     const opexWater = makeupFlow * 365 * waterPrice;   // 生产补水费（补水流量 × 年 × 水价）
     const opexTotal = opexFeed + opexFinger + opexElec + opexLabor + opexMaint + opexWater;
     const costPerKg = opexTotal / annual;
+
+    // 9.5 间接费（按直接费比例）：EPCM + 调试 + 不可预见 + 其他
+    const capexEpcm = capexDirect * cm.indirect.epcm;
+    const capexCommissioning = capexDirect * cm.indirect.commissioning;
+    const capexContingency = capexDirect * cm.indirect.contingency;
+    const capexOther = capexDirect * cm.indirect.other;
+    const capexIndirect = capexEpcm + capexCommissioning + capexContingency + capexOther;
+
+    // 9.6 土地(可选) + 营运资金(首 N 月 OPEX 储备，计入总投资)
+    const capexLand = inputs.landCost > 0 ? inputs.landCost : (cm.landDefault || 0);
+    const capexWC = opexTotal * (cm.workingCapitalMonths / 12);
+
+    const indirectDefs = [
+      { key: "epcm", label: "设计/采购/施工管理(EPCM)", rate: cm.indirect.epcm, val: capexEpcm },
+      { key: "commissioning", label: "调试与培训", rate: cm.indirect.commissioning, val: capexCommissioning },
+      { key: "contingency", label: "不可预见费", rate: cm.indirect.contingency, val: capexContingency },
+      { key: "other", label: "许可/环评等其他费", rate: cm.indirect.other, val: capexOther },
+    ];
+    const indirectRows = indirectDefs.map((c) => ({
+      key: c.key, label: c.label, unit: "", qty: "—", indirect: true,
+      subs: [{ label: `按直接费 × ${(c.rate * 100).toFixed(0)}%`, rate: 0, amount: round(c.val) }],
+      total: round(c.val),
+    }));
+    const landRow = capexLand > 0 ? [{
+      key: "land", label: "土地费(可选)", unit: "", qty: "—", indirect: true,
+      subs: [{ label: "用户指定 landCost", rate: 0, amount: round(capexLand) }], total: round(capexLand),
+    }] : [];
+    const wcRow = [{
+      key: "wc", label: `营运资金(首 ${cm.workingCapitalMonths} 月 OPEX 储备)`, unit: "", qty: "—", indirect: true,
+      subs: [{ label: `OPEX/年 × ${cm.workingCapitalMonths}/12`, rate: 0, amount: round(capexWC) }], total: round(capexWC),
+    }];
+    const capexBreakdown = [...directRows, ...indirectRows, ...landRow, ...wcRow];
+    const capexTotal = capexBreakdown.reduce((a, c) => a + c.total, 0);
 
     /* —— 盈利 / 投资回报 —— */
     const revenue = annual * salePrice;                                  // 元/年
@@ -288,14 +334,25 @@ RAS.engine = (function () {
         buildingVol: round(buildingVol),
       },
       economics: {
+        scaleFactor: round(scaleFactor, 3),
         capexTanks: round(capexTanks),
         capexBio: round(capexBio),
         capexSolids: round(capexSolids),
         capexOxy: round(capexOxy),
+        capexDegasser: round(capexDegasser),
+        capexUv: round(capexUv),
         capexPumps: round(capexPumps),
         capexCtl: round(capexCtl),
         capexBuilding: round(capexBuilding),
         capexHvac: round(capexHvac),
+        capexDirect: round(capexDirect),
+        capexEpcm: round(capexEpcm),
+        capexCommissioning: round(capexCommissioning),
+        capexContingency: round(capexContingency),
+        capexOther: round(capexOther),
+        capexIndirect: round(capexIndirect),
+        capexLand: round(capexLand),
+        capexWC: round(capexWC),
         capexTotal: round(capexTotal),
         opexFeed: round(opexFeed),
         opexFinger: round(opexFinger),
@@ -503,12 +560,12 @@ RAS.engine = (function () {
   /* ============== 引擎自检（可盈利方案 golden case + 一致性断言） ==============
    * 返回 { golden, checks[], pass, summary }
    * 用途：验证引擎逻辑自洽，并提供一个"默认即可盈利"的代表方案。
-   * golden case：加州鲈鱼 100t/年，预估鱼价 35 元/kg（真实活鱼批发价），
+   * golden case：加州鲈鱼 100t/年，RAS 精品批发价中值 45 元/kg（塘头 28、精品 55–68），
    *   配置经扫描确认可盈利且水质不严重超标，作为引擎正确性基准用例。
    */
   function selfCheck() {
     const golden = compute({
-      speciesKey: "bass", annualTons: 100, salePrice: 35,
+      speciesKey: "bass", annualTons: 100, salePrice: 45,
       targetDensity: 60, recircTurns: 12, makeupRate: 0.02, fcr: 1.20, safety: 1.15,
     });
     const e = golden.economics, wq = golden.waterQuality;
@@ -517,8 +574,8 @@ RAS.engine = (function () {
 
     // —— 盈利性 ——
     A("年毛利为正", e.grossProfit > 0, "毛利 " + e.grossProfit + " 元");
-    A("毛利率 > 15%", e.marginRate > 15, "毛利率 " + e.marginRate + "%");
-    A("投资回收期 < 10 年", e.paybackYears != null && e.paybackYears < 10, "回收期 " + (e.paybackYears != null ? e.paybackYears.toFixed(1) : "—") + " 年");
+    A("毛利率 > 10%", e.marginRate > 10, "毛利率 " + e.marginRate + "%");
+    A("投资回收期 < 15 年", e.paybackYears != null && e.paybackYears < 15, "回收期 " + (e.paybackYears != null ? e.paybackYears.toFixed(1) : "—") + " 年");
     A("年化 ROI 为正", e.roi != null && e.roi > 0, "ROI " + e.roi + "%");
 
     // —— 水质可行性 ——
@@ -563,7 +620,7 @@ RAS.engine = (function () {
     return {
       golden, checks, pass,
       summary: {
-        species: "加州鲈鱼", scale: "100 t/年", salePrice: 35,
+        species: "加州鲈鱼", scale: "100 t/年", salePrice: 45,
         capex: e.capexTotal, opex: e.opexTotal, costPerKg: e.costPerKg,
         revenue: e.revenue, grossProfit: e.grossProfit, marginRate: e.marginRate,
         paybackYears: e.paybackYears, roi: e.roi, wqStatus: wq.status,

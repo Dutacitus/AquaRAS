@@ -343,11 +343,11 @@
     const e = d.economics, ec = E.rmb;
     // CAPEX：各投资项向下展开一级（默认折叠，点击展开子项；子项金额合计 == 该项总额）
     const capRows = e.capexBreakdown.map((c) => `
-      <tr class="cap-top"><td colspan="2">
+      <tr class="cap-top${c.indirect ? ' cap-indirect' : ''}"><td colspan="2">
         <details class="cap-det">
           <summary>
             <span class="cap-name">${c.label}</span>
-            <span class="cap-qty">${c.qty} ${c.unit}</span>
+            ${c.indirect ? '<span class="cap-tag">间接费</span>' : `<span class="cap-qty">${c.qty} ${c.unit}</span>`}
             <span class="cap-amt">${ec(c.total)}</span>
           </summary>
           <table class="cap-subtable"><tbody>
@@ -366,6 +366,8 @@
         <thead><tr><th>投资项（含子项分解）</th><th class="num">金额</th></tr></thead>
         <tbody>${capRows}</tbody>
         <tfoot><tr><td>合计 CAPEX</td><td class="num">${ec(e.capexTotal)}</td></tr></tfoot></table></div>
+      <div class="note" style="padding:4px 26px 0"><span class="ic">📐</span>
+      <div>总投资 = 直接费(设备+土建) + 间接费(EPCM 15% + 调试 5% + 不可预见 10% + 其他 5% = 直接费 35%) + 营运资金(首 ${K.economics.capexModel.workingCapitalMonths} 月 OPEX)。规模因子 <b>${e.scaleFactor}</b>：单位投资随年产量呈亚线性变化（六 tenths 法则），大规更省、小规更贵，已计入各分项单价。</div></div>
       <div class="section-title" style="padding:8px 26px 0">运营成本估算 (OPEX / 年)</div>
       <div class="table-wrap" style="padding:14px 26px 6px"><table class="data">
         <thead><tr><th>运营成本项</th><th class="num">金额 / 年</th></tr></thead>
@@ -420,6 +422,7 @@
     if (!host) return;
     host.className = "panel glass";
     const wq = K.waterQuality, eq = K.equipment, ec = K.economics;
+    const sp = K.species[document.getElementById("species").value];
     const wqRows = [
       ["总氨氮 TAN", "≤ " + wq.tanMax, "mg/L"],
       ["亚硝态氮 NO₂", "≤ " + wq.no2Max, "mg/L"],
@@ -440,7 +443,7 @@
     const capRows = Object.keys(ec.capexPerM3).filter(k => k !== "salePrice")
       .map(k => `<tr><td>${capexLabel(k)}</td><td class="num">${ec.capexPerM3[k]}</td><td>${k === "building" ? "元/m²" : "元/m³"}</td></tr>`).join("");
     const opRows = [
-      ["饲料", ec.opex.feedPrice, "元/kg"],
+      ["饲料(" + (sp ? sp.name : "基准") + ")", sp && sp.feedPrice ? sp.feedPrice : ec.opex.feedPrice, "元/kg"],
       ["苗种", ec.opex.fingerlingPrice, "元/尾"],
       ["生产补水", ec.opex.waterPrice, "元/m³"],
       ["人工", ec.opex.laborPerYear + " × " + ec.opex.laborCount, "元/人·年 × 人"],
@@ -486,7 +489,7 @@
         <div class="doc-card">
           <h4>③ 投资估算基准 (CAPEX)</h4>
           <table class="data doc-table"><thead><tr><th>投资项</th><th class="num">单价</th><th>单位</th></tr></thead><tbody>${capRows}</tbody></table>
-          <p class="doc-cap">单位投资按养殖水体（土建按面积）估算，详见「经济估算」中各投资项的一级分解。</p>
+          <p class="doc-cap">直接费按养殖水体（土建按面积）估算，详见「经济估算」中各投资项的一级分解。总投资另含 <b>间接费</b>（EPCM 15% + 调试 5% + 不可预见 10% + 其他 5% = 直接费 35%）与 <b>营运资金</b>（首 ${K.economics.capexModel.workingCapitalMonths} 月 OPEX）；并应用 <b>规模经济</b>：单位投资随年产量呈亚线性变化（六 tenths 法则，参考规模 ${K.economics.capexModel.refAnnualTons} t/年），大规更省、小规更贵。本表为参考规模下的基准单价。</p>
         </div>
         <div class="doc-card">
           <h4>④ 运营成本基准 (OPEX)</h4>
@@ -514,7 +517,7 @@
 
       <div class="doc-section doc-selftest">
         <h3>四、引擎自检（可盈利方案基准验证）</h3>
-        <p class="doc-p">点击下方按钮运行引擎自检：以一组固定的<strong>可盈利代表方案</strong>（加州鲈鱼 100t/年，预估鱼价 35 元/kg）为 golden case，验证引擎的盈利性、水质可行性与内部计算一致性（CAPEX 对账、水费公式、回收期/ROI/毛利率公式、多品种默认盈利）。全部断言通过即代表引擎逻辑自洽。</p>
+        <p class="doc-p">点击下方按钮运行引擎自检：以一组固定的<strong>可盈利代表方案</strong>（加州鲈鱼 100t/年，RAS 精品批发价 45 元/kg）为 golden case，验证引擎的盈利性、水质可行性与内部计算一致性（CAPEX 对账、水费公式、回收期/ROI/毛利率公式、多品种默认盈利）。全部断言通过即代表引擎逻辑自洽。</p>
         <button type="button" id="runSelfCheck" class="btn-primary magnetic">▶ 运行引擎自检</button>
         <div id="selfCheckResult" class="selfcheck-result" style="margin-top:14px"></div>
       </div>`;
