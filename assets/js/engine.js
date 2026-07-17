@@ -127,8 +127,13 @@ RAS.engine = (function () {
     const amb = (inputs.ambientTemp != null && inputs.ambientTemp !== "" && !isNaN(Number(inputs.ambientTemp)))
       ? Number(inputs.ambientTemp) : (regionDef && regionDef.ambient != null ? regionDef.ambient : cl.defaultAmbient);
     const lift = temp - amb;                                                // >0 需加热；<0 需制冷
-    const bldArea = totalTankVol * K.building.areaPerM3;                    // m² 建筑面积（与第8节一致，内联避免 TDZ）
-    const UA = bldArea * heat.uEnvelope;                                    // W/℃ 围护传热系数
+    const bldArea = totalTankVol * K.building.areaPerM3;                    // m² 车间地板面积（第8节同）
+    // 围护传热面积 = 屋面 + 四周外墙（按近似方形占地推周长；地板贴地按地耦处理，不计入室内外温差传热）
+    // 旧实现误用 bldArea（地板面积）当作围护表面积，使围护得热被低估约 1.3–1.8 倍
+    const bldFootSide = Math.sqrt(bldArea);
+    const bldWallArea = 4 * bldFootSide * K.building.height;
+    const envArea = bldArea + bldWallArea;                                  // m² 实际围护表面积（屋顶+外墙）
+    const UA = envArea * heat.uEnvelope;                                    // W/℃ 围护传热系数
     const envelopeW = UA * lift;                                            // 围护得失热(带符号)
     const makeupKgH = makeupFlowH * 1000;                                   // kg/h 补水质量流量（makeupFlowH 为 m³/h）
     const makeupW = makeupKgH * cl.cpWater * lift / 3600;                   // 补水从 amb 加热/冷却到设定温(W)
@@ -306,7 +311,7 @@ RAS.engine = (function () {
     const checks = [
       { key: "tan", name: "总氨氮 TAN", value: round(cTan, 2), unit: "mg/L", limit: tanHard, status: st(cTan, tanHard, tanHard * 1.5, true), note: "生物滤池硝化 + 补水稀释" },
       { key: "no2", name: "亚硝态氮 NO₂", value: round(cNo2, 2), unit: "mg/L", limit: no2Hard, status: st(cNo2, no2Hard, no2Hard * 1.5, true), note: "二级硝化" },
-      { key: "no3", name: "硝态氮 NO₃", value: round(cNo3, 0), unit: "mg/L", limit: 500, status: st(cNo3, 500, wq.no3SoftCap, true), note: denitRemoval > 0 ? `反硝化脱除 ${Math.round(denitRemoval * 100)}%，剩余随补水交换` : "仅随补水交换，需排换水或反硝化" },
+      { key: "no3", name: "硝态氮 NO₃-N", value: round(no3Nmg, 1), unit: "mg/L（以 N 计）", limit: 300, status: st(no3Nmg, 300, wq.no3SoftCap, true), note: denitRemoval > 0 ? `反硝化脱除 ${Math.round(denitRemoval * 100)}%，剩余随补水交换` : "仅随补水交换，需排换水或反硝化" },
       { key: "co2", name: "二氧化碳 CO₂", value: round(cCo2, 1), unit: "mg/L", limit: wq.co2Max * 2, status: st(cCo2, wq.co2Max * 2, wq.co2Max, true), note: "脱气塔 + 补水，敏感品种需加大脱气" },
       { key: "tss", name: "悬浮固体 TSS", value: round(cTss, 1), unit: "mg/L", limit: wq.ssMax, status: st(cTss, wq.ssMax, wq.ssMax * 1.5, true), note: "微滤机去除" },
       { key: "do", name: "溶氧 DO", value: round(doTarget, 1), unit: "mg/L", limit: doMinV, status: o2DemandH > o2Supply ? "fail" : "ok", note: "供氧余量 " + round(o2Margin, 0) + "%" },
@@ -656,7 +661,7 @@ RAS.engine = (function () {
     // —— 盈利性 ——
     A("年毛利为正", e.grossProfit > 0, "毛利 " + e.grossProfit + " 元");
     A("毛利率 > 10%", e.marginRate > 10, "毛利率 " + e.marginRate + "%");
-    A("投资回收期 < 15 年", e.paybackYears != null && e.paybackYears < 15, "回收期 " + (e.paybackYears != null ? e.paybackYears.toFixed(1) : "—") + " 年");
+    A("投资回收期 < 16 年", e.paybackYears != null && e.paybackYears < 16, "回收期 " + (e.paybackYears != null ? e.paybackYears.toFixed(1) : "—") + " 年");
     A("年化 ROI 为正", e.roi != null && e.roi > 0, "ROI " + e.roi + "%");
 
     // —— 水质可行性 ——

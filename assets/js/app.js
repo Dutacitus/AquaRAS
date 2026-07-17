@@ -331,7 +331,7 @@
         metricCard("增氧功率", en.oxyPower, "kW", "制氧/液氧"),
         metricCard("控温功率", en.hvacPower, "kW", (en.hvacMode === "cool" ? "制冷主导" : "加热主导"), "accent"),
         metricCard("地区平均气温", en.ambientTemp, "℃", `设定 ${d.inputs.temp}℃ · 温差 ${(d.inputs.temp - en.ambientTemp) >= 0 ? "+" : ""}${(d.inputs.temp - en.ambientTemp).toFixed(1)}`, "brand"),
-        metricCard("温控热负荷", en.thermalLoadW, "kW", "围护+补水升温", "brand"),
+        metricCard("温控热负荷", (en.thermalLoadW / 1000).toFixed(1), "kW", "围护+补水升温", "brand"),
       ])}
       ${section("建筑规模", "Building", [
         metricCard("养殖区占地", b.tankFootprint, "m²", "含通道"),
@@ -474,7 +474,7 @@
     const wqRows = [
       ["总氨氮 TAN", "≤ " + wq.tanMax, "mg/L"],
       ["亚硝态氮 NO₂", "≤ " + wq.no2Max, "mg/L"],
-      ["硝态氮 NO₃", "≤ " + wq.no3SoftCap + "（软上限）", "mg/L"],
+      ["硝态氮 NO₃-N", "≤ " + wq.no3SoftCap + "（以 N 计，软上限）", "mg/L"],
       ["溶氧 DO", "≥ " + wq.doMin, "mg/L"],
       ["二氧化碳 CO₂", "≤ " + wq.co2Max, "mg/L"],
       ["悬浮固体 TSS", "≤ " + wq.ssMax, "mg/L"],
@@ -505,7 +505,7 @@
       ["生物滤池 (MBBR)", "按 TAN 负荷与温度修正后的硝化速率(θ 系数)确定反应器容积与悬浮填料量，并叠加安全系数。"],
       ["增氧与脱碳", "按饲料氧耗配置供氧能力，按 CO₂ 产生量配置脱气塔，维持溶氧与气体平衡。"],
       ["固废处理", "按循环流量配置微滤机台数与单台处理量，并配置污泥浓缩/脱水单元。"],
-      ["能耗估算", "按水泵、增氧、脱气、控温、辅助等系统功率需求估算总装机与单位鱼比能耗。控温负荷随<strong>地区全年平均气温</strong>变化：净热需求 = 围护传热(建筑面积×U值×温差) + 补水升温(补水流量×比热×温差) + 水面蒸发潜热(池面蒸发×汽化潜热) − 内部得热(泵损+照明/代谢)；若环境低于设定温则加热、高于则制冷，分别按热泵 COP 与冷水机组 COP 折算电耗。"],
+      ["能耗估算", "按水泵、增氧、脱气、控温、辅助等系统功率需求估算总装机与单位鱼比能耗。控温负荷随<strong>地区全年平均气温</strong>变化：净热需求 = 围护传热(围护表面积[屋面+外墙]×U值×温差) + 补水升温(补水流量×比热×温差) + 水面蒸发潜热(池面蒸发×汽化潜热) − 内部得热(泵损+照明/代谢)；若环境低于设定温则加热、高于则制冷，分别按热泵 COP 与冷水机组 COP 折算电耗。"],
       ["建筑规模", "按养殖区与设备区占地估算车间总面积与体积（含通道与辅助用房）。"],
       ["经济与校核", "汇总 CAPEX/OPEX（含水费）得出单位成本、盈利与回收期，并以稳态质量平衡校核水质可行性。"],
     ].map((s, i) => `<li><span class="doc-step-n">${i+1}</span><div><b>${s[0]}</b>　${s[1]}</div></li>`).join("");
@@ -684,7 +684,7 @@
     if (xMax - xMin < 1e-6) { xMin -= 1; xMax += 1; }
     if (yMax - yMin < 1e-6) { yMin -= 0.1; yMax += 0.1; }
     const dx = xMax - xMin, dy = yMax - yMin;
-    const padL = 64, padR = 18, padT = 18, padB = 42, W = 680, H = 300;
+    const padL = 64, padR = 18, padT = 18, padB = 48, W = 680, H = 300;
     const sx = (v) => padL + (v - xMin) / dx * (W - padL - padR);
     const sy = (v) => H - padB - (v - yMin) / dy * (H - padT - padB);
     const cloudDots = cloud.map((c) => `<circle cx="${sx(c.cost / 10000).toFixed(1)}" cy="${sy(c.energy).toFixed(1)}" r="2" class="pareto-cloud"/>`).join("");
@@ -711,10 +711,10 @@
           <circle cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}" r="5" class="pareto-base"/>
           <text x="${(padL - 8)}" y="${(padT + 4)}" class="pareto-al" text-anchor="end">${yMax.toFixed(2)}</text>
           <text x="${(padL - 8)}" y="${(H - padB)}" class="pareto-al" text-anchor="end">${yMin.toFixed(2)}</text>
-          <text x="${padL}" y="${(H - 12)}" class="pareto-al">${xMin.toFixed(0)}</text>
-          <text x="${(W - padR)}" y="${(H - 12)}" class="pareto-al" text-anchor="end">${xMax.toFixed(0)}</text>
-          <text x="${(W / 2)}" y="${(H - 2)}" class="pareto-axis-label" text-anchor="middle">CAPEX (万元)</text>
-          <text x="14" y="${(H / 2)}" class="pareto-axis-label" text-anchor="middle" transform="rotate(-90 14 ${H / 2})">比能耗 (kWh/kg)</text>
+          <text x="${padL}" y="${(H - padB + 14)}" class="pareto-al">${xMin.toFixed(0)}</text>
+          <text x="${(W - padR)}" y="${(H - padB + 14)}" class="pareto-al" text-anchor="end">${xMax.toFixed(0)}</text>
+          <text x="${(W / 2)}" y="${(H - 10)}" class="pareto-axis-label" text-anchor="middle">CAPEX (万元)</text>
+          <text x="16" y="${(H / 2)}" class="pareto-axis-label" text-anchor="middle" transform="rotate(-90 16 ${H / 2})">比能耗 (kWh/kg)</text>
         </svg>
         <div class="note" style="margin-top:8px"><span class="ic">📈</span>
         <div>${noteTxt}</div></div>

@@ -101,7 +101,7 @@ window.RAS_KNOWLEDGE = {
     degasser: {
       type: "填料式 CO2 脱除塔",
       co2Removal: 0.88,  // CO2 去除率（厂商 80–90%，取 0.88）
-      fanEnergy: 0.08,   // kWh / kg CO2  stripped（低圧风机比能耗）
+      fanEnergy: 0.08,   // kWh / kg CO2  stripped（低压风机比能耗）
     },
     uv: {
       type: "紫外消毒",
@@ -118,7 +118,7 @@ window.RAS_KNOWLEDGE = {
       uEnvelope: 0.6,   // W/(m²·K) 车间围护传热系数（保温夹芯板，文献 0.31–0.9；取 0.6）
       internalLoadW: 4, // W/m³ 室内恒定得热（照明/控制/鱼代谢/轻微曝气，向制冷负荷叠加、抵消制热）
       pumpLossFrac: 0.12, // 水泵轴功率转化为室内得热的比例（电机/管路损失；抵消制热、叠加制冷）
-      evapLatent: 2.26e6, // J/kg 水的汽化潜热（蒸发潜热）
+      evapLatent: 2.44e6, // J/kg 水的汽化潜热（@25℃ 取值 2.44×10⁶；100℃ 为 2.26×10⁶，常温 RAS 用 25℃ 值更准确）
       evapRate: 0.12,   // kg/(m²·h) 室内覆盖池面参考蒸发率(25℃)；随水温线性缩放，冷水更低
       evapTempRef: 25,  // ℃ 蒸发率参考水温
     },
@@ -339,7 +339,7 @@ window.RAS_KNOWLEDGE = {
       biofilter:{ qty: "m3", split: 0.90, subs: [["反应器壳体", 140], ["悬浮填料(K1)", 100], ["曝气系统", 60], ["进出水与回流", 20]] },
       solids:   { qty: "m3", split: 0.85, subs: [["转鼓微滤机(60µm)", 85], ["污泥浓缩脱水", 35], ["反洗水回收", 20]] },
       oxygen:   { qty: "m3", split: 0.85, subs: [["制氧/液氧站", 190], ["氧气锥(LHO)", 90], ["管路与监测", 40]] },
-      degasser: { qty: "m3", split: 0.70, subs: [["脱气填料塔体", 70], ["低圧脱气风机", 30], ["管路与监测", 20]] },
+      degasser: { qty: "m3", split: 0.70, subs: [["脱气填料塔体", 70], ["低压脱气风机", 30], ["管路与监测", 20]] },
       uv:       { qty: "m3", split: 0.60, subs: [["UV 杀菌机组(30mJ/cm²)", 60], ["石英套管/模块", 20], ["管路与监测", 10]] },
       pumps:    { qty: "m3", split: 0.90, subs: [["循环水泵(一用一备)", 105], ["管路阀门管件", 45], ["流量计控制阀", 20]] },
       controls: { qty: "m3", split: 0.40, subs: [["PLC/SCADA 自控", 90], ["在线监测(DO/pH/TAN)", 110], ["电气布线", 40]] },
@@ -375,7 +375,7 @@ window.RAS_KNOWLEDGE = {
     "Aydın U. et al. (2026). Thermodynamics assessment of a near-zero discharged RAS for turbot. Aquacultural Engineering 113（特定能耗 52 kWh/kg；循环 26%、增氧 15%、空调 13%、消毒 12%）。",
     "rasfilter.com. (2025). Liuzhou 商业化鲈鱼 RAS 案例（密度 78.75 kg/m³、FCR 1.02、电耗 2.35 kWh/kg、氧气系统 ~0.7 kWh/kg）。",
     "Global Aquaculture Advocate / DIFTA. (2000). Drum filter efficiency（60µm 真实 TSS 去除 ~48–72%，>55µm 颗粒 >85–90% 截留）。",
-    "Kingto / Laswim / YUTANK. (2025). 脱气塔规格（CO₂ 去除 80–90%/pass；低圧风机 300–700 Pa）。",
+    "Kingto / Laswim / YUTANK. (2025). 脱气塔规格（CO₂ 去除 80–90%/pass；低压风机 300–700 Pa）。",
     "Aggregator / Aquafarmer. (2025). RAS 对比（水耗 0.05–0.5 m³/kg；密度 40–120 kg/m³；面积 30–50 m²/t·年）。",
     "Wang Y. et al. (2019). Effects of stocking density on Atlantic salmon in RAS（中国实测上限 ~30 kg/m³；福利建议 60–80）。",
     "《工厂化循环水养殖工程设计规范》(行业经验值)",
