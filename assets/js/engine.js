@@ -564,8 +564,11 @@ RAS.engine = (function () {
       { label: "补水率", effKey: "makeup", setKey: "makeupRate", pct: 0.5 },
       { label: "饲料系数 FCR", effKey: "fcr", setKey: "fcr", pct: 0.2 },
       { label: "安全系数", effKey: "sf", setKey: "safety", pct: 0.2 },
-      { label: "预估鱼价", effKey: "salePrice", setKey: "salePrice", pct: 0.2 },
     ];
+    // 售价仅影响利润类指标；对成本/能耗指标纳入会产生恒为 0 的误导跨度，故仅 grossProfit 时列入
+    if (metric === "grossProfit") {
+      drivers.push({ label: "预估鱼价", effKey: "salePrice", setKey: "salePrice", pct: 0.2 });
+    }
     const rows = drivers.map((dr) => {
       const v0 = eff[dr.effKey];
       if (v0 == null || isNaN(v0)) return { label: dr.label, low: baseVal, high: baseVal, span: 0 };

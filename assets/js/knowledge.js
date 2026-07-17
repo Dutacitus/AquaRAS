@@ -125,6 +125,7 @@ window.RAS_KNOWLEDGE = {
       beijing:   { name: "北京",   ambient: 12 },
       shanghai:  { name: "上海",   ambient: 17 },
       guangzhou: { name: "广州",   ambient: 22 },
+      sanya:     { name: "三亚",   ambient: 26 },
       kunming:   { name: "昆明",   ambient: 15 },
       wuhan:     { name: "武汉",   ambient: 17 },
       chengdu:   { name: "成都",   ambient: 16 },

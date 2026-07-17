@@ -124,19 +124,28 @@
   /* ---------------- 地区气温预设 ---------------- */
   function initRegionChips() {
     const chips = document.getElementById("regionChips");
-    if (!chips) return;
+    if (!chips || !K.climate || !K.climate.regions) return;
+    // 单一数据源：从 knowledge.climate.regions 动态生成地区预设（保证 UI 与知识库一致，修正原硬编码上海 16→17、缺三亚/昆明/武汉/成都）
+    chips.innerHTML = "";
+    Object.entries(K.climate.regions).forEach(([key, r]) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "chip";
+      b.dataset.t = r.ambient;
+      b.textContent = r.name + " " + r.ambient + "℃";
+      chips.appendChild(b);
+    });
+    const form = document.getElementById("designForm");
     chips.querySelectorAll(".chip").forEach((btn) => {
       btn.addEventListener("click", () => {
-        const t = parseFloat(btn.dataset.t);
-        document.getElementById("ambient").value = t;
+        document.getElementById("ambient").value = parseFloat(btn.dataset.t);
         chips.querySelectorAll(".chip").forEach((b) => b.classList.remove("on"));
         btn.classList.add("on");
-        const form = document.getElementById("designForm");
         if (form) form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event("submit", { cancelable: true }));
       });
     });
     const amb = document.getElementById("ambient");
-    if (amb && !chips.querySelector(".chip.on")) {
+    if (amb) {
       const cur = parseFloat(amb.value);
       const match = [...chips.querySelectorAll(".chip")].find((b) => parseFloat(b.dataset.t) === cur);
       if (match) match.classList.add("on");
