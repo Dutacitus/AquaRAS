@@ -195,6 +195,17 @@ body::before {
 }
 .btn-primary:hover { transform: translateY(-2px) scale(1.02); box-shadow: 0 14px 34px rgba(14, 165, 233, 0.34); }
 .btn-primary:active { transform: translateY(0) scale(0.99); }
+.btn-lux {
+  border: 1px solid rgba(255, 255, 255, 0.18); cursor: pointer; font-family: inherit;
+  background: rgba(255, 255, 255, 0.06); backdrop-filter: blur(12px);
+  color: var(--text); font-weight: 700; font-size: 14px; letter-spacing: 0.01em;
+  padding: 11px 24px; border-radius: 999px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), background 0.22s ease, box-shadow 0.22s ease;
+}
+.btn-lux:hover { transform: translateY(-2px) scale(1.02); background: rgba(56, 189, 248, 0.16); box-shadow: 0 12px 30px rgba(56, 189, 248, 0.28); }
+.btn-lux:active { transform: translateY(0) scale(0.99); }
+.btn-lux:disabled { opacity: 0.55; cursor: progress; transform: none; }
 
 /* ---------- Result metric cards ---------- */
 .section-title { position: relative; font-size: 17px; font-weight: 800; margin: 28px 0 14px; padding: 0 26px; display: flex; align-items: center; gap: 10px; letter-spacing: -0.01em; }
@@ -361,6 +372,8 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
 }
 .note b { color: var(--text); }
 .note .ic { font-size: 18px; }
+.note-warn { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.45); color: var(--text); }
+.note-warn b { color: #f59e0b; }
 
 /* ---------- Footer ---------- */
 .footer { margin-top: 40px; text-align: center; color: var(--text-faint); font-size: 12.5px; }

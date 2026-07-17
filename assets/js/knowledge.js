@@ -41,6 +41,17 @@
  *   - P0-4 补水背景：defaults.makeupBackground(TAN/NO₂/NO₃) 计入稳态质量平衡
  *   - 反硝化反应器贯通 PFD/PID/BOM/设计计算书各板块（此前仅计算层存在）
  *
+ * v1.7.0 (2026 P1 模型保真度提升)：
+ *   - P1-1 季节性双工况 HVAC(bin method)：regions 加 amp(年温差振幅)，引擎按 12 月均温序列积分年 HVAC 能耗
+ *     （冬季制热×copHeat + 夏季制冷×copCool，含蒸发潜热），年能耗更准；无地区时退化为单点
+ *   - P1-3 水足迹闭合：取水 = 蒸发损失 + 排污(bleed)，校验补水率是否覆盖蒸发(evapCovered 告警)，输出 m³/kg
+ *   - P1-4 固废处置能耗与成本：process.solidsDisposalEnergy(kWh/kg 干固) + opex.solidsDisposalPrice(元/kg)，
+ *     污泥脱水外运比能耗计入总能耗、处置单价计入 OPEX
+ *   - P1-5 泵达西–魏斯巴赫阻力法：pump 加 pipeDiameter/pipeLength/pipeRoughness/staticLift/minorLossK，
+ *     扬程 = 提升高度 + 沿程(hf) + 局部(hm)，功率 = ρgQH/η（Swamee-Jain 摩阻系数）
+ *   - P1-6 饲料蛋白消化率联动排泄：species.proteinDigestibility + process.nExcretionRef，
+ *     nExcretionFraction = 基准×(ref/dig)，消化率↑→可排泄氮比例↓（高蛋白低消化率不再被低估）
+ *
  * v1.5.2 (2026 热负荷与显示修正)：
  *   - 围护热负荷几何修正：旧实现误用「建筑面积(地板)」作围护表面积，低估约 1.35×；
  *     改为 envArea = 建筑面积 + 4×√建筑面积×层高(屋面+外墙)，围护传热量更真实
@@ -71,11 +82,11 @@
  */
 window.RAS_KNOWLEDGE = {
   meta: {
-    version: "1.6.0",
+    version: "1.8.0",
     title: "RAS 工艺设计知识库",
     dataAsOf: "2025–2026",
     confidence: "中",
-    note: "v1.1.0 校准经济性/价格；v1.2.0 校准工程模型系数；v1.3.0 重构投资估算(规模经济+间接费+UV/脱气塔)；v1.4.0 HVAC 气候化(地区气温驱动温控)；v1.4.1 间接费收紧至直接费25%上限、取消营运资金。v1.5.0 模型增强：P0 MBBR 硝化速率加温度修正(theta)+TAN 改用饲料蛋白；P1 HVAC 补蒸发潜热/寻优纳入温度与地区/人工随规模/反硝化NO3模型/价格加asOf与置信度；P2 CAPEX 固定+可变分段/地区成本·电价·人工指数/引擎魔法数收回知识库/设备能耗加工况修正/知识库模块化与引用绑定。v1.6.0 P0 质量守恒闭环：两段硝化(AOB/NOB 分速率)+溶氧闭环(供氧覆盖鱼代谢与硝化)+CO₂脱气闭环+补水背景浓度；反硝化反应器贯通 PFD/PID/BOM/计算书。用户可自定义数据(售价/密度/FCR/气温取值/土地费/单价覆盖项)不在此轮优化。",
+    note: "v1.8.0 P2 精细化：不确定性区间+蒙特卡洛(P10/P50/P90)/品种库扩展(海淡水salinity驱动材质·溶氧·水体密度)/CAPEX分段规模经济/维护费分设备寿命/能耗分项展示。v1.1.0 校准经济性/价格；v1.2.0 校准工程模型系数；v1.3.0 重构投资估算(规模经济+间接费+UV/脱气塔)；v1.4.0 HVAC 气候化(地区气温驱动温控)；v1.4.1 间接费收紧至直接费25%上限、取消营运资金。v1.5.0 模型增强：P0 MBBR 硝化速率加温度修正(theta)+TAN 改用饲料蛋白；P1 HVAC 补蒸发潜热/寻优纳入温度与地区/人工随规模/反硝化NO3模型/价格加asOf与置信度；P2 CAPEX 固定+可变分段/地区成本·电价·人工指数/引擎魔法数收回知识库/设备能耗加工况修正/知识库模块化与引用绑定。v1.6.0 P0 质量守恒闭环：两段硝化(AOB/NOB 分速率)+溶氧闭环(供氧覆盖鱼代谢与硝化)+CO₂脱气闭环+补水背景浓度；反硝化反应器贯通 PFD/PID/BOM/计算书。v1.7.0 P1 模型保真度：季节性双工况 HVAC(bin method 月均温积分，年能耗更准)/水足迹闭合(蒸发+排污，校验补水覆盖蒸发)/固废处置能耗与成本(脱水外运比能耗+处置单价)/泵达西–魏斯巴赫阻力法(扬程=提升+沿程+局部)/饲料蛋白消化率联动排泄(消化率↑→可排泄氮比例↓)。用户可自定义数据(售价/密度/FCR/气温取值/土地费/单价覆盖项)不在此轮优化。",
     sourceMap: {
       "MBBR 硝化速率": "d'Aquin & Timmons (2012); 渔业机械仪器研究所 (2025)",
       "HVAC 能耗(含蒸发潜热)": "Aydın et al. (2026); 工程经验",
@@ -132,9 +143,15 @@ window.RAS_KNOWLEDGE = {
       dose: 30,          // mJ/cm²
     },
     pump: {
-      head: 4.0,         // m 扬程（RAS 系统水头损失 3–6m）
+      head: 4.0,         // m 扬程（传统设定值；v1.7.0 起优先由达西–魏斯巴赫阻力法计算，此值仅作兜底）
       eff: 0.70,         // 水泵效率
       loadFactor: 0.90,  // 部分负荷效率折扣（实际轴功率 = 设计功率/loadFactor）
+      // P1-5 达西–魏斯巴赫阻力法参数（v1.7.0）
+      pipeDiameter: 0.35,   // m 主管径（按设计流量选，流速 ~1.5 m/s）
+      pipeLength: 150,      // m 等效管长（RAS 环路总长，含来回）
+      pipeRoughness: 1.5e-6,// m 管壁当量粗糙度（HDPE/UPVC 光滑管）
+      staticLift: 2.8,     // m 静提升高度（泵→池体落差）
+      minorLossK: 5.0,     // 局部阻力系数之和（弯头/阀门/进出口）
     },
     heat: {
       copHeat: 4.0,      // 热泵制热 COP（现代热泵 >4.0，aquaculture 制热目标）
@@ -154,8 +171,10 @@ window.RAS_KNOWLEDGE = {
   // 工艺过程常数（质量平衡，v1.2.0 集中管理并标注文献范围）
   process: {
     tanPerFeed: 0.037,   // kg TAN / kg 饲料（[已弃用] 旧常数；v1.5.0 起 TAN 由 feedProtein×0.16×nExcretionFraction 推导，此值仅作兜底）
-    nExcretionFraction: 0.50, // 饲料氮中排泄为溶解无机氮(TAN)的比例（其余留存鱼体或颗粒态）；推导 TAN = feedProtein×0.16×本值
+    nExcretionFraction: 0.50, // 饲料氮中排泄为溶解无机氮(TAN)的比例（其余留存鱼体或颗粒态）；推导 TAN = feedProtein×0.16×本值；v1.7.0 起再乘 (nExcretionRef/蛋白消化率)
+    nExcretionRef: 0.85, // 参考蛋白消化率：消化率=本值时 nExcretionFraction 取基准值（消化率↑→实际排泄比例↓）
     no3Factor: 4.43,     // 质量换算：1 份 N 硝化生成 4.43 份 NO3（=62/14，NO3/N）
+    solidsDisposalEnergy: 0.08, // kWh/kg 干固 — 污泥脱水+外运处置比能耗（脱水~0.05 + 运输~0.03，集约化 RAS 典型）
     tssPerFeed: 0.28,    // kg TSS / kg 饲料（固废产率；文献 25–35%，取 28%）
     co2Ratio: 0.9,       // CO2 产量 / 耗氧（呼吸商 RQ≈0.9）
     nitrifO2: 4.57,      // kg O2 / kg TAN（硝化耗氧化学计量 NH4+→NO3-）
@@ -163,6 +182,20 @@ window.RAS_KNOWLEDGE = {
     sysWaterFactor: 1.15,// 系统总水量 / 养殖池有效水量（回流管路+滤池保有量）
     denitRemoval: 0.85,  // 反硝化脱氮率（NO3-N 去除比例；现代 RAS 配生物脱氮典型 0.8–0.9）
     denitRate: 0.25,     // kg NO3-N / m³(反应器) / 天 — 异养反硝化容积负荷（设计值）
+  },
+
+  // 参数不确定性区间（v1.8.0 P2-1）：供蒙特卡洛采样，结果从单点升级为区间
+  // 仅含"模型系数"（非用户可自定义的价格/输入）。采样用三角分布，mode=exp 居中
+  uncertainty: {
+    params: [
+      { key: "biofilter.rate",      path: "equipment.biofilter.rate",      low: 0.45, exp: 0.60, high: 0.90, label: "MBBR 硝化速率" },
+      { key: "biofilter.nitrTheta", path: "equipment.biofilter.nitrTheta", low: 1.04, exp: 1.08, high: 1.12, label: "硝化温度系数 θ" },
+      { key: "heat.copHeat",        path: "equipment.heat.copHeat",        low: 3.2,  exp: 4.0,  high: 5.0,  label: "热泵制热 COP" },
+      { key: "heat.copCool",        path: "equipment.heat.copCool",        low: 2.8,  exp: 3.5,  high: 4.5,  label: "制冷 COP" },
+      { key: "heat.evapRate",       path: "equipment.heat.evapRate",       low: 0.08, exp: 0.12, high: 0.18, label: "水面蒸发率" },
+      { key: "process.denitRate",   path: "process.denitRate",             low: 0.18, exp: 0.25, high: 0.35, label: "反硝化容积负荷" },
+      { key: "defaults.makeupRate", path: "defaults.makeupRate",           low: 0.005, exp: 0.0075, high: 0.015, label: "补水率", inputKey: "makeupRate" },
+    ],
   },
 
   // 建筑占地模型（v1.2.0）
@@ -189,14 +222,14 @@ window.RAS_KNOWLEDGE = {
     defaultAmbient: 15,  // °C 默认全年平均气温（温带，未指定地区时）
     cpWater: 4186,       // J/(kg·K) 水比热容
     regions: {
-      harbin:    { name: "哈尔滨", ambient: 4,  costIndex: 0.95, powerIndex: 1.00, laborIndex: 0.85 },
-      beijing:   { name: "北京",   ambient: 12, costIndex: 1.15, powerIndex: 1.05, laborIndex: 1.25 },
-      shanghai:  { name: "上海",   ambient: 17, costIndex: 1.12, powerIndex: 1.02, laborIndex: 1.20 },
-      guangzhou: { name: "广州",   ambient: 22, costIndex: 1.08, powerIndex: 1.00, laborIndex: 1.05 },
-      sanya:     { name: "三亚",   ambient: 26, costIndex: 1.10, powerIndex: 1.08, laborIndex: 0.95 },
-      kunming:   { name: "昆明",   ambient: 15, costIndex: 0.95, powerIndex: 0.95, laborIndex: 0.85 },
-      wuhan:     { name: "武汉",   ambient: 17, costIndex: 1.00, powerIndex: 1.00, laborIndex: 1.00 },
-      chengdu:   { name: "成都",   ambient: 16, costIndex: 0.98, powerIndex: 0.98, laborIndex: 0.95 },
+      harbin:    { name: "哈尔滨", ambient: 4,  amp: 19, costIndex: 0.95, powerIndex: 1.00, laborIndex: 0.85 },
+      beijing:   { name: "北京",   ambient: 12, amp: 13, costIndex: 1.15, powerIndex: 1.05, laborIndex: 1.25 },
+      shanghai:  { name: "上海",   ambient: 17, amp: 11, costIndex: 1.12, powerIndex: 1.02, laborIndex: 1.20 },
+      guangzhou: { name: "广州",   ambient: 22, amp: 7,  costIndex: 1.08, powerIndex: 1.00, laborIndex: 1.05 },
+      sanya:     { name: "三亚",   ambient: 26, amp: 3,  costIndex: 1.10, powerIndex: 1.08, laborIndex: 0.95 },
+      kunming:   { name: "昆明",   ambient: 15, amp: 8,  costIndex: 0.95, powerIndex: 0.95, laborIndex: 0.85 },
+      wuhan:     { name: "武汉",   ambient: 17, amp: 11, costIndex: 1.00, powerIndex: 1.00, laborIndex: 1.00 },
+      chengdu:   { name: "成都",   ambient: 16, amp: 7,  costIndex: 0.98, powerIndex: 0.98, laborIndex: 0.95 },
     },
   },
 
@@ -212,12 +245,17 @@ window.RAS_KNOWLEDGE = {
       name: "加州鲈鱼",
       latin: "Micropterus salmoides",
       group: "温水肉食性",
+      salinity: "fresh",
+      waterDensity: 1000,
+      o2SatFactor: 1.0,
+      matlFactor: 1.0,
       designTemp: 25,
       tempRange: [20, 28],
       fcr: 1.30,           // 饲料系数
       feedPrice: 12,       // 元/kg 饲料（肉食性,45%蛋白,2025）
       fingerlingPrice: 0.8, // 元/尾 苗种（500g 级鱼种,2025）
       feedProtein: 0.45,   // 饲料蛋白含量
+      proteinDigestibility: 0.85, // 蛋白消化率（v1.7.0 P1-6；=参考值0.85时排泄比例取基准）
       harvestSize: 500,    // g 出塘规格
       stockingDensity: 60, // kg/m³ 设计放养密度（集约化；实测可达 78）
       cyclesPerYear: 1.6,  // 年有效养殖茬次（分级连续出鱼）
@@ -232,12 +270,17 @@ window.RAS_KNOWLEDGE = {
       name: "大西洋鲑",
       latin: "Salmo salar",
       group: "冷水肉食性",
+      salinity: "fresh",
+      waterDensity: 1000,
+      o2SatFactor: 1.0,
+      matlFactor: 1.0,
       designTemp: 14,
       tempRange: [10, 16],
       fcr: 1.15,
       feedPrice: 15,       // 元/kg 饲料（高蛋白海洋性,2025）
       fingerlingPrice: 4,   // 元/尾 苗种（smolt 级,2025）
       feedProtein: 0.44,
+      proteinDigestibility: 0.90, // 高蛋白海洋饲料消化率高
       harvestSize: 4000,
       stockingDensity: 40, // kg/m³ 设计放养密度（福利建议 60–80；中国实测上限 ~30，取折中 40）
       cyclesPerYear: 1.3,
@@ -252,12 +295,17 @@ window.RAS_KNOWLEDGE = {
       name: "虹鳟",
       latin: "Oncorhynchus mykiss",
       group: "冷水肉食性",
+      salinity: "fresh",
+      waterDensity: 1000,
+      o2SatFactor: 1.0,
+      matlFactor: 1.0,
       designTemp: 15,
       tempRange: [10, 17],
       fcr: 1.20,
       feedPrice: 13,       // 元/kg 饲料（肉食性,2025）
       fingerlingPrice: 1,   // 元/尾 苗种,2025
       feedProtein: 0.43,
+      proteinDigestibility: 0.88,
       harvestSize: 600,
       stockingDensity: 40,
       cyclesPerYear: 1.5,
@@ -272,12 +320,17 @@ window.RAS_KNOWLEDGE = {
       name: "大菱鲆",
       latin: "Scophthalmus maximus",
       group: "低温肉食性(海水/半咸水)",
+      salinity: "marine",
+      waterDensity: 1020,
+      o2SatFactor: 0.85,
+      matlFactor: 1.08,
       designTemp: 18,
       tempRange: [14, 21],
       fcr: 1.25,
       feedPrice: 15,       // 元/kg 饲料（高蛋白,2025）
       fingerlingPrice: 2,   // 元/尾 苗种,2025
       feedProtein: 0.48,
+      proteinDigestibility: 0.87,
       harvestSize: 800,
       stockingDensity: 45,
       cyclesPerYear: 1.4,
@@ -292,12 +345,17 @@ window.RAS_KNOWLEDGE = {
       name: "罗非鱼",
       latin: "Oreochromis niloticus",
       group: "温水杂食性",
+      salinity: "fresh",
+      waterDensity: 1000,
+      o2SatFactor: 1.0,
+      matlFactor: 1.0,
       designTemp: 28,
       tempRange: [25, 32],
       fcr: 1.50,
       feedPrice: 8,        // 元/kg 饲料（杂食性,32%蛋白,2025 较低）
       fingerlingPrice: 0.3, // 元/尾 苗种（鱼苗便宜,2025）
       feedProtein: 0.32,
+      proteinDigestibility: 0.82, // 杂食性、植物蛋白占比高、消化率偏低→排泄比例略升
       harvestSize: 600,
       stockingDensity: 80, // kg/m³（上调至 80；文献 80–120，罗非耐高密度）
       cyclesPerYear: 2.0,
@@ -312,12 +370,17 @@ window.RAS_KNOWLEDGE = {
       name: "南美白对虾",
       latin: "Litopenaeus vannamei",
       group: "温水甲壳类",
+      salinity: "marine",
+      waterDensity: 1025,
+      o2SatFactor: 0.82,
+      matlFactor: 1.10,
       designTemp: 28,
       tempRange: [26, 31],
       fcr: 1.40,
       feedPrice: 11,       // 元/kg 饲料（38%蛋白,2025）
       fingerlingPrice: 0.02,// 元/尾 苗种（PL 虾苗极廉,2025）
       feedProtein: 0.38,
+      proteinDigestibility: 0.85,
       harvestSize: 20,
       stockingDensity: 25,    // kg/m³ 生物量密度（现代虾类 RAS 集约化 20–50，取 25）
       cyclesPerYear: 3.0,
@@ -326,6 +389,132 @@ window.RAS_KNOWLEDGE = {
       o2PerFeed: 0.9,
       note: "甲壳类对 NO2 极敏感；需分级、强增氧与生物絮团(BFT)可选工艺。",
       marketPrice: 46,    // 元/kg 出厂参考价（2025 批发 44–60）
+    },
+    // —— P2-2 品种库扩展（海/淡/半咸水分机制，salinity 驱动材质·溶氧·水体密度）——
+    catfish: {
+      key: "catfish",
+      name: "斑点叉尾鮰",
+      latin: "Ictalurus punctatus",
+      group: "温水杂食性",
+      salinity: "fresh",
+      designTemp: 26,
+      tempRange: [22, 30],
+      fcr: 1.50,
+      feedPrice: 8,
+      fingerlingPrice: 0.4,
+      feedProtein: 0.32,
+      proteinDigestibility: 0.83,
+      harvestSize: 1000,
+      stockingDensity: 70,
+      cyclesPerYear: 1.8,
+      doMin: 4.0,
+      tanMax: 1.0,
+      o2PerFeed: 0.9,
+      waterDensity: 1000,
+      o2SatFactor: 1.0,
+      matlFactor: 1.0,
+      note: "淡水杂食性，耐低氧耐高密度，生长快；单位体积产量高。",
+      marketPrice: 16,
+    },
+    eel: {
+      key: "eel",
+      name: "鳗鱼",
+      latin: "Anguilla japonica",
+      group: "温水肉食性(降海洄游)",
+      salinity: "brackish",
+      designTemp: 25,
+      tempRange: [22, 28],
+      fcr: 1.40,
+      feedPrice: 18,
+      fingerlingPrice: 1.5,
+      feedProtein: 0.45,
+      proteinDigestibility: 0.88,
+      harvestSize: 300,
+      stockingDensity: 30,
+      cyclesPerYear: 1.2,
+      doMin: 5.0,
+      tanMax: 1.0,
+      o2PerFeed: 1.0,
+      waterDensity: 1010,
+      o2SatFactor: 0.95,
+      matlFactor: 1.05,
+      note: "高价值肉食性，对溶氧与水温敏感；半咸水养殖需防盐蚀。",
+      marketPrice: 70,
+    },
+    grouper: {
+      key: "grouper",
+      name: "石斑鱼",
+      latin: "Epinephelus coioides",
+      group: "海水肉食性",
+      salinity: "marine",
+      designTemp: 26,
+      tempRange: [22, 30],
+      fcr: 1.40,
+      feedPrice: 17,
+      fingerlingPrice: 3,
+      feedProtein: 0.48,
+      proteinDigestibility: 0.87,
+      harvestSize: 600,
+      stockingDensity: 35,
+      cyclesPerYear: 1.3,
+      doMin: 5.5,
+      tanMax: 0.9,
+      o2PerFeed: 1.0,
+      waterDensity: 1025,
+      o2SatFactor: 0.82,
+      matlFactor: 1.10,
+      note: "海水高值品种，需耐腐蚀材质(316L/HDPE)与稳定盐度；能耗以增氧与温控为主。",
+      marketPrice: 80,
+    },
+    yellowCroaker: {
+      key: "yellowCroaker",
+      name: "大黄鱼",
+      latin: "Larimichthys crocea",
+      group: "海水肉食性",
+      salinity: "marine",
+      designTemp: 22,
+      tempRange: [18, 26],
+      fcr: 1.60,
+      feedPrice: 13,
+      fingerlingPrice: 1,
+      feedProtein: 0.42,
+      proteinDigestibility: 0.85,
+      harvestSize: 400,
+      stockingDensity: 30,
+      cyclesPerYear: 1.4,
+      doMin: 5.0,
+      tanMax: 1.0,
+      o2PerFeed: 0.95,
+      waterDensity: 1025,
+      o2SatFactor: 0.82,
+      matlFactor: 1.10,
+      note: "海水品种，工厂化需控温与耐腐蚀材质。",
+      marketPrice: 40,
+    },
+    tongueSole: {
+      key: "tongueSole",
+      name: "半滑舌鳎",
+      latin: "Cynoglossus semilaevis",
+      group: "海水/半咸水肉食性",
+      salinity: "marine",
+      designTemp: 20,
+      tempRange: [16, 24],
+      fcr: 1.30,
+      feedPrice: 16,
+      fingerlingPrice: 2,
+      feedProtein: 0.46,
+      proteinDigestibility: 0.86,
+      harvestSize: 500,
+      stockingDensity: 40,
+      cyclesPerYear: 1.4,
+      doMin: 5.5,
+      tanMax: 0.9,
+      o2PerFeed: 0.9,
+      waterDensity: 1020,
+      o2SatFactor: 0.85,
+      matlFactor: 1.08,
+      note: "低温海水/半咸水品种，平面池养殖，需稳定盐度与水质。",
+      marketPrice: 60,
     },
   },
 
@@ -350,7 +539,17 @@ window.RAS_KNOWLEDGE = {
     //   financialmodelslab 间接成本结构、环江项目其他费/预备费占比 校准
     capexModel: {
       refAnnualTons: 300,     // 参考规模(t/年)：基准 per-m³ 对应该规模；<300 单位投资更高、>300 更省
-      scaleExponent: 0.72,    // 总投资 ∝ 年产量^0.72（六 tenths 法则，规模经济；exp<1 体现亚线性）
+      scaleExponent: 0.72,    // 旧单一指数（兜底，仅当 scaleCurve 缺失时使用）
+      // P2-4 分段规模经济曲线（v1.8.0）：小规单位投资高(指数低→factor 更大)、大规趋平(指数高→factor 收敛)
+      //   factor = (refAnnualTons/annT)^(1-exp)，再夹在 [scaleCeil, scaleFloor] 之间（防极端规模失真）
+      scaleCurve: [
+        { upto: 30,   exp: 0.55 },  // 极小规(<30t)：规模效应弱，单位投资最高
+        { upto: 300,  exp: 0.72 },  // 中小规(30–300t)：与设计基准一致
+        { upto: 1000, exp: 0.82 },  // 大规(300–1000t)：更省
+        { upto: 1e9,  exp: 0.88 },  // 超大规(>1000t)：渐近收敛
+      ],
+      scaleFloor: 2.5,       // scaleFactor 上限（单位投资最多比参考规模高 2.5×）
+      scaleCeil: 0.55,       // scaleFactor 下限（单位投资最多比参考规模低 45%）
       indirect: {             // 间接费各项（按直接费比例），其合计上限为 indirectCap
         epcm: 0.12,           // 设计/采购/施工管理(EPCM) = 直接费×12%
         commissioning: 0.04,  // 调试与培训 = 直接费×4%
@@ -362,16 +561,16 @@ window.RAS_KNOWLEDGE = {
     },
     // CAPEX 各投资项一级分解：子单价之和 == 对应分类额（已含规模因子缩放，详见引擎）
     capexDetail: {
-      tanks:    { qty: "m3", split: 0.95, subs: [["池体(PP/FRP/混凝土)", 240], ["支架与基础", 60], ["进出水与集排污", 60], ["池内曝气推流", 40]] },
-      biofilter:{ qty: "m3", split: 0.90, subs: [["反应器壳体", 140], ["悬浮填料(K1)", 100], ["曝气系统", 60], ["进出水与回流", 20]] },
-      solids:   { qty: "m3", split: 0.85, subs: [["转鼓微滤机(60µm)", 85], ["污泥浓缩脱水", 35], ["反洗水回收", 20]] },
-      oxygen:   { qty: "m3", split: 0.85, subs: [["制氧/液氧站", 190], ["氧气锥(LHO)", 90], ["管路与监测", 40]] },
-      degasser: { qty: "m3", split: 0.70, subs: [["脱气填料塔体", 70], ["低压脱气风机", 30], ["管路与监测", 20]] },
-      uv:       { qty: "m3", split: 0.60, subs: [["UV 杀菌机组(30mJ/cm²)", 60], ["石英套管/模块", 20], ["管路与监测", 10]] },
-      pumps:    { qty: "m3", split: 0.90, subs: [["循环水泵(一用一备)", 105], ["管路阀门管件", 45], ["流量计控制阀", 20]] },
-      controls: { qty: "m3", split: 0.40, subs: [["PLC/SCADA 自控", 90], ["在线监测(DO/pH/TAN)", 110], ["电气布线", 40]] },
-      building: { qty: "m2", split: 0.97, subs: [["主体结构", 450], ["围护保温屋顶", 280], ["地坪防渗排水", 120], ["照明消防辅助", 50]] },
-      hvac:     { qty: "m3", split: 0.75, subs: [["热泵/制冷机组", 210], ["换热器管路", 80], ["保温与控制", 50]] },
+      tanks:    { qty: "m3", split: 0.95, maintRate: 0.015, lifeYears: 25, subs: [["池体(PP/FRP/混凝土)", 240], ["支架与基础", 60], ["进出水与集排污", 60], ["池内曝气推流", 40]] },
+      biofilter:{ qty: "m3", split: 0.90, maintRate: 0.025, lifeYears: 15, subs: [["反应器壳体", 140], ["悬浮填料(K1)", 100], ["曝气系统", 60], ["进出水与回流", 20]] },
+      solids:   { qty: "m3", split: 0.85, maintRate: 0.040, lifeYears: 12, subs: [["转鼓微滤机(60µm)", 85], ["污泥浓缩脱水", 35], ["反洗水回收", 20]] },
+      oxygen:   { qty: "m3", split: 0.85, maintRate: 0.060, lifeYears: 12, subs: [["制氧/液氧站", 190], ["氧气锥(LHO)", 90], ["管路与监测", 40]] },
+      degasser: { qty: "m3", split: 0.70, maintRate: 0.030, lifeYears: 15, subs: [["脱气填料塔体", 70], ["低压脱气风机", 30], ["管路与监测", 20]] },
+      uv:       { qty: "m3", split: 0.60, maintRate: 0.025, lifeYears: 10, subs: [["UV 杀菌机组(30mJ/cm²)", 60], ["石英套管/模块", 20], ["管路与监测", 10]] },
+      pumps:    { qty: "m3", split: 0.90, maintRate: 0.070, lifeYears: 12, subs: [["循环水泵(一用一备)", 105], ["管路阀门管件", 45], ["流量计控制阀", 20]] },
+      controls: { qty: "m3", split: 0.40, maintRate: 0.020, lifeYears: 12, subs: [["PLC/SCADA 自控", 90], ["在线监测(DO/pH/TAN)", 110], ["电气布线", 40]] },
+      building: { qty: "m2", split: 0.97, maintRate: 0.010, lifeYears: 30, subs: [["主体结构", 450], ["围护保温屋顶", 280], ["地坪防渗排水", 120], ["照明消防辅助", 50]] },
+      hvac:     { qty: "m3", split: 0.75, maintRate: 0.050, lifeYears: 15, subs: [["热泵/制冷机组", 210], ["换热器管路", 80], ["保温与控制", 50]] },
     },
     opex: {
       feedPrice: 11,       // 元/kg 饲料（兜底均价,肉食性;2025 鱼粉上涨后基准;品种可覆盖）
@@ -382,6 +581,7 @@ window.RAS_KNOWLEDGE = {
       laborPerTon: 0.35,   // 每 √(吨/年) 追加人；laborCount = max(laborBase, round(laborBase + laborPerTon×√产量))
       maintenanceRate: 0.04,// 维护占直接费比例/年（v1.3.0 基数由总投资改为直接费）
       elecPrice: 0.72,     // 元/kWh（2025 工商业均价,省际 0.63–0.77）
+      solidsDisposalPrice: 0.35, // 元/kg 干固 — 污泥（脱水后）外运/堆肥/沼气的处置单价（v1.7.0 P1-4）
     },
     // 价格数据治理（v1.5.0，P1-7）：标注数据时效与置信度，供 UI 展示与审计
     priceMeta: {

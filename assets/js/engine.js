@@ -33,6 +33,10 @@ RAS.engine = (function () {
    */
   function compute(inputs) {
     const sp = K.species[inputs.speciesKey] || K.species.bass;
+    // P2-2 海水/淡水分机制：水体密度(影响泵功)、溶氧饱和度因子(海水更低)、材质溢价(海水耐腐蚀)
+    const swDensity = sp.waterDensity || 1000;
+    const o2SatFactor = sp.o2SatFactor || 1;
+    const matlFactor = sp.matlFactor || 1;
     // 地区索引（P2-9）：region 决定 CAPEX/电价/人工地区系数；ambient 优先 inputs，否则回退 region 气温
     const regionKey = inputs.region && K.climate.regions[inputs.region] ? inputs.region : null;
     const regionDef = regionKey ? K.climate.regions[regionKey] : null;
@@ -70,8 +74,11 @@ RAS.engine = (function () {
     const annualFeed = annual * fcr;
     const dailyFeedAvg = annualFeed / 365;
     const dailyFeedPeak = dailyFeedAvg * K.process.peakFeedFactor;
-    // P0-2：TAN 改为由饲料蛋白推导（v1.5.0）：TAN = 蛋白 × 0.16(氮含量) × 排泄比例
-    const nFrac = K.process.nExcretionFraction != null ? K.process.nExcretionFraction : 0.5;
+    // P1-6 饲料蛋白消化率联动排泄（v1.7.0）：消化率越高→可排泄氮比例越低（高蛋白低消化率不再被低估）
+    const dig = sp.proteinDigestibility != null ? sp.proteinDigestibility : 0.85;
+    const digRef = K.process.nExcretionRef != null ? K.process.nExcretionRef : 0.85;
+    const nFrac = (K.process.nExcretionFraction != null ? K.process.nExcretionFraction : 0.5) * (digRef / dig);
+    // P0-2：TAN 由饲料蛋白推导（v1.5.0）：TAN = 蛋白 × 0.16(氮含量) × 排泄比例(消化率联动)
     const tanPerFeed = (sp.feedProtein || 0.45) * 0.16 * nFrac;
     const tanDaily = annualFeed * tanPerFeed / 365;
     const tanAnnual = annualFeed * tanPerFeed;
@@ -84,6 +91,18 @@ RAS.engine = (function () {
     const makeupFlowH = makeupFlow / 24;
     const specificWaterUse = (makeupFlow * 365) / annual;   // 年补水总量 / 年产量 → m³/kg
     const waterReuse = 1 - makeup;
+
+    // P1-3 水足迹闭合（v1.7.0）：取水 = 蒸发损失 + 排污(bleed)；校验补水率是否覆盖蒸发（否则池面下降告警）
+    const evapRateP13 = (K.equipment.heat.evapRate) * (temp / (K.equipment.heat.evapTempRef || 25));
+    const waterSurfaceArea = totalTankVol / tankH;
+    const evapKgH = waterSurfaceArea * evapRateP13;                 // kg/h 开放池面蒸发量
+    const evapVolYr = evapKgH * 24 * 365 / 1000;                    // m³/年 蒸发损失
+    const makeupVolYr = makeupFlow * 365;                           // m³/年 补水量(=取水)
+    const bleedVolYr = Math.max(0, makeupVolYr - evapVolYr);        // m³/年 排污(bleed) = 补水 − 蒸发
+    const recircVolYr = recircFlow * 365;                           // m³/年 循环量
+    const evapFracOfRecirc = recircVolYr > 0 ? evapVolYr / recircVolYr : (makeup + 1); // 蒸发占循环量比例
+    const evapCovered = evapFracOfRecirc <= makeup;                 // 补水率是否覆盖蒸发(否则池面下降)
+    const waterFootprint = specificWaterUse;                       // m³/kg（=取水/产量）
 
     // —— 4. 生物滤池 (MBBR) ——
     const bf = K.equipment.biofilter;
@@ -118,12 +137,34 @@ RAS.engine = (function () {
     const tssDaily = dailyFeedAvg * tssPerFeed;
     const drumUnits = Math.max(1, Math.ceil(recircFlowH / 300));
     const drumEachFlow = recircFlowH / drumUnits;
+    // P1-4 固废处置能耗与成本（v1.7.0）：脱水/外运/堆肥比能耗计入总能耗，处置单价计入 OPEX
+    const solidsDisposalEnergy = K.process.solidsDisposalEnergy != null ? K.process.solidsDisposalEnergy : 0; // kWh/kg 干固
+    const solidsDisposalPrice = K.economics.opex.solidsDisposalPrice != null ? K.economics.opex.solidsDisposalPrice : 0; // 元/kg 干固
+    const solidsDailyKwh = tssDaily * solidsDisposalEnergy;   // kWh/天
+    const solidsPower = solidsDailyKwh / 24;                 // kW（平均）
+    const solidsAnnualKwh = solidsDailyKwh * 365;            // kWh/年
+    const opexSolids = tssDaily * 365 * solidsDisposalPrice; // 元/年
 
     // —— 7. 能耗估算（比能耗系数法，物理可解释；HVAC 随地区气温变化）——
     const pu = K.equipment.pump;
     const pumpQ = recircFlowH / 3600;                                       // m³/s
-    // P2-11：水泵轴功率按部分负荷效率折扣（实际 > 设计）
-    const pumpPower = (1000 * 9.81 * pumpQ * pu.head) / (pu.eff * 1000) / (pu.loadFactor != null ? pu.loadFactor : 1);
+    // P1-5 泵实际扬程/管路阻力法（达西–魏斯巴赫，v1.7.0）：H = 提升高度 + 沿程(hf) + 局部(hm)
+    const g9 = 9.81, nuW = 1.0e-6;                                          // g, 水运动粘度
+    const pD = pu.pipeDiameter != null ? pu.pipeDiameter : 0.35;           // m 管径
+    const pL = pu.pipeLength != null ? pu.pipeLength : 150;                // m 等效管长
+    const pEps = pu.pipeRoughness != null ? pu.pipeRoughness : 1.5e-6;    // m 管壁粗糙度
+    const pK = pu.minorLossK != null ? pu.minorLossK : 5;                  // 局部阻力系数和
+    const pA = Math.PI * pD * pD / 4;                                       // m² 管截面积
+    const pV = pumpQ / pA;                                                  // m/s 管内流速
+    const pRe = pV * pD / nuW;                                              // 雷诺数
+    const pF = 0.25 / Math.pow(Math.log10(pEps / (3.74 * pD) + 5.74 / Math.pow(pRe, 0.9)), 2); // Swamee–Jain 摩阻系数
+    const v2_2g = pV * pV / (2 * g9);
+    const hf = pF * (pL / pD) * v2_2g;                                      // m 沿程损失
+    const hm = pK * v2_2g;                                                  // m 局部损失
+    const pumpHead = (pu.staticLift != null ? pu.staticLift : 2.8) + hf + hm; // m 总扬程
+    const pumpEff = pu.eff != null ? pu.eff : 0.70;
+    const pumpLoad = pu.loadFactor != null ? pu.loadFactor : 1;
+    const pumpPower = (swDensity * g9 * pumpQ * pumpHead) / (pumpEff * 1000) / pumpLoad; // kW（ρgQH/η，ρ 随海水/淡水变化）
     // P2-11：制氧系统比能耗按部分负荷效率折扣
     const oxyPower = o2Supply * ox.specificEnergy / (ox.loadFactor != null ? ox.loadFactor : 1);
     const fanPower = co2Hour * deg.fanEnergy;                               // kW（kg/h CO2 × kWh/kg CO2）
@@ -132,35 +173,57 @@ RAS.engine = (function () {
     const heat = K.equipment.heat, cl = K.climate;
     const amb = (inputs.ambientTemp != null && inputs.ambientTemp !== "" && !isNaN(Number(inputs.ambientTemp)))
       ? Number(inputs.ambientTemp) : (regionDef && regionDef.ambient != null ? regionDef.ambient : cl.defaultAmbient);
-    const lift = temp - amb;                                                // >0 需加热；<0 需制冷
     const bldArea = totalTankVol * K.building.areaPerM3;                    // m² 车间地板面积（第8节同）
     // 围护传热面积 = 屋面 + 四周外墙（按近似方形占地推周长；地板贴地按地耦处理，不计入室内外温差传热）
-    // 旧实现误用 bldArea（地板面积）当作围护表面积，使围护得热被低估约 1.3–1.8 倍
     const bldFootSide = Math.sqrt(bldArea);
     const bldWallArea = 4 * bldFootSide * K.building.height;
     const envArea = bldArea + bldWallArea;                                  // m² 实际围护表面积（屋顶+外墙）
     const UA = envArea * heat.uEnvelope;                                    // W/℃ 围护传热系数
-    const envelopeW = UA * lift;                                            // 围护得失热(带符号)
     const makeupKgH = makeupFlowH * 1000;                                   // kg/h 补水质量流量（makeupFlowH 为 m³/h）
-    const makeupW = makeupKgH * cl.cpWater * lift / 3600;                   // 补水从 amb 加热/冷却到设定温(W)
     const internalW = pumpPower * 1000 * (heat.pumpLossFrac != null ? heat.pumpLossFrac : 0.12) + totalTankVol * heat.internalLoadW; // 室内得热(泵损+照明/代谢)
-    // P1-3：水面蒸发潜热（v1.5.0）——开放池面蒸发带走汽化潜热，全年均需 HVAC 处理（制热需补偿、制冷等于免费冷源+需除湿）
-    const evapRate = heat.evapRate * (temp / (heat.evapTempRef || 25));
-    const waterSurface = totalTankVol / tankH;
-    const evapKgH = waterSurface * evapRate;
-    const evapW = evapKgH * (heat.evapLatent || 2.26e6) / 3600;
-    const rawLoadW = envelopeW + makeupW;                                   // 净热需求(带符号，+需热/−需冷)
-    let hvacPower, hvacMode, thermalLoadW;
-    if (rawLoadW >= 0) {
-      thermalLoadW = Math.max(0, rawLoadW - internalW) + evapW;             // 制热：内部得热抵消，蒸发需补偿
-      hvacPower = thermalLoadW / 1000 / heat.copHeat;
-      hvacMode = "heat";
+    const evapW = evapKgH * (heat.evapLatent || 2.44e6) / 3600;             // W 蒸发潜热负荷（复用第3节水足迹的 evapKgH）
+    // 单点设计工况（年均气温 amb）：用于参考显示
+    const liftSp = temp - amb;
+    const envWsp = UA * liftSp;
+    const makeupWsp = makeupKgH * cl.cpWater * liftSp / 3600;
+    const rawSp = envWsp + makeupWsp;
+    let hvacPowerDesign, thermalLoadW;
+    if (rawSp >= 0) {
+      thermalLoadW = Math.max(0, rawSp - internalW) + evapW;               // 制热：内部得热抵消，蒸发需补偿
+      hvacPowerDesign = thermalLoadW / 1000 / heat.copHeat;
     } else {
-      thermalLoadW = -rawLoadW + internalW + evapW;                         // 制冷：内部得热叠加，蒸发需除湿
-      hvacPower = thermalLoadW / 1000 / heat.copCool;
-      hvacMode = "cool";
+      thermalLoadW = -rawSp + internalW + evapW;                           // 制冷：内部得热叠加，蒸发需除湿
+      hvacPowerDesign = thermalLoadW / 1000 / heat.copCool;
     }
-    const totalPower = pumpPower + oxyPower + fanPower + hvacPower + miscPower;
+    // P1-1 季节性双工况 bin method（v1.7.0）：按 12 月均温序列积分 HVAC 年能耗（冬季制热×copHeat + 夏季制冷×copCool，含蒸发潜热）
+    const amp = (regionDef && regionDef.amp != null) ? regionDef.amp : 0;   // 无地区时 amp=0 → 退化为单点
+    const hoursPerMonth = [744,672,744,720,744,720,744,744,720,744,720,744];
+    let hvacHeatingKwh = 0, hvacCoolingKwh = 0;
+    const hvacMonths = [];
+    for (let m = 0; m < 12; m++) {
+      const Tm = amb + amp * Math.cos(2 * Math.PI * (m - 6) / 12);          // m=6 即 7 月(最暖)
+      const liftM = temp - Tm;
+      const envWm = UA * liftM;
+      const makeupWm = makeupKgH * cl.cpWater * liftM / 3600;
+      const rawM = envWm + makeupWm;
+      let pM, modeM;
+      if (rawM >= 0) {
+        const loadWm = Math.max(0, rawM - internalW) + evapW;
+        pM = loadWm / 1000 / heat.copHeat;
+        hvacHeatingKwh += pM * hoursPerMonth[m];
+        modeM = "heat";
+      } else {
+        const loadWm = -rawM + internalW + evapW;
+        pM = loadWm / 1000 / heat.copCool;
+        hvacCoolingKwh += pM * hoursPerMonth[m];
+        modeM = "cool";
+      }
+      hvacMonths.push({ m: m + 1, T: round(Tm, 1), mode: modeM, powerKw: round(pM, 2) });
+    }
+    const hvacAnnualKwh = hvacHeatingKwh + hvacCoolingKwh;
+    const hvacPower = hvacAnnualKwh / (24 * 365);                           // 年均值 kW（驱动总能耗）
+    const hvacMode = hvacHeatingKwh >= hvacCoolingKwh ? "heat" : "cool";    // 主导工况
+    const totalPower = pumpPower + oxyPower + fanPower + hvacPower + miscPower + solidsPower;
     const energyIntensity = (totalPower * 24 * 365) / annual;
     const annualEnergy = totalPower * 24 * 365 / 1000;
 
@@ -177,21 +240,23 @@ RAS.engine = (function () {
     const cm = ec.capexModel;
 
     // 9.1 直接费（设备+土建），基准 per-m³/per-m²（参考规模下）
-    const capexTanks    = totalTankVol * cpx.tanks;
+    // P2-2：海水品种(matlFactor>1)对腐蚀敏感设备(池体/水泵/自控)加材质溢价(316L/HDPE)
+    const capexTanks    = totalTankVol * cpx.tanks * matlFactor;
     const capexBio      = totalTankVol * cpx.biofilter;
     const capexSolids   = totalTankVol * cpx.solids;
     const capexOxy      = totalTankVol * cpx.oxygen;
     const capexDegasser = totalTankVol * cpx.degasser;
     const capexUv       = totalTankVol * cpx.uv;
-    const capexPumps    = totalTankVol * cpx.pumps;
-    const capexCtl      = totalTankVol * cpx.controls;
+    const capexPumps    = totalTankVol * cpx.pumps * matlFactor;
+    const capexCtl      = totalTankVol * cpx.controls * matlFactor;
     const capexHvac     = totalTankVol * cpx.hvac;
     const capexBuilding = buildingArea * cpx.building;
 
     // 9.2 规模经济：总投资 ∝ 年产量^scaleExponent（六 tenths 法则，亚线性）
     //     < refAnnualTons 单位投资更高（小规不经济），> refAnnualTons 更省（大规规模效应）
+    //     P2-4：改分段曲线（小规单位投资高、大规趋平），并夹在 [scaleCeil, scaleFloor] 防极端规模失真
     const annT = Math.max(annual / 1000, 1);
-    const scaleFactor = Math.pow(cm.refAnnualTons / annT, 1 - cm.scaleExponent);
+    const scaleFactor = scaleFactorFor(annT, cm);
 
     const op = ec.opex;
     // P1-5：人工数随规模（v1.5.0）：laborCount = max(laborBase, base + laborPerTon×√产量)
@@ -230,14 +295,24 @@ RAS.engine = (function () {
     const capexDirect = directRows.reduce((a, c) => a + c.total, 0);
 
     // 9.4 OPEX（维护费基数改为直接费，更贴合实际维护对象）
+    // P2-5 维护费分设备寿命：各设备按自身年维护率(maintRate)与寿命(lifeYears)计维护费与重置准备，财务更细
+    let opexMaint = 0;
+    const maintBreakdown = [];
+    directRows.forEach((row) => {
+      const cd = cdet[row.key];
+      const mr = cd && cd.maintRate != null ? cd.maintRate : (op.maintenanceRate || 0.04);
+      const life = cd && cd.lifeYears != null ? cd.lifeYears : 15;
+      const ann = row.total * mr;
+      opexMaint += ann;
+      maintBreakdown.push({ key: row.key, label: row.label, annual: ann, life: life, reserve: row.total / life, capex: row.total });
+    });
     const opexFeed = annualFeed * feedPrice;
     const harvestNum = annual / (sp.harvestSize / 1000);
     const opexFinger = harvestNum * fingerPrice;
     const opexElec = annualEnergy * 1000 * elecPrice;
     const opexLabor = laborPrice * laborCount;
-    const opexMaint = capexDirect * op.maintenanceRate;
     const opexWater = makeupFlow * 365 * waterPrice;   // 生产补水费（补水流量 × 年 × 水价）
-    const opexTotal = opexFeed + opexFinger + opexElec + opexLabor + opexMaint + opexWater;
+    const opexTotal = opexFeed + opexFinger + opexElec + opexLabor + opexMaint + opexWater + opexSolids;
     const costPerKg = opexTotal / annual;
 
     // 9.5 间接费（按直接费比例，合计上限 = 直接费 × indirectCap）
@@ -294,7 +369,7 @@ RAS.engine = (function () {
     const tanHard = Math.min(wq.tanMax, sp.tanMax || wq.tanMax);
     const no2Hard = wq.no2Max;
     const doMinV = Math.min(wq.doMin, sp.doMin || wq.doMin);
-    const o2SatV = o2Sat(temp);
+    const o2SatV = o2Sat(temp) * o2SatFactor;
     const doTarget = Math.min(doMinV + 1.5, o2SatV);
     // P0-4 补水背景浓度：水源 TAN/NO₂/NO₃ 计入稳态质量平衡（用户可经 inputs.makeupBackground 覆盖）
     const bg = (inputs.makeupBackground && typeof inputs.makeupBackground === "object")
@@ -382,6 +457,12 @@ RAS.engine = (function () {
         specificWaterUse: round(specificWaterUse, 4),
         waterReuse: round(waterReuse * 100),
         turns,
+        waterFootprint: round(waterFootprint, 4),
+        evapVolYr: round(evapVolYr),
+        bleedVolYr: round(bleedVolYr),
+        makeupVolYr: round(makeupVolYr),
+        evapFrac: round(evapFracOfRecirc, 4),
+        evapCovered: evapCovered,
       },
       biofilter: {
         type: bf.type, rate: round(nitrRate, 3),
@@ -408,21 +489,41 @@ RAS.engine = (function () {
         drumType: df.type, screen: df.screen,
         tssDaily: round(tssDaily, 1),
         units: drumUnits, eachFlow: round(drumEachFlow),
+        disposalPowerKw: round(solidsPower, 3),
+        disposalAnnualKwh: round(solidsAnnualKwh),
+        disposalCostYr: round(opexSolids),
       },
       energy: {
         pumpPower: round(pumpPower, 1),
+        pumpHead: round(pumpHead, 2),
+        pumpVelocity: round(pV, 2),
+        pumpReynolds: round(pRe),
+        pumpFriction: round(pF, 4),
         oxyPower: round(oxyPower, 1),
         fanPower: round(fanPower, 1),
         hvacPower: round(hvacPower, 1),
+        hvacPowerDesign: round(hvacPowerDesign, 1),
         hvacMode: hvacMode,
+        hvacAnnualKwh: round(hvacAnnualKwh),
+        hvacHeatingKwh: round(hvacHeatingKwh),
+        hvacCoolingKwh: round(hvacCoolingKwh),
+        hvacMonths,
         thermalLoadW: round(thermalLoadW),
         evapPower: round(evapW / 1000, 2), // kW（与 hvacPower 单位一致）
         evapKgH: round(evapKgH, 1),
+        evapVolYr: round(evapVolYr),
         ambientTemp: amb,
         miscPower: round(miscPower, 1),
+        solidsPower: round(solidsPower, 3),
+        solidsAnnualKwh: round(solidsAnnualKwh),
         totalPower: round(totalPower, 1),
         energyIntensity: round(energyIntensity, 2),
         annualEnergy: round(annualEnergy, 1),
+        // P2-6 能耗分项（五类占比）：泵/氧/脱气/温控/杂项(含固废处置)
+        energySplit: {
+          pump: round(pumpPower, 1), oxy: round(oxyPower, 1), degas: round(fanPower, 1),
+          hvac: round(hvacPower, 1), misc: round(miscPower + solidsPower, 1),
+        },
       },
       building: {
         tankFootprint: round(tankFootprint),
@@ -457,6 +558,8 @@ RAS.engine = (function () {
         laborCount,
         opexMaint: round(opexMaint),
         opexWater: round(opexWater),
+        opexSolids: round(opexSolids),
+        maintBreakdown,
         opexTotal: round(opexTotal),
         costPerKg: round(costPerKg, 1),
         capexBreakdown,
@@ -483,6 +586,19 @@ RAS.engine = (function () {
     const out = [];
     for (let v = a; v <= b + 1e-9; v += step) out.push(Math.round(v * 100) / 100);
     return out;
+  }
+
+  // P2-4 分段规模经济：按产量所在区间取对应指数，factor 再夹在 [scaleCeil, scaleFloor]
+  function scaleFactorFor(annT, cm) {
+    const curve = cm.scaleCurve && cm.scaleCurve.length ? cm.scaleCurve : null;
+    let exp = cm.scaleExponent != null ? cm.scaleExponent : 0.72;
+    if (curve) {
+      for (const seg of curve) { if (annT <= seg.upto) { exp = seg.exp; break; } }
+    }
+    let sf = Math.pow(cm.refAnnualTons / annT, 1 - exp);
+    const floor = cm.scaleFloor != null ? cm.scaleFloor : 3;
+    const ceil = cm.scaleCeil != null ? cm.scaleCeil : 0.5;
+    return Math.min(Math.max(sf, ceil), floor);
   }
 
   function optimize(opts) {
@@ -667,6 +783,91 @@ RAS.engine = (function () {
     };
   }
 
+  /* ============== 不确定性 / 蒙特卡洛分析（P2-1） ==============
+   * 对 knowledge.uncertainty.params 中的模型系数做三角分布采样，
+   * 结果从"单点"升级为 P10/P50/P90 区间 + 分布直方图 + 水质可行率。
+   * 仅扰动"模型系数"（不碰用户可自定义的价格/输入）。
+   */
+  function triangular(low, mode, high) {
+    if (!(high > low)) return mode;
+    const u = Math.random();
+    const fc = (mode - low) / (high - low);
+    if (u < fc) return low + Math.sqrt(u * (high - low) * (mode - low));
+    return high - Math.sqrt((1 - u) * (high - low) * (high - mode));
+  }
+  function withOverrides(over, fn) {
+    const saved = [];
+    for (const k in over) {
+      const parts = k.split(".");
+      let obj = K;
+      for (let i = 0; i < parts.length - 1; i++) obj = obj[parts[i]];
+      const key = parts[parts.length - 1];
+      saved.push([obj, key, obj[key]]);
+      obj[key] = over[k];
+    }
+    try { return fn(); } finally { for (const s of saved) s[0][s[1]] = s[2]; }
+  }
+  function pct(arr, p) {
+    if (!arr.length) return null;
+    const s = arr.slice().sort((a, b) => a - b);
+    const idx = Math.min(s.length - 1, Math.max(0, Math.round((p / 100) * (s.length - 1))));
+    return s[idx];
+  }
+  function histogram(arr, bins) {
+    if (!arr.length) return [];
+    const min = Math.min.apply(null, arr), max = Math.max.apply(null, arr);
+    if (max - min < 1e-9) return [{ x0: min, x1: max, n: arr.length }];
+    const w = (max - min) / bins;
+    const hs = [];
+    for (let i = 0; i < bins; i++) hs.push({ x0: min + i * w, x1: min + (i + 1) * w, n: 0 });
+    arr.forEach((v) => {
+      let bi = Math.floor((v - min) / w);
+      if (bi >= bins) bi = bins - 1;
+      if (bi < 0) bi = 0;
+      hs[bi].n++;
+    });
+    return hs;
+  }
+  function monteCarlo(inputs, opts) {
+    opts = opts || {};
+    const N = opts.N && opts.N > 0 ? opts.N : 2000;
+    const params = (K.uncertainty && K.uncertainty.params) || [];
+    const base = Object.assign({}, inputs);
+    const keys = ["costPerKg", "energyIntensity", "capexTotal", "grossProfit", "paybackYears", "marginRate"];
+    const collect = {}; keys.forEach((k) => (collect[k] = []));
+    const wq = { ok: 0, warn: 0, fail: 0 };
+    for (let i = 0; i < N; i++) {
+      const over = {};
+      params.forEach((u) => {
+        const t = triangular(u.low, u.exp, u.high);
+        if (u.inputKey) base[u.inputKey] = t;          // 经 inputs 覆盖（如补水率）
+        else over[u.path] = t;                          // 经知识库覆盖（如 COP/速率）
+      });
+      const d = withOverrides(over, () => compute(base));
+      const pick = (k) => k === "energyIntensity" ? d.energy.energyIntensity
+        : k === "capexTotal" ? d.economics.capexTotal
+        : k === "grossProfit" ? d.economics.grossProfit
+        : k === "paybackYears" ? d.economics.paybackYears
+        : k === "marginRate" ? d.economics.marginRate
+        : d.economics.costPerKg;
+      keys.forEach((k) => {
+        const v = pick(k);
+        if (typeof v === "number" && isFinite(v)) collect[k].push(v);
+      });
+      wq[d.waterQuality.status] = (wq[d.waterQuality.status] || 0) + 1;
+    }
+    const out = { N, params: params.map((u) => ({ key: u.key, label: u.label })) };
+    keys.forEach((k) => {
+      out[k] = { p10: round(pct(collect[k], 10), 2), p50: round(pct(collect[k], 50), 2), p90: round(pct(collect[k], 90), 2) };
+    });
+    out.waterQuality = {
+      okPct: round((wq.ok / N) * 100), warnPct: round((wq.warn / N) * 100), failPct: round((wq.fail / N) * 100),
+    };
+    out.histCost = histogram(collect.costPerKg, 12);
+    out.histPayback = histogram(collect.paybackYears.filter((v) => v != null), 12);
+    return out;
+  }
+
   /* ============== 引擎自检（可盈利方案 golden case + 一致性断言） ==============
    * 返回 { golden, checks[], pass, summary }
    * 用途：验证引擎逻辑自洽，并提供一个"默认即可盈利"的代表方案。
@@ -745,5 +946,5 @@ RAS.engine = (function () {
     return Math.round(v).toLocaleString("zh-CN") + " 元";
   }
 
-  return { compute, optimize, sensitivity, selfCheck, round, fmt, rmb };
+  return { compute, optimize, sensitivity, monteCarlo, selfCheck, round, fmt, rmb };
 })();

@@ -115,7 +115,12 @@
     const hint = document.getElementById("speciesHint");
     const updHint = () => {
       const s = K.species[sel.value];
-      hint.textContent = `${s.group} · 适温 ${s.tempRange[0]}–${s.tempRange[1]}℃ · FCR ${s.fcr}`;
+      const salTxt = s.salinity === "marine" ? "海水" : (s.salinity === "brackish" ? "半咸水" : "淡水");
+      const mech = [];
+      if (s.matlFactor && s.matlFactor > 1) mech.push("耐蚀材质");
+      if (s.o2SatFactor && s.o2SatFactor < 1) mech.push("溶氧饱和低");
+      hint.innerHTML = `${s.group} · <b>${salTxt}</b> · 适温 ${s.tempRange[0]}–${s.tempRange[1]}℃ · FCR ${s.fcr}`
+        + (mech.length ? ` · <span style="color:#f59e0b">${mech.join("/")}</span>` : "");
     };
     sel.addEventListener("change", updHint);
     updHint();
@@ -270,6 +275,149 @@
     host.innerHTML = `<div class="tornado">${rows}</div>
       <div class="tornado-axis">基线 ${fmtV(sn.baseVal)} ${dispUnit}</div>`;
   }
+  /* 季节性温控剖面：基于 engine 的 hvacMonths（bin method 12 月双工况）渲染内联 SVG 柱图 */
+  function renderHvacSeason(en, setTemp) {
+    if (!en || !en.hvacMonths || !en.hvacMonths.length) return "";
+    const W = 620, H = 132, padX = 8, padTop = 12, padBot = 22;
+    const n = en.hvacMonths.length;
+    const maxP = Math.max.apply(null, en.hvacMonths.map((m) => m.powerKw)) || 1;
+    const gap = 6;
+    const bw = (W - padX * 2 - gap * (n - 1)) / n;
+    const baseY = H - padBot;
+    const months = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"];
+    const bars = en.hvacMonths.map((m, i) => {
+      const x = padX + i * (bw + gap);
+      const h = maxP > 0 ? (m.powerKw / maxP) * (baseY - padTop) : 0;
+      const y = baseY - h;
+      const col = m.mode === "heat" ? "#f97316" : (m.mode === "cool" ? "#38bdf8" : "#64748b");
+      const modeLab = m.mode === "heat" ? "制热" : (m.mode === "cool" ? "制冷" : "中性");
+      return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, h).toFixed(1)}" rx="2" fill="${col}" opacity="0.92">`
+        + `<title>${m.m}月 · ${modeLab} · ${m.powerKw} kW · 均温 ${m.T}℃</title></rect>`
+        + `<text x="${(x + bw / 2).toFixed(1)}" y="${H - 7}" font-size="9" fill="#94a3b8" text-anchor="middle">${months[i]}</text>`;
+    }).join("");
+    return `
+      <div style="padding:0 26px 6px">
+        <div style="font-size:13px;color:#cbd5e1;margin:6px 0 4px">季节性温控剖面（bin method · 12 月双工况）</div>
+        <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:8px 10px">
+          <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="xMidYMid meet" style="display:block">${bars}</svg>
+        </div>
+        <div class="note" style="margin-top:6px"><span class="ic">🌡️</span>
+        <div>制热 <b>${(en.hvacHeatingKwh / 1000).toFixed(0)}</b> MWh / 制冷 <b>${(en.hvacCoolingKwh / 1000).toFixed(0)}</b> MWh（年合计 <b>${(en.hvacAnnualKwh / 1000).toFixed(0)}</b> MWh），${(en.hvacMode === "cool" ? "制冷主导" : "加热主导")}；无地区时退化为单点估算。柱高∝当月平均功率，橙=制热、蓝=制冷、灰=中性（无需控温）。</div></div>
+      </div>`;
+  }
+  /* 能耗分项构成（P2-6）：五类（泵/氧/脱气/温控/杂项）环形图 + 图例 */
+  function renderEnergySplit(en) {
+    if (!en || !en.energySplit) return "";
+    const sp = [
+      { label: "泵", v: en.energySplit.pump, c: "#38bdf8" },
+      { label: "增氧", v: en.energySplit.oxy, c: "#34d399" },
+      { label: "脱气", v: en.energySplit.degas, c: "#a78bfa" },
+      { label: "温控", v: en.energySplit.hvac, c: "#f59e0b" },
+      { label: "杂项(含固废)", v: en.energySplit.misc, c: "#94a3b8" },
+    ];
+    const total = sp.reduce((a, x) => a + x.v, 0) || 1;
+    const W = 150, H = 150, cx = 75, cy = 75, r = 60, rin = 38;
+    let a0 = -Math.PI / 2;
+    const arcs = sp.map((x) => {
+      const frac = x.v / total;
+      const a1 = a0 + frac * 2 * Math.PI;
+      const large = frac > 0.5 ? 1 : 0;
+      const x0 = cx + r * Math.cos(a0), y0 = cy + r * Math.sin(a0);
+      const x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1);
+      const xi1 = cx + rin * Math.cos(a1), yi1 = cy + rin * Math.sin(a1);
+      const xi0 = cx + rin * Math.cos(a0), yi0 = cy + rin * Math.sin(a0);
+      const path = `M${x0.toFixed(1)} ${y0.toFixed(1)} A${r} ${r} 0 ${large} 1 ${x1.toFixed(1)} ${y1.toFixed(1)} L${xi1.toFixed(1)} ${yi1.toFixed(1)} A${rin} ${rin} 0 ${large} 0 ${xi0.toFixed(1)} ${yi0.toFixed(1)} Z`;
+      a0 = a1;
+      return `<path d="${path}" fill="${x.c}" opacity="0.9"><title>${x.label} ${x.v} kW (${(frac * 100).toFixed(0)}%)</title></path>`;
+    }).join("");
+    const legend = sp.map((x) => `<span style="display:inline-flex;align-items:center;gap:5px;margin-right:12px;font-size:12.5px"><span style="width:10px;height:10px;border-radius:2px;background:${x.c};display:inline-block"></span>${x.label} ${(x.v / total * 100).toFixed(0)}%</span>`).join("");
+    return `
+      <div style="padding:0 26px 6px">
+        <div style="font-size:13px;color:#cbd5e1;margin:6px 0 4px">能耗分项构成（P2-6 · 五类占比）</div>
+        <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">
+          <svg viewBox="0 0 ${W} ${H}" width="130" height="130" style="flex:0 0 auto">${arcs}
+            <text x="${cx}" y="${cy - 4}" text-anchor="middle" font-size="15" fill="#e2e8f0" font-weight="bold">${en.totalPower}</text>
+            <text x="${cx}" y="${cy + 12}" text-anchor="middle" font-size="9" fill="#94a3b8">kW 总功率</text></svg>
+          <div style="flex:1 1 200px">${legend}</div>
+        </div>
+      </div>`;
+  }
+  /* 规模经济曲线（P2-4）：本地复算分段幂律（数据源 knowledge.capexModel），标注当前规模点 */
+  function sfFor(t) {
+    const cm = K.economics.capexModel;
+    const curve = cm.scaleCurve && cm.scaleCurve.length ? cm.scaleCurve : null;
+    let exp = cm.scaleExponent != null ? cm.scaleExponent : 0.72;
+    if (curve) { for (const seg of curve) { if (t <= seg.upto) { exp = seg.exp; break; } } }
+    let sf = Math.pow(cm.refAnnualTons / t, 1 - exp);
+    sf = Math.min(Math.max(sf, cm.scaleCeil != null ? cm.scaleCeil : 0.5), cm.scaleFloor != null ? cm.scaleFloor : 3);
+    return sf;
+  }
+  function renderScaleCurve(annT) {
+    const cm = K.economics.capexModel;
+    const W = 620, H = 150, padX = 10, padTop = 14, padBot = 30;
+    const xMax = 2000, xs = [];
+    for (let t = 10; t <= xMax; t += 40) xs.push(t);
+    const ys = xs.map((t) => sfFor(t));
+    const yMax = (Math.max.apply(null, ys.concat([cm.scaleFloor || 3])) * 1.05);
+    const sx = (t) => padX + (t / xMax) * (W - padX * 2);
+    const sy = (y) => padTop + (1 - y / yMax) * (H - padTop - padBot);
+    const line = xs.map((t, i) => `${i ? "L" : "M"}${sx(t).toFixed(1)} ${sy(ys[i]).toFixed(1)}`).join("");
+    const cx = sx(annT), cy = sy(sfFor(annT));
+    const xticks = [10, 100, 300, 1000, 2000].map((t) => `<text x="${sx(t).toFixed(1)}" y="${H - 10}" font-size="9" fill="#94a3b8" text-anchor="middle">${t}t</text>`).join("");
+    return `
+      <div style="padding:0 26px 6px">
+        <div style="font-size:13px;color:#cbd5e1;margin:6px 0 4px">规模经济曲线（P2-4 · 分段幂律，单位投资因子 vs 年产量）</div>
+        <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:8px 10px">
+          <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="xMidYMid meet" style="display:block">
+            <path d="${line}" fill="none" stroke="#38bdf8" stroke-width="2"/>
+            <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4" fill="#f59e0b"><title>当前 ${annT}t → ${sfFor(annT)}</title></circle>
+            ${xticks}
+          </svg>
+        </div>
+        <div class="note" style="margin-top:6px"><span class="ic">📉</span>
+        <div>分段曲线：小规(&lt;30t)单位投资最高(因子≈${sfFor(10)})，随规模上升快速下降，大规(300→1000t)趋平收敛(≈${sfFor(300)}~${sfFor(1000)})；当前 <b>${annT}t</b> 对应因子 <b>${sfFor(annT)}</b>。极端规模夹在 [${cm.scaleCeil}, ${cm.scaleFloor}] 防失真。</div></div>
+      </div>`;
+  }
+  /* 蒙特卡洛结果渲染（P2-1）：P10/P50/P90 区间 + 分布直方图 + 水质可行率 */
+  function renderMonteCarlo(res) {
+    const box = document.getElementById("mcResult");
+    if (!box) return;
+    const row = (label, o, unit) => `
+      <div style="display:grid;grid-template-columns:1.1fr 1fr 1fr 1fr;gap:6px;padding:4px 0;font-size:12.5px;border-bottom:1px solid rgba(255,255,255,.06)">
+        <span style="color:#cbd5e1">${label}</span>
+        <span style="color:#94a3b8">P10 <b style="color:#e2e8f0">${o.p10}</b>${unit}</span>
+        <span style="color:#94a3b8">P50 <b style="color:#38bdf8">${o.p50}</b>${unit}</span>
+        <span style="color:#94a3b8">P90 <b style="color:#f59e0b">${o.p90}</b>${unit}</span>
+      </div>`;
+    const hist = (data, color) => {
+      if (!data || !data.length) return "";
+      const maxN = Math.max.apply(null, data.map((d) => d.n)) || 1;
+      const W = 600, H = 90, padX = 6, padTop = 6, padBot = 16;
+      const bw = (W - padX * 2) / data.length;
+      const bars = data.map((d, i) => {
+        const h = (d.n / maxN) * (H - padTop - padBot);
+        const x = padX + i * bw;
+        const mid = ((d.x0 + d.x1) / 2);
+        return `<rect x="${x.toFixed(1)}" y="${(H - padBot - h).toFixed(1)}" width="${(bw - 1).toFixed(1)}" height="${h.toFixed(1)}" rx="1" fill="${color}" opacity="0.85"/>`
+          + `<text x="${(x + bw / 2).toFixed(1)}" y="${H - 4}" font-size="8" fill="#94a3b8" text-anchor="middle">${round2(mid)}</text>`;
+      }).join("");
+      return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="xMidYMid meet" style="display:block">${bars}</svg>`;
+    };
+    box.innerHTML = `
+      <div style="padding:6px 0">
+        ${row("单位成本", res.costPerKg, " 元/kg")}
+        ${row("比能耗", res.energyIntensity, " kWh/kg")}
+        ${row("投资回收期", res.paybackYears, " 年")}
+        ${row("毛利率", res.marginRate, " %")}
+        <div style="font-size:12px;color:#cbd5e1;margin:10px 0 2px">单位成本分布 (元/kg)</div>
+        <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:4px 6px">${hist(res.histCost, "#38bdf8")}</div>
+        <div style="font-size:12px;color:#cbd5e1;margin:8px 0 2px">投资回收期分布 (年)</div>
+        <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:4px 6px">${hist(res.histPayback, "#f59e0b")}</div>
+        <div class="note" style="margin-top:8px"><span class="ic">🎲</span>
+        <div>蒙特卡洛 <b>${res.N}</b> 次采样（三角分布，系数 ±区间）。水质可行口径：达标 <b>${res.waterQuality.okPct}%</b> / 预警 <b>${res.waterQuality.warnPct}%</b> / 超限 <b>${res.waterQuality.failPct}%</b>。结果从单点升级为区间，供决策参考。</div></div>
+      </div>`;
+  }
+  function round2(v) { return typeof v === "number" ? Math.round(v * 100) / 100 : v; }
   function renderParams(d) {
     const c = d.culture, f = d.feeding, hy = d.hydraulics, bf = d.biofilter,
       ox = d.oxygen, so = d.solids, en = d.energy, b = d.building;
@@ -301,9 +449,15 @@
         metricCard("循环流量", hy.recircFlowH, "m³/h", `${hy.recircFlow} m³/天`, "brand"),
         metricCard("补水流量", hy.makeupFlowH, "m³/h", `${hy.makeupFlow} m³/天`),
         metricCard("回用率", hy.waterReuse, "%", "节水核心指标", "accent"),
-        metricCard("比水耗", hy.specificWaterUse, "m³/kg", "单位鱼耗新水"),
+        metricCard("水足迹(比水耗)", hy.specificWaterUse, "m³/kg", "取水/产量 (P1-3)", "accent"),
         metricCard("日循环次数", hy.turns, "次", "系统换水强度"),
+        metricCard("年取水量", hy.makeupVolYr, "m³/年", "新水消耗总量"),
+        metricCard("年蒸发损失", hy.evapVolYr, "m³/年", `占取水 ${hy.makeupVolYr > 0 ? (hy.evapVolYr / hy.makeupVolYr * 100).toFixed(1) : "0"}%`, "brand"),
+        metricCard("年排污量", hy.bleedVolYr, "m³/年", "bleed 排放"),
       ])}
+      <div style="padding:0 26px 6px"><div class="note ${hy.evapCovered ? "" : "note-warn"}">
+        <span class="ic">💧</span>
+        <div>水足迹闭合（P1-3）：年取水 <b>${hy.makeupVolYr.toLocaleString()}</b> m³ = 蒸发 <b>${hy.evapVolYr.toLocaleString()}</b> m³ + 排污 <b>${hy.bleedVolYr.toLocaleString()}</b> m³。${hy.evapCovered ? "蒸发损失已被补水率覆盖，池面水位稳定。" : "⚠️ 补水率不足以覆盖蒸发，池面将下降，需提高补水率。"}</div></div></div>
       ${section("生物滤池 (MBBR)", "Biofilter", [
         metricCard("反应器容积", bf.reactorVol, "m³", `硝化负荷 ${bf.rate} kg TAN/m³·d`),
         metricCard("含填料总容积", bf.totalVol, "m³", `填充率 ${bf.mediaFill*100}%`, "brand"),
@@ -328,11 +482,20 @@
         metricCard("比能耗", en.energyIntensity, "kWh/kg", "单位鱼电耗", "accent"),
         metricCard("年耗电量", en.annualEnergy, "MWh", "全系统"),
         metricCard("水泵功率", en.pumpPower, "kW", "循环泵"),
+        metricCard("泵总扬程", en.pumpHead, "m", `达西阻力法 · 流速 ${en.pumpVelocity} m/s`, "brand"),
+        metricCard("管内流速", en.pumpVelocity, "m/s", `Re ${en.pumpReynolds} · f ${en.pumpFriction}`, "brand"),
         metricCard("增氧功率", en.oxyPower, "kW", "制氧/液氧"),
         metricCard("控温功率", en.hvacPower, "kW", (en.hvacMode === "cool" ? "制冷主导" : "加热主导"), "accent"),
+        metricCard("制热电耗", (en.hvacHeatingKwh/1000).toFixed(1), "MWh", "冬季双工况 (P1-1)", "brand"),
+        metricCard("制冷电耗", (en.hvacCoolingKwh/1000).toFixed(1), "MWh", "夏季双工况 (P1-1)", "brand"),
+        metricCard("污泥处置功率", en.solidsPower, "kW", "脱水+外运 (P1-4)", "brand"),
+        metricCard("污泥年耗电", (en.solidsAnnualKwh/1000).toFixed(1), "MWh", "处置电耗 (P1-4)"),
         metricCard("地区平均气温", en.ambientTemp, "℃", `设定 ${d.inputs.temp}℃ · 温差 ${(d.inputs.temp - en.ambientTemp) >= 0 ? "+" : ""}${(d.inputs.temp - en.ambientTemp).toFixed(1)}`, "brand"),
         metricCard("温控热负荷", (en.thermalLoadW / 1000).toFixed(1), "kW", "围护+补水升温", "brand"),
       ])}
+      ${renderHvacSeason(en, d.inputs.temp)}
+      ${renderEnergySplit(en)}
+      ${renderScaleCurve(d._raw.annual / 1000)}
       ${section("建筑规模", "Building", [
         metricCard("养殖区占地", b.tankFootprint, "m²", "含通道"),
         metricCard("设备区", b.equipArea, "m²", "滤池/泵房"),
@@ -406,7 +569,7 @@
     }).join("");
     const opRows = [
       ["饲料", e.opexFeed], ["苗种", e.opexFinger], ["电费", e.opexElec],
-      ["水费", e.opexWater], ["人工 (" + e.laborCount + " 人)", e.opexLabor], ["维护", e.opexMaint],
+      ["水费", e.opexWater], ["固废处置", e.opexSolids], ["人工 (" + e.laborCount + " 人)", e.opexLabor], ["维护", e.opexMaint],
     ];
     host.innerHTML = `
       <div class="section-title" style="padding:24px 26px 0;justify-content:space-between">投资估算 (CAPEX) · 各投资项可展开
@@ -422,10 +585,18 @@
         <thead><tr><th>运营成本项</th><th class="num">金额 / 年</th></tr></thead>
         <tbody>${opRows.map(r => `<tr><td>${r[0]}</td><td class="num">${ec(r[1])}</td></tr>`).join("")}</tbody>
         <tfoot><tr><td>合计 OPEX</td><td class="num">${ec(e.opexTotal)}</td></tr></tfoot></table></div>
+      <div class="section-title" style="padding:8px 26px 0">设备维护费分项（P2-5 · 按寿命计）</div>
+      <div class="table-wrap" style="padding:14px 26px 6px"><table class="data">
+        <thead><tr><th>设备项</th><th class="num">CAPEX</th><th class="num">年维护费</th><th class="num">寿命</th><th class="num">重置准备/年</th></tr></thead>
+        <tbody>${(e.maintBreakdown || []).map((m) => `<tr><td>${m.label}</td><td class="num">${ec(m.capex)}</td><td class="num">${ec(m.annual)}</td><td class="num">${m.life} 年</td><td class="num">${ec(m.reserve)}</td></tr>`).join("")}</tbody>
+        <tfoot><tr><td>维护费合计</td><td class="num">—</td><td class="num">${ec(e.opexMaint)}</td><td class="num">—</td><td class="num">—</td></tr></tfoot></table></div>
+      <div class="note" style="padding:4px 26px 0"><span class="ic">🔧</span>
+      <div>各设备按自身年维护率与寿命分摊维护费与重置准备（重置准备 = CAPEX / 寿命，用于设备更换资金规划），比单一总率更贴近实际：高价易耗件（泵/增氧/固废）维护费更高、寿命更短；土建/池体寿命长、维护低。维护费合计即 OPEX 中的「维护」项。</div></div>
       <div class="metrics" style="padding:14px 26px 26px">
         ${metricCard("单位鱼生产成本", e.costPerKg, "元/kg", "仅运营成本", "brand")}
         ${metricCard("总投资 CAPEX", (e.capexTotal/10000).toFixed(1), "万元", "含土建与设备", "accent")}
         ${metricCard("年运营成本", (e.opexTotal/10000).toFixed(1), "万元", "全周期", "brand")}
+        ${metricCard("规模因子", e.scaleFactor, "×", "单位投资因子(P2-4)", "accent")}
         ${metricCard("出塘尾数", e.harvestNum.toLocaleString(), "尾", "按商品规格")}
       </div>
       <div class="section-title" style="padding:8px 26px 0">盈利能力与投资回报</div>
@@ -451,6 +622,12 @@
         <div class="note" style="margin-top:10px"><span class="ic">🎯</span>
         <div>龙卷风图：固定其他因素，将每个驱动参数在基线 <b>±20%</b>（补水率 ±50%）间扰动，观察所选指标的变化幅度。条带越宽，该参数对结果越敏感——绿色为改善方向、红色为恶化方向。</div></div>
       </div>
+      <div class="section-title" style="padding:18px 26px 0">参数不确定性 · 蒙特卡洛区间（P2-1）</div>
+      <div style="padding:10px 26px 0;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <button id="mcRun" class="btn-lux">运行蒙特卡洛（2000 次）</button>
+        <span class="muted" style="font-size:12px">对 MBBR 硝化速率 / 热泵 COP / 补水率等模型系数做三角分布抽样，输出成本与回收期 P10–P90 区间</span>
+      </div>
+      <div id="mcResult" style="padding:6px 26px 8px"></div>
       <div style="padding:0 26px 26px"><div class="note"><span class="ic">📌</span>
       <div>经济参数为行业经验量级估算（人民币），实际受地区人工/地价/电价/苗种价格影响显著。饲料通常占 OPEX 的 70–80%。价格数据截至 <b>${K.economics.priceMeta.asOf}</b>（置信度：<b>${K.economics.priceMeta.confidence}</b>），建议项目级复核。</div></div></div>`;
     renderSensitivity(d);
@@ -462,6 +639,21 @@
       const open = capToggle.textContent.trim() === "展开全部";
       dets.forEach((d) => { d.open = open; });
       capToggle.textContent = open ? "折叠全部" : "展开全部";
+    });
+    const mcBtn = document.getElementById("mcRun");
+    if (mcBtn) mcBtn.addEventListener("click", () => {
+      const box = document.getElementById("mcResult");
+      mcBtn.disabled = true; mcBtn.textContent = "计算中…";
+      setTimeout(() => {
+        try {
+          const res = E.monteCarlo(readInputs());
+          renderMonteCarlo(res);
+        } catch (err) {
+          if (box) box.innerHTML = `<div class="note-warn"><span class="ic">⚠️</span><div>蒙特卡洛计算失败：${String(err && err.message || err)}</div></div>`;
+        } finally {
+          mcBtn.disabled = false; mcBtn.textContent = "运行蒙特卡洛（2000 次）";
+        }
+      }, 20);
     });
   }
 
@@ -487,7 +679,7 @@
       ["增氧系统", eq.oxygen.type + "，氧耗 " + eq.oxygen.o2PerFeed + " kg O₂/kg 饲料，传质效率 " + (eq.oxygen.transferEff*100) + "%"],
       ["CO₂ 脱除", eq.degasser.type + "，CO₂ 去除率 " + (eq.degasser.co2Removal*100) + "%"],
       ["反硝化", "侧流反硝化反应器，脱氮率 " + (K.process.denitRemoval*100) + "%，容积负荷 " + K.process.denitRate + " kg NO₃-N/m³·d"],
-      ["循环水泵", "扬程 " + eq.pump.head + " m，效率 " + (eq.pump.eff*100) + "%"],
+      ["循环水泵", "扬程按达西–魏斯巴赫阻力法计算（沿程+局部+静扬程，见能耗卡），效率 " + (eq.pump.eff*100) + "%"],
       ["控温", "热泵 COP≈" + eq.heat.cop],
     ].map(r => `<tr><td><b>${r[0]}</b></td><td>${r[1]}</td></tr>`).join("");
     const capRows = Object.keys(ec.capexPerM3).filter(k => k !== "salePrice")
@@ -499,16 +691,17 @@
       ["人工", ec.opex.laborPerYear + " × " + ec.opex.laborBase + " 起（随产量 √规模）", "元/人·年 × 人"],
       ["维护", (ec.opex.maintenanceRate*100) + "% CAPEX", "年"],
       ["电价", ec.opex.elecPrice, "元/kWh"],
+      ["固废处置", ec.opex.solidsDisposalPrice, "元/kg 干固"],
     ].map(r => `<tr><td>${r[0]}</td><td class="num">${r[1]}</td><td>${r[2]}</td></tr>`).join("");
     const steps = [
       ["养殖池系统", "按产能目标与放养密度、养殖茬次反推所需养殖水体，确定池数、池径与有效容积。"],
       ["投喂与氮负荷", "由产量与饲料系数(FCR)估算年投喂量，推导总氨氮(TAN)等氮素日产量，作为生物滤池设计依据。"],
-      ["水力学", "由养殖水体与日循环次数确定循环流量与补水流量，得出回用率与单位鱼比水耗。"],
+      ["水力学", "由养殖水体与日循环次数确定循环流量与补水流量，得出回用率与单位鱼比水耗。P1-3 进一步闭合水足迹：年取水 = 池面蒸发 + 排污(bleed)，单位鱼水足迹 = 取水/产量（m³/kg），并校核蒸发是否被补水率覆盖。"],
       ["生物滤池 (MBBR)", "按 TAN 负荷与温度修正后的硝化速率(θ 系数)确定反应器容积与悬浮填料量，并叠加安全系数。分段考虑 AOB 亚硝化(TAN→NO₂)与 NOB 硝化(NO₂→NO₃)两步速率，NO₂ 稳态更低。"],
       ["生物脱氮（反硝化）", "MBBR 完成硝化后，NO₃ 经侧流反硝化反应器在缺氧 + 碳源条件下由异养菌还原为 N₂ 逸出；按 NO₃-N 负荷与反硝化容积负荷(denitRate)确定反应器容积，脱氮率 denitRemoval 计入稳态 NO₃ 质量平衡。"],
       ["增氧与脱碳", "按饲料氧耗 + 硝化耗氧配置供氧能力（覆盖鱼代谢与硝化峰值，含安全系数），按 CO₂ 产生量配置脱气塔，维持溶氧与气体平衡。"],
       ["固废处理", "按循环流量配置微滤机台数与单台处理量，并配置污泥浓缩/脱水单元。"],
-      ["能耗估算", "按水泵、增氧、脱气、控温、辅助等系统功率需求估算总装机与单位鱼比能耗。控温负荷随<strong>地区全年平均气温</strong>变化：净热需求 = 围护传热(围护表面积[屋面+外墙]×U值×温差) + 补水升温(补水流量×比热×温差) + 水面蒸发潜热(池面蒸发×汽化潜热) − 内部得热(泵损+照明/代谢)；若环境低于设定温则加热、高于则制冷，分别按热泵 COP 与冷水机组 COP 折算电耗。"],
+      ["能耗估算", "按水泵、增氧、脱气、控温、辅助、固废处置等系统功率需求估算总装机与单位鱼比能耗。水泵扬程用<strong>达西–魏斯巴赫</strong>阻力法（沿程摩阻 Swamee-Jain + 局部损失 + 静扬程）计算（P1-5）。控温采用<strong>bin method 季节性双工况</strong>（P1-1）：取地区全年月均温序列，逐月判定制热/制冷并用对应 COP 折算，累加得年控温电耗，比单点估算更准；无地区时退化为单点。控温负荷随<strong>地区全年平均气温</strong>变化：净热需求 = 围护传热(围护表面积[屋面+外墙]×U值×温差) + 补水升温(补水流量×比热×温差) + 水面蒸发潜热(池面蒸发×汽化潜热) − 内部得热(泵损+照明/代谢)；若环境低于设定温则加热、高于则制冷，分别按热泵 COP 与冷水机组 COP 折算电耗。固废处置电耗按干固体量 × 单位处置能耗计入（P1-4）。能耗分项（P2-6）在「能耗」面板以饼图展示泵/氧/脱气/控温/杂项的功率占比，便于定位主要耗能单元与节电重点。"],
       ["建筑规模", "按养殖区与设备区占地估算车间总面积与体积（含通道与辅助用房）。"],
       ["经济与校核", "汇总 CAPEX/OPEX（含水费）得出单位成本、盈利与回收期，并以稳态质量平衡校核水质可行性。"],
     ].map((s, i) => `<li><span class="doc-step-n">${i+1}</span><div><b>${s[0]}</b>　${s[1]}</div></li>`).join("");
@@ -533,19 +726,19 @@
         <div class="doc-card">
           <h4>② 单元设备设计基准</h4>
           <table class="data doc-table"><tbody>${eqRows}</tbody></table>
-          <p class="doc-cap">各单元设备的选型以行业经验负荷率与去除率为设计基准。</p>
+          <p class="doc-cap">各单元设备的选型以行业经验负荷率与去除率为设计基准。海水/半咸水品种（P2-2）按 salinity 自动补偿：溶氧饱和度折减影响氧需求，耐蚀材质（316L/HDPE）对池体/水泵/自控加价。</p>
         </div>
       </div>
       <div class="doc-grid">
         <div class="doc-card">
           <h4>③ 投资估算基准 (CAPEX)</h4>
           <table class="data doc-table"><thead><tr><th>投资项</th><th class="num">单价</th><th>单位</th></tr></thead><tbody>${capRows}</tbody></table>
-          <p class="doc-cap">直接费按养殖水体（土建按面积）估算，详见「经济估算」中各投资项的一级分解。总投资另含 <b>间接费</b>（EPCM 12% + 调试 4% + 不可预见 6% + 其他 3% = 直接费 25%，封顶上限）与可选 <b>土地费</b>；并应用 <b>规模经济</b>：单位投资随年产量呈亚线性变化（六 tenths 法则，参考规模 ${K.economics.capexModel.refAnnualTons} t/年），大规更省、小规更贵。本表为参考规模下的基准单价。</p>
+          <p class="doc-cap">直接费按养殖水体（土建按面积）估算，详见「经济估算」中各投资项的一级分解。总投资另含 <b>间接费</b>（EPCM 12% + 调试 4% + 不可预见 6% + 其他 3% = 直接费 25%，封顶上限）与可选 <b>土地费</b>；并应用 <b>规模经济（P2-4 分段曲线）</b>：单位投资随年产量呈亚线性变化，但按产能档位采用不同规模指数（&lt;30t 更陡、&gt;1000t 趋缓，封顶下限 0.55×、下限 2.5×），比单一六 tenths 常数更贴合工程实际（参考规模 ${K.economics.capexModel.refAnnualTons} t/年）。本表为参考规模下的基准单价。</p>
         </div>
         <div class="doc-card">
           <h4>④ 运营成本基准 (OPEX)</h4>
           <table class="data doc-table"><thead><tr><th>成本项</th><th class="num">单价</th><th>单位</th></tr></thead><tbody>${opRows}</tbody></table>
-          <p class="doc-cap">水费按生产补水量 × 水价估算；饲料通常占 OPEX 的 70–80%。</p>
+          <p class="doc-cap">水费按生产补水量 × 水价估算；饲料通常占 OPEX 的 70–80%。维护费（P2-5）改按各设备自身年维护率与寿命分摊并计提重置准备，比单一总率更贴近实际（高价易耗件费率高、寿命短）。</p>
         </div>
       </div>
 
@@ -560,6 +753,11 @@
         <p class="doc-p">在设备尺寸确定后，引擎以<strong>稳态质量平衡</strong>复核系统实际浓度：将各污染物的产生速率，对照生物滤池（两段硝化：AOB 亚硝化 + NOB 硝化）、反硝化反应器（NO₃→N₂）、脱气塔（CO₂）、微滤机（TSS）的一阶去除能力，并叠加新鲜补水的稀释与<strong>水源背景浓度</strong>(TAN/NO₂/NO₃)，推算 TAN / NO₂ / NO₃ / CO₂ / TSS / DO 的系统浓度，与上方限值比对，给出「达标 / 预警 / 超限」判定。其中硝酸盐稳态 = (硝化生成×(1−脱氮率) + 水源背景) / 补水流量：反硝化单元可显著削减 NO₃ 负荷，剩余随补水交换控制；溶氧(DO)按供氧能力(覆盖鱼代谢 + 硝化耗氧)余量判定池内可达浓度，供氧不足时按比例下降并计缺口。</p>
       </div>
 
+      <div class="doc-section">
+        <h3>四、参数不确定性与蒙特卡洛区间（P2-1）</h3>
+        <p class="doc-p">工程模型系数（MBBR 硝化速率、热泵 COP、补水率、反硝化负荷、水面蒸发率、硝化温度系数等）本身存在取值不确定度。引擎内置 <b>uncertainty 参数集</b>（每项含 low / exp / high 三角分布），在「经济估算」面板点击「运行蒙特卡洛」后，对 N=2000 次抽样重算整条链路，输出 <b>单位成本 / 比能耗 / 总投资 / 年毛利 / 回收期 / 毛利率</b> 的 <b>P10–P90 区间</b>与直方图，并统计水质「达标/预警/超限」的通过率。结果从单点升级为区间，帮助识别方案风险敞口——P50 为最可能值，区间越宽代表对系数不确定越敏感。采样仅扰动<b>模型系数与可校准输入</b>，用户自定义售价 / 密度等不纳入抽样。</p>
+      </div>
+
       <div class="doc-confidential">
         <div class="doc-lock">🔒 核心计算逻辑保密</div>
         <p>本系统采用 <strong>AquaRAS 专有工艺计算引擎</strong>，其<strong>核心算法、设备选型系数、经济模型参数与实现代码均为商业机密，不在本文档中披露</strong>。本文档仅说明计算体系、所引用的行业/文献标准与工程方法论，用于帮助用户理解设计依据与结果边界。</p>
@@ -567,7 +765,7 @@
       </div>
 
       <div class="doc-section doc-selftest">
-        <h3>四、引擎自检（可盈利方案基准验证）</h3>
+        <h3>五、引擎自检（可盈利方案基准验证）</h3>
         <p class="doc-p">点击下方按钮运行引擎自检：以一组固定的<strong>可盈利代表方案</strong>（加州鲈鱼 100t/年，RAS 精品批发价 45 元/kg）为 golden case，验证引擎的盈利性、水质可行性与内部计算一致性（CAPEX 对账、水费公式、回收期/ROI/毛利率公式、多品种默认盈利）。全部断言通过即代表引擎逻辑自洽。</p>
         <button type="button" id="runSelfCheck" class="btn-primary magnetic">▶ 运行引擎自检</button>
         <div id="selfCheckResult" class="selfcheck-result" style="margin-top:14px"></div>
