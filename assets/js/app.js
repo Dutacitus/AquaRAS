@@ -378,7 +378,7 @@
     // CAPEX：各投资项向下展开一级（默认折叠，点击展开子项；子项金额合计 == 该项总额）
     const capRows = e.capexBreakdown.map((c) => {
       if (c.subtotal) {
-        return `<tr class="cap-subtotal"><td colspan="2">
+        return `<tr class="cap-subtotal${c.indirect ? ' cap-indirect' : ''}"><td colspan="2">
           <span class="cap-name">${c.label}</span>
           <span class="cap-amt">${ec(c.total)}</span>
         </td></tr>`;
@@ -409,7 +409,7 @@
         <tbody>${capRows}</tbody>
         <tfoot><tr><td>合计 CAPEX</td><td class="num">${ec(e.capexTotal)}</td></tr></tfoot></table></div>
       <div class="note" style="padding:4px 26px 0"><span class="ic">📐</span>
-      <div>总投资 = 直接费(设备+土建) + 间接费(EPCM 12% + 调试 4% + 不可预见 6% + 其他 3% = 直接费 25%，封顶上限) + 可选土地费。规模因子 <b>${e.scaleFactor}</b>：单位投资随年产量呈亚线性变化（六 tenths 法则），大规更省、小规更贵，已计入各分项单价。「直接费 + 间接费 合计」为工程费小计（不含土地）。</div></div>
+      <div>总投资 = 直接费(设备+土建) + 间接费(EPCM 12% + 调试 4% + 不可预见 6% + 其他 3% = 直接费 25%，封顶上限) + 可选土地费。规模因子 <b>${e.scaleFactor}</b>：单位投资随年产量呈亚线性变化（六 tenths 法则），大规更省、小规更贵，已计入各分项单价。表中「直接费子项合计」「间接费子项合计」为各自分项小计（不含土地），二者合计即工程费；「合计 CAPEX」为计入土地后的总投资。</div></div>
       <div class="section-title" style="padding:8px 26px 0">运营成本估算 (OPEX / 年)</div>
       <div class="table-wrap" style="padding:14px 26px 6px"><table class="data">
         <thead><tr><th>运营成本项</th><th class="num">金额 / 年</th></tr></thead>
@@ -417,7 +417,6 @@
         <tfoot><tr><td>合计 OPEX</td><td class="num">${ec(e.opexTotal)}</td></tr></tfoot></table></div>
       <div class="metrics" style="padding:14px 26px 26px">
         ${metricCard("单位鱼生产成本", e.costPerKg, "元/kg", "仅运营成本", "brand")}
-        ${metricCard("工程费(直接+间接)", (e.capexDirectIndirect/10000).toFixed(1), "万元", "不含土地", "accent")}
         ${metricCard("总投资 CAPEX", (e.capexTotal/10000).toFixed(1), "万元", "含土建与设备", "accent")}
         ${metricCard("年运营成本", (e.opexTotal/10000).toFixed(1), "万元", "全周期", "brand")}
         ${metricCard("出塘尾数", e.harvestNum.toLocaleString(), "尾", "按商品规格")}

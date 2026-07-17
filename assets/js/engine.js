@@ -235,15 +235,18 @@ RAS.engine = (function () {
       key: "land", label: "土地费(可选)", unit: "", qty: "—", indirect: true,
       subs: [{ label: "用户指定 landCost", rate: 0, amount: round(capexLand) }], total: round(capexLand),
     }] : [];
-    // 9.7 直接费 + 间接费 合计数（工程费小计，不含土地）
-    const capexDirectIndirect = capexDirect + capexIndirect;
-    const diSubtotalRow = [{
-      key: "di_subtotal", label: "直接费 + 间接费 合计", unit: "", qty: "—", indirect: false, subtotal: true,
-      subs: [], total: round(capexDirectIndirect),
+    // 9.7 分项小计：直接费子项合计 + 间接费子项合计（各自独立，不合并）
+    const directSubtotalRow = [{
+      key: "direct_subtotal", label: "直接费子项合计", unit: "", qty: "—", indirect: false, subtotal: true, subKind: "direct",
+      subs: [], total: round(capexDirect),
     }];
-    const capexCostRows = [...directRows, ...indirectRows, ...landRow];   // 真实计入总投资的成本项
-    const capexBreakdown = [...capexCostRows, ...diSubtotalRow];          // 展示含小计行（小计不计入总额）
-    const capexTotal = capexCostRows.reduce((a, c) => a + c.total, 0);
+    const indirectSubtotalRow = [{
+      key: "indirect_subtotal", label: "间接费子项合计", unit: "", qty: "—", indirect: true, subtotal: true, subKind: "indirect",
+      subs: [], total: round(capexIndirect),
+    }];
+    const capexCostRows = [...directRows, ...directSubtotalRow, ...indirectRows, ...indirectSubtotalRow, ...landRow];
+    const capexBreakdown = capexCostRows;          // 小计行仅供阅读，不计入总额
+    const capexTotal = capexCostRows.filter((c) => !c.subtotal).reduce((a, c) => a + c.total, 0);
 
     /* —— 盈利 / 投资回报 —— */
     const revenue = annual * salePrice;                                  // 元/年
@@ -381,7 +384,6 @@ RAS.engine = (function () {
         capexOther: round(capexOther),
         capexIndirect: round(capexIndirect),
         capexLand: round(capexLand),
-        capexDirectIndirect: round(capexDirectIndirect),
         capexTotal: round(capexTotal),
         opexFeed: round(opexFeed),
         opexFinger: round(opexFinger),
