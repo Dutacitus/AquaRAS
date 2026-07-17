@@ -376,7 +376,14 @@
     host.className = "panel active glass";
     const e = d.economics, ec = E.rmb;
     // CAPEX：各投资项向下展开一级（默认折叠，点击展开子项；子项金额合计 == 该项总额）
-    const capRows = e.capexBreakdown.map((c) => `
+    const capRows = e.capexBreakdown.map((c) => {
+      if (c.subtotal) {
+        return `<tr class="cap-subtotal"><td colspan="2">
+          <span class="cap-name">${c.label}</span>
+          <span class="cap-amt">${ec(c.total)}</span>
+        </td></tr>`;
+      }
+      return `
       <tr class="cap-top${c.indirect ? ' cap-indirect' : ''}"><td colspan="2">
         <details class="cap-det">
           <summary>
@@ -388,7 +395,8 @@
             ${c.subs.map((s) => `<tr><td>└ ${s.label}</td><td class="num">${ec(s.amount)}</td></tr>`).join("")}
           </tbody></table>
         </details>
-      </td></tr>`).join("");
+      </td></tr>`;
+    }).join("");
     const opRows = [
       ["饲料", e.opexFeed], ["苗种", e.opexFinger], ["电费", e.opexElec],
       ["水费", e.opexWater], ["人工", e.opexLabor], ["维护", e.opexMaint],
@@ -401,7 +409,7 @@
         <tbody>${capRows}</tbody>
         <tfoot><tr><td>合计 CAPEX</td><td class="num">${ec(e.capexTotal)}</td></tr></tfoot></table></div>
       <div class="note" style="padding:4px 26px 0"><span class="ic">📐</span>
-      <div>总投资 = 直接费(设备+土建) + 间接费(EPCM 15% + 调试 5% + 不可预见 10% + 其他 5% = 直接费 35%) + 营运资金(首 ${K.economics.capexModel.workingCapitalMonths} 月 OPEX)。规模因子 <b>${e.scaleFactor}</b>：单位投资随年产量呈亚线性变化（六 tenths 法则），大规更省、小规更贵，已计入各分项单价。</div></div>
+      <div>总投资 = 直接费(设备+土建) + 间接费(EPCM 12% + 调试 4% + 不可预见 6% + 其他 3% = 直接费 25%，封顶上限) + 可选土地费。规模因子 <b>${e.scaleFactor}</b>：单位投资随年产量呈亚线性变化（六 tenths 法则），大规更省、小规更贵，已计入各分项单价。「直接费 + 间接费 合计」为工程费小计（不含土地）。</div></div>
       <div class="section-title" style="padding:8px 26px 0">运营成本估算 (OPEX / 年)</div>
       <div class="table-wrap" style="padding:14px 26px 6px"><table class="data">
         <thead><tr><th>运营成本项</th><th class="num">金额 / 年</th></tr></thead>
@@ -409,6 +417,7 @@
         <tfoot><tr><td>合计 OPEX</td><td class="num">${ec(e.opexTotal)}</td></tr></tfoot></table></div>
       <div class="metrics" style="padding:14px 26px 26px">
         ${metricCard("单位鱼生产成本", e.costPerKg, "元/kg", "仅运营成本", "brand")}
+        ${metricCard("工程费(直接+间接)", (e.capexDirectIndirect/10000).toFixed(1), "万元", "不含土地", "accent")}
         ${metricCard("总投资 CAPEX", (e.capexTotal/10000).toFixed(1), "万元", "含土建与设备", "accent")}
         ${metricCard("年运营成本", (e.opexTotal/10000).toFixed(1), "万元", "全周期", "brand")}
         ${metricCard("出塘尾数", e.harvestNum.toLocaleString(), "尾", "按商品规格")}
@@ -523,7 +532,7 @@
         <div class="doc-card">
           <h4>③ 投资估算基准 (CAPEX)</h4>
           <table class="data doc-table"><thead><tr><th>投资项</th><th class="num">单价</th><th>单位</th></tr></thead><tbody>${capRows}</tbody></table>
-          <p class="doc-cap">直接费按养殖水体（土建按面积）估算，详见「经济估算」中各投资项的一级分解。总投资另含 <b>间接费</b>（EPCM 15% + 调试 5% + 不可预见 10% + 其他 5% = 直接费 35%）与 <b>营运资金</b>（首 ${K.economics.capexModel.workingCapitalMonths} 月 OPEX）；并应用 <b>规模经济</b>：单位投资随年产量呈亚线性变化（六 tenths 法则，参考规模 ${K.economics.capexModel.refAnnualTons} t/年），大规更省、小规更贵。本表为参考规模下的基准单价。</p>
+          <p class="doc-cap">直接费按养殖水体（土建按面积）估算，详见「经济估算」中各投资项的一级分解。总投资另含 <b>间接费</b>（EPCM 12% + 调试 4% + 不可预见 6% + 其他 3% = 直接费 25%，封顶上限）与可选 <b>土地费</b>；并应用 <b>规模经济</b>：单位投资随年产量呈亚线性变化（六 tenths 法则，参考规模 ${K.economics.capexModel.refAnnualTons} t/年），大规更省、小规更贵。本表为参考规模下的基准单价。</p>
         </div>
         <div class="doc-card">
           <h4>④ 运营成本基准 (OPEX)</h4>

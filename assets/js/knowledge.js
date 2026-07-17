@@ -28,9 +28,9 @@
  *   - 补全缺失的 CAPEX 分项：UV 消毒(0.90 去除残留病原)、CO₂ 脱气塔(此前仅在设备库定义、未计入投资)
  *   - 规模经济：总投资 ∝ 年产量^scaleExponent(0.72)，参考规模 300 t/年；小规(<300)单位投资更高、大规更省
  *     （依据 BC 政府 RAS CAPEX 区间 CAD $7–40/kg 年产能、aquaculture-engineer 技术 CAPEX $6.5k–17k/吨）
- *   - 间接费：EPCM 15% + 调试培训 5% + 不可预见 10% + 许可环评其他 5% = 直接费 35%
- *     （依据 financialmodelslab 隐藏成本结构、环江项目 工程费56%/其他费20%/预备费2.3%/流动资金22%）
- *   - 可选土地费(默认0，用户可经 landCost 覆盖) + 营运资金(首 2 月 OPEX 储备，计入总投资)
+ *   - 间接费：EPCM 12% + 调试培训 4% + 不可预见 6% + 许可环评其他 3% = 直接费 25%（合计上限 indirectCap=25%，超出按比例封顶）
+ *     （依据 financialmodelslab 隐藏成本结构、环江项目 工程费56%/其他费20%/预备费2.3%，并收紧间接费占比至 25% 上限）
+ *   - 可选土地费(默认0，用户可经 landCost 覆盖)；营运资金已取消，不再计入总投资
  *   维护费基数由"含间接费的总投资"改为"直接费"(更贴合实际资产维护对象)。
  *
  * 所有数值为"设计基准值"，引擎在计算时会结合安全系数与用户自定义微调。
@@ -277,19 +277,20 @@ window.RAS_KNOWLEDGE = {
       building: 900,     // 车间土建(含保温)，元/m²
       hvac: 340,         // 控温(热泵/制冷)
     },
-    // 投资估算模型（v1.3.0，依据 BC 政府 RAS CAPEX $7–40/kg 区间、aquaculture-engineer
-    //   技术 CAPEX $6.5k–17k/吨、financialmodelslab 间接成本结构、环江项目其他费/预备费占比 校准）
+    // 投资估算模型（v1.3.0 引入规模经济 + 间接费模型；v1.4.1 收紧间接费至直接费 25% 上限、取消营运资金）
+    //   依据 BC 政府 RAS CAPEX $7–40/kg 区间、aquaculture-engineer 技术 CAPEX $6.5k–17k/吨、
+    //   financialmodelslab 间接成本结构、环江项目其他费/预备费占比 校准
     capexModel: {
       refAnnualTons: 300,     // 参考规模(t/年)：基准 per-m³ 对应该规模；<300 单位投资更高、>300 更省
       scaleExponent: 0.72,    // 总投资 ∝ 年产量^0.72（六 tenths 法则，规模经济；exp<1 体现亚线性）
-      indirect: {
-        epcm: 0.15,           // 设计/采购/施工管理(EPCM) = 直接费×15%
-        commissioning: 0.05,  // 调试与培训 = 直接费×5%
-        contingency: 0.10,    // 不可预见费 = 直接费×10%
-        other: 0.05,          // 许可/环评/其他费 = 直接费×5%
+      indirect: {             // 间接费各项（按直接费比例），其合计上限为 indirectCap
+        epcm: 0.12,           // 设计/采购/施工管理(EPCM) = 直接费×12%
+        commissioning: 0.04,  // 调试与培训 = 直接费×4%
+        contingency: 0.06,    // 不可预见费 = 直接费×6%
+        other: 0.03,          // 许可/环评/其他费 = 直接费×3%
       },
+      indirectCap: 0.25,      // 间接费上限 = 直接费 × 25%（各项合计超过时按比例封顶）
       landDefault: 0,         // 土地费(元)，可选；用户可经 inputs.landCost 覆盖，默认 0（租地/已有）
-      workingCapitalMonths: 2,// 营运资金 = 首 N 月 OPEX 储备（计入总投资）
     },
     // CAPEX 各投资项一级分解：子单价之和 == 对应分类额（已含规模因子缩放，详见引擎）
     capexDetail: {

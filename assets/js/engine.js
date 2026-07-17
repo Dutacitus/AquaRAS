@@ -207,16 +207,18 @@ RAS.engine = (function () {
     const opexTotal = opexFeed + opexFinger + opexElec + opexLabor + opexMaint + opexWater;
     const costPerKg = opexTotal / annual;
 
-    // 9.5 间接费（按直接费比例）：EPCM + 调试 + 不可预见 + 其他
+    // 9.5 间接费（按直接费比例，合计上限 = 直接费 × indirectCap）
     const capexEpcm = capexDirect * cm.indirect.epcm;
     const capexCommissioning = capexDirect * cm.indirect.commissioning;
     const capexContingency = capexDirect * cm.indirect.contingency;
     const capexOther = capexDirect * cm.indirect.other;
-    const capexIndirect = capexEpcm + capexCommissioning + capexContingency + capexOther;
+    const capexIndirectRaw = capexEpcm + capexCommissioning + capexContingency + capexOther;
+    const indirectCapAmt = capexDirect * (cm.indirectCap != null ? cm.indirectCap : 0.25);
+    const indirectScale = capexIndirectRaw > 0 ? Math.min(1, indirectCapAmt / capexIndirectRaw) : 1;
+    const capexIndirect = capexIndirectRaw * indirectScale;
 
-    // 9.6 土地(可选) + 营运资金(首 N 月 OPEX 储备，计入总投资)
+    // 9.6 土地(可选)；营运资金已取消，不再计入总投资
     const capexLand = inputs.landCost > 0 ? inputs.landCost : (cm.landDefault || 0);
-    const capexWC = opexTotal * (cm.workingCapitalMonths / 12);
 
     const indirectDefs = [
       { key: "epcm", label: "设计/采购/施工管理(EPCM)", rate: cm.indirect.epcm, val: capexEpcm },
@@ -226,19 +228,22 @@ RAS.engine = (function () {
     ];
     const indirectRows = indirectDefs.map((c) => ({
       key: c.key, label: c.label, unit: "", qty: "—", indirect: true,
-      subs: [{ label: `按直接费 × ${(c.rate * 100).toFixed(0)}%`, rate: 0, amount: round(c.val) }],
-      total: round(c.val),
+      subs: [{ label: `按直接费 × ${(c.rate * 100).toFixed(0)}%${indirectScale < 1 ? "（已封顶25%）" : ""}`, rate: 0, amount: round(c.val * indirectScale) }],
+      total: round(c.val * indirectScale),
     }));
     const landRow = capexLand > 0 ? [{
       key: "land", label: "土地费(可选)", unit: "", qty: "—", indirect: true,
       subs: [{ label: "用户指定 landCost", rate: 0, amount: round(capexLand) }], total: round(capexLand),
     }] : [];
-    const wcRow = [{
-      key: "wc", label: `营运资金(首 ${cm.workingCapitalMonths} 月 OPEX 储备)`, unit: "", qty: "—", indirect: true,
-      subs: [{ label: `OPEX/年 × ${cm.workingCapitalMonths}/12`, rate: 0, amount: round(capexWC) }], total: round(capexWC),
+    // 9.7 直接费 + 间接费 合计数（工程费小计，不含土地）
+    const capexDirectIndirect = capexDirect + capexIndirect;
+    const diSubtotalRow = [{
+      key: "di_subtotal", label: "直接费 + 间接费 合计", unit: "", qty: "—", indirect: false, subtotal: true,
+      subs: [], total: round(capexDirectIndirect),
     }];
-    const capexBreakdown = [...directRows, ...indirectRows, ...landRow, ...wcRow];
-    const capexTotal = capexBreakdown.reduce((a, c) => a + c.total, 0);
+    const capexCostRows = [...directRows, ...indirectRows, ...landRow];   // 真实计入总投资的成本项
+    const capexBreakdown = [...capexCostRows, ...diSubtotalRow];          // 展示含小计行（小计不计入总额）
+    const capexTotal = capexCostRows.reduce((a, c) => a + c.total, 0);
 
     /* —— 盈利 / 投资回报 —— */
     const revenue = annual * salePrice;                                  // 元/年
@@ -376,7 +381,7 @@ RAS.engine = (function () {
         capexOther: round(capexOther),
         capexIndirect: round(capexIndirect),
         capexLand: round(capexLand),
-        capexWC: round(capexWC),
+        capexDirectIndirect: round(capexDirectIndirect),
         capexTotal: round(capexTotal),
         opexFeed: round(opexFeed),
         opexFinger: round(opexFinger),
@@ -613,6 +618,7 @@ RAS.engine = (function () {
     // —— 内部一致性（对账 + 公式）——
     let catSum = 0, subRecon = true;
     e.capexBreakdown.forEach((c) => {
+      if (c.subtotal) return;   // 小计行仅展示用，不参与对账与总额
       const s = c.subs.reduce((a, x) => a + x.amount, 0);
       if (Math.abs(s - c.total) > 1) subRecon = false;
       catSum += c.total;
