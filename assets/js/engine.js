@@ -33,14 +33,20 @@ RAS.engine = (function () {
    */
   function compute(inputs) {
     const sp = K.species[inputs.speciesKey] || K.species.bass;
+    // 地区索引（P2-9）：region 决定 CAPEX/电价/人工地区系数；ambient 优先 inputs，否则回退 region 气温
+    const regionKey = inputs.region && K.climate.regions[inputs.region] ? inputs.region : null;
+    const regionDef = regionKey ? K.climate.regions[regionKey] : null;
+    const regCost = regionDef && regionDef.costIndex != null ? regionDef.costIndex : 1;
+    const regPower = regionDef && regionDef.powerIndex != null ? regionDef.powerIndex : 1;
+    const regLabor = regionDef && regionDef.laborIndex != null ? regionDef.laborIndex : 1;
     const annual = inputs.annualTons * 1000;          // kg/年
     const density = inputs.targetDensity || sp.stockingDensity;   // kg/m³
     const cycles = inputs.cycles || sp.cyclesPerYear;
-    const turns = inputs.recircTurns || 12;           // 日循环次数
-    const makeup = inputs.makeupRate || 0.0075;       // 补水率(占循环量)，默认≈日换水 9%（真实 RAS 5–15%）
-    const sf = inputs.safety || 1.15;                 // 安全系数
+    const turns = inputs.recircTurns || K.defaults.recircTurns;       // 日循环次数
+    const makeup = inputs.makeupRate != null && inputs.makeupRate > 0 ? inputs.makeupRate : K.defaults.makeupRate; // 补水率(占循环量)
+    const sf = inputs.safety || K.defaults.safety;                 // 安全系数
     const temp = inputs.designTemp || sp.designTemp;
-    const elec = inputs.elecPrice || K.economics.opex.elecPrice;
+    const elec = inputs.elecPrice > 0 ? inputs.elecPrice : (K.economics.opex.elecPrice * regPower);
     const salePrice = inputs.salePrice && inputs.salePrice > 0 ? inputs.salePrice : (sp.marketPrice || K.economics.salePrice || 22);
 
     // —— 1. 养殖池系统 ——
@@ -63,13 +69,15 @@ RAS.engine = (function () {
     const fcr = (inputs.fcr && inputs.fcr > 0) ? inputs.fcr : sp.fcr;
     const annualFeed = annual * fcr;
     const dailyFeedAvg = annualFeed / 365;
-    const dailyFeedPeak = dailyFeedAvg * 1.8;
-    const tanPerFeed = K.process.tanPerFeed;
+    const dailyFeedPeak = dailyFeedAvg * K.process.peakFeedFactor;
+    // P0-2：TAN 改为由饲料蛋白推导（v1.5.0）：TAN = 蛋白 × 0.16(氮含量) × 排泄比例
+    const nFrac = K.process.nExcretionFraction != null ? K.process.nExcretionFraction : 0.5;
+    const tanPerFeed = (sp.feedProtein || 0.45) * 0.16 * nFrac;
     const tanDaily = annualFeed * tanPerFeed / 365;
     const tanAnnual = annualFeed * tanPerFeed;
 
     // —— 3. 水力学 ——
-    const totalSysWater = totalTankVol * 1.15;
+    const totalSysWater = totalTankVol * K.process.sysWaterFactor;
     const recircFlow = totalTankVol * turns;
     const recircFlowH = recircFlow / 24;
     const makeupFlow = recircFlow * makeup;
@@ -79,7 +87,9 @@ RAS.engine = (function () {
 
     // —— 4. 生物滤池 (MBBR) ——
     const bf = K.equipment.biofilter;
-    const bfReactorVol = tanDaily / bf.rate;
+    // P0-1：硝化速率温度修正（v1.5.0）：有效速率 = rate × θ^(T−25)，冷水品种反应器更大
+    const nitrRate = bf.rate * Math.pow(bf.nitrTheta != null ? bf.nitrTheta : 1.08, temp - 25);
+    const bfReactorVol = tanDaily / nitrRate;
     const bfReactorVolSf = bfReactorVol * sf;
     const bfTotalVol = bfReactorVolSf / bf.mediaFill;
     const bfUnits = Math.max(2, Math.ceil(bfTotalVol / 40));
@@ -106,29 +116,36 @@ RAS.engine = (function () {
     // —— 7. 能耗估算（比能耗系数法，物理可解释；HVAC 随地区气温变化）——
     const pu = K.equipment.pump;
     const pumpQ = recircFlowH / 3600;                                       // m³/s
-    const pumpPower = (1000 * 9.81 * pumpQ * pu.head) / (pu.eff * 1000);    // kW（流体力学公式，随流量/扬程）
-    const oxyPower = o2Supply * ox.specificEnergy;                          // kW（kWh/kg O2 比能耗）
+    // P2-11：水泵轴功率按部分负荷效率折扣（实际 > 设计）
+    const pumpPower = (1000 * 9.81 * pumpQ * pu.head) / (pu.eff * 1000) / (pu.loadFactor != null ? pu.loadFactor : 1);
+    // P2-11：制氧系统比能耗按部分负荷效率折扣
+    const oxyPower = o2Supply * ox.specificEnergy / (ox.loadFactor != null ? ox.loadFactor : 1);
     const fanPower = co2Hour * deg.fanEnergy;                               // kW（kg/h CO2 × kWh/kg CO2）
     const miscPower = totalTankVol * K.equipment.misc.loadW / 1000;         // kW（杂项 W/m³）
     // 温控负荷（气候相关）：围护传热 + 补水加热 − 内部得热；按制热/制冷分 COP
     const heat = K.equipment.heat, cl = K.climate;
     const amb = (inputs.ambientTemp != null && inputs.ambientTemp !== "" && !isNaN(Number(inputs.ambientTemp)))
-      ? Number(inputs.ambientTemp) : cl.defaultAmbient;                    // 地区全年平均气温(℃)
+      ? Number(inputs.ambientTemp) : (regionDef && regionDef.ambient != null ? regionDef.ambient : cl.defaultAmbient);
     const lift = temp - amb;                                                // >0 需加热；<0 需制冷
     const bldArea = totalTankVol * K.building.areaPerM3;                    // m² 建筑面积（与第8节一致，内联避免 TDZ）
     const UA = bldArea * heat.uEnvelope;                                    // W/℃ 围护传热系数
     const envelopeW = UA * lift;                                            // 围护得失热(带符号)
     const makeupKgH = makeupFlowH * 1000;                                   // kg/h 补水质量流量（makeupFlowH 为 m³/h）
     const makeupW = makeupKgH * cl.cpWater * lift / 3600;                   // 补水从 amb 加热/冷却到设定温(W)
-    const internalW = pumpPower * 1000 * 0.12 + totalTankVol * heat.internalLoadW; // 室内得热(泵损+照明/代谢)
+    const internalW = pumpPower * 1000 * (heat.pumpLossFrac != null ? heat.pumpLossFrac : 0.12) + totalTankVol * heat.internalLoadW; // 室内得热(泵损+照明/代谢)
+    // P1-3：水面蒸发潜热（v1.5.0）——开放池面蒸发带走汽化潜热，全年均需 HVAC 处理（制热需补偿、制冷等于免费冷源+需除湿）
+    const evapRate = heat.evapRate * (temp / (heat.evapTempRef || 25));
+    const waterSurface = totalTankVol / tankH;
+    const evapKgH = waterSurface * evapRate;
+    const evapW = evapKgH * (heat.evapLatent || 2.26e6) / 3600;
     const rawLoadW = envelopeW + makeupW;                                   // 净热需求(带符号，+需热/−需冷)
     let hvacPower, hvacMode, thermalLoadW;
     if (rawLoadW >= 0) {
-      thermalLoadW = Math.max(0, rawLoadW - internalW);                     // 制热：内部得热抵消
+      thermalLoadW = Math.max(0, rawLoadW - internalW) + evapW;             // 制热：内部得热抵消，蒸发需补偿
       hvacPower = thermalLoadW / 1000 / heat.copHeat;
       hvacMode = "heat";
     } else {
-      thermalLoadW = -rawLoadW + internalW;                                 // 制冷：内部得热叠加
+      thermalLoadW = -rawLoadW + internalW + evapW;                         // 制冷：内部得热叠加，蒸发需除湿
       hvacPower = thermalLoadW / 1000 / heat.copCool;
       hvacMode = "cool";
     }
@@ -166,12 +183,15 @@ RAS.engine = (function () {
     const scaleFactor = Math.pow(cm.refAnnualTons / annT, 1 - cm.scaleExponent);
 
     const op = ec.opex;
+    // P1-5：人工数随规模（v1.5.0）：laborCount = max(laborBase, base + laborPerTon×√产量)
+    const laborCount = Math.max(op.laborBase != null ? op.laborBase : 2,
+      Math.round((op.laborBase != null ? op.laborBase : 2) + (op.laborPerTon != null ? op.laborPerTon : 0.35) * Math.sqrt(annT)));
     // OPEX 单价：表单可自定义覆盖（维护按直接费比例另算，不开放单价）
     const feedPrice = inputs.feedPrice > 0 ? inputs.feedPrice : (sp.feedPrice || op.feedPrice);
     const fingerPrice = inputs.fingerlingPrice > 0 ? inputs.fingerlingPrice : (sp.fingerlingPrice || op.fingerlingPrice);
-    const elecPrice = inputs.elecPrice > 0 ? inputs.elecPrice : (elec || op.elecPrice);
+    const elecPrice = elec;   // elec 已含地区电价指数 regPower（仅默认价生效）
     const waterPrice = inputs.waterPrice > 0 ? inputs.waterPrice : (op.waterPrice || 5.0);
-    const laborPrice = inputs.laborPerYear > 0 ? inputs.laborPerYear : op.laborPerYear;
+    const laborPrice = inputs.laborPerYear > 0 ? inputs.laborPerYear : (op.laborPerYear * regLabor);
 
     // 9.3 直接费分解（含规模因子）：子项金额由工程量×子单价(缩放)得出，分类额=子项之和（保证对账一致）
     const cdet = ec.capexDetail;
@@ -188,8 +208,10 @@ RAS.engine = (function () {
       { key: "building", label: "车间土建", unit: "m²", qty: buildingArea, val: capexBuilding },
     ];
     const directRows = directDefs.map((c) => {
+      const split = cdet[c.key].split != null ? cdet[c.key].split : 1;        // P2-8 可变比例
+      const effScale = (1 - split) + split * scaleFactor;                     // 固定段不随规模变化
       const subs = cdet[c.key].subs.map((s) => ({
-        label: s[0], rate: round(s[1] * scaleFactor), amount: round(c.qty * s[1] * scaleFactor),
+        label: s[0], rate: round(s[1] * effScale * regCost), amount: round(c.qty * s[1] * effScale * regCost),
       }));
       const total = subs.reduce((a, x) => a + x.amount, 0);
       return { key: c.key, label: c.label, unit: c.unit, qty: round(c.qty), subs, total, indirect: false };
@@ -201,7 +223,7 @@ RAS.engine = (function () {
     const harvestNum = annual / (sp.harvestSize / 1000);
     const opexFinger = harvestNum * fingerPrice;
     const opexElec = annualEnergy * 1000 * elecPrice;
-    const opexLabor = laborPrice * op.laborCount;
+    const opexLabor = laborPrice * laborCount;
     const opexMaint = capexDirect * op.maintenanceRate;
     const opexWater = makeupFlow * 365 * waterPrice;   // 生产补水费（补水流量 × 年 × 水价）
     const opexTotal = opexFeed + opexFinger + opexElec + opexLabor + opexMaint + opexWater;
@@ -261,16 +283,21 @@ RAS.engine = (function () {
     const tanHard = Math.min(wq.tanMax, sp.tanMax || wq.tanMax);
     const no2Hard = wq.no2Max;
     const doMinV = Math.min(wq.doMin, sp.doMin || wq.doMin);
-    const kTan = (bf.rate * 1000) / tanHard;   // 1/d：在设计阈值浓度下达设计负荷
-    const kNo2 = (bf.rate * 1000) / no2Hard;
+    const kTan = (nitrRate * 1000) / tanHard;   // 1/d：温度修正后的有效硝化速率
+    const kNo2 = (nitrRate * 1000) / no2Hard;
     const denomBf = (k) => k * bfReactorVolSf + makeupFlow;
     const cTan = (tanDaily * 1000) / denomBf(kTan);
     const cNo2 = (tanDaily * 1000) / denomBf(kNo2);
-    const cNo3 = makeupFlow > 0 ? (4.43 * tanDaily * 1000) / makeupFlow : 9999; // 仅随补水交换去除
+    // P1-6：NO3 稳态 = 硝化生成 − 反硝化去除 − 补水稀释（质量平衡，以 N 计再换算 NO3）
+    const denitRemoval = K.process.denitRemoval != null ? K.process.denitRemoval : 0;
+    const no3Factor = K.process.no3Factor != null ? K.process.no3Factor : 4.43;
+    const no3Nmg = makeupFlow > 0 ? (tanDaily * 1000 * (1 - denitRemoval)) / makeupFlow : 9999; // mg/L as N
+    const cNo3 = no3Nmg * no3Factor;
+    const denitVol = (tanDaily * (1 - denitRemoval)) / (K.process.denitRate != null ? K.process.denitRate : 0.25);
     const cCo2 = (co2Prod * 1000) / (deg.co2Removal * recircFlow + makeupFlow);
     const cTss = (tssDaily * 1000) / (df.tssRemoval * recircFlow + makeupFlow);
     const o2SatV = o2Sat(temp);
-    const o2DemandH = (o2Peak + 4.57 * tanDaily) / 24;   // kg/h：鱼代谢 + 硝化耗氧(峰值)
+    const o2DemandH = (o2Peak + K.process.nitrifO2 * tanDaily) / 24;   // kg/h：鱼代谢 + 硝化耗氧(峰值)
     const o2Margin = o2DemandH > 0 ? (o2Supply - o2DemandH) / o2DemandH * 100 : 999;
     const doTarget = Math.min(doMinV + 1.5, o2SatV);
     const st = (v, hard, soft, lowerBetter) => lowerBetter
@@ -279,7 +306,7 @@ RAS.engine = (function () {
     const checks = [
       { key: "tan", name: "总氨氮 TAN", value: round(cTan, 2), unit: "mg/L", limit: tanHard, status: st(cTan, tanHard, tanHard * 1.5, true), note: "生物滤池硝化 + 补水稀释" },
       { key: "no2", name: "亚硝态氮 NO₂", value: round(cNo2, 2), unit: "mg/L", limit: no2Hard, status: st(cNo2, no2Hard, no2Hard * 1.5, true), note: "二级硝化" },
-      { key: "no3", name: "硝态氮 NO₃", value: round(cNo3, 0), unit: "mg/L", limit: 500, status: st(cNo3, 500, wq.no3SoftCap, true), note: "仅随补水交换，需排换水或反硝化" },
+      { key: "no3", name: "硝态氮 NO₃", value: round(cNo3, 0), unit: "mg/L", limit: 500, status: st(cNo3, 500, wq.no3SoftCap, true), note: denitRemoval > 0 ? `反硝化脱除 ${Math.round(denitRemoval * 100)}%，剩余随补水交换` : "仅随补水交换，需排换水或反硝化" },
       { key: "co2", name: "二氧化碳 CO₂", value: round(cCo2, 1), unit: "mg/L", limit: wq.co2Max * 2, status: st(cCo2, wq.co2Max * 2, wq.co2Max, true), note: "脱气塔 + 补水，敏感品种需加大脱气" },
       { key: "tss", name: "悬浮固体 TSS", value: round(cTss, 1), unit: "mg/L", limit: wq.ssMax, status: st(cTss, wq.ssMax, wq.ssMax * 1.5, true), note: "微滤机去除" },
       { key: "do", name: "溶氧 DO", value: round(doTarget, 1), unit: "mg/L", limit: doMinV, status: o2DemandH > o2Supply ? "fail" : "ok", note: "供氧余量 " + round(o2Margin, 0) + "%" },
@@ -289,6 +316,12 @@ RAS.engine = (function () {
     const waterQuality = {
       checks, status: wqStatus, feasible: wqStatus !== "fail",
       o2Margin: round(o2Margin, 0), o2Sat: round(o2SatV, 1), doTarget: round(doTarget, 1),
+      no3N: round(no3Nmg, 1),
+      denit: {
+        removal: round(denitRemoval, 2),
+        volume: round(denitVol, 1),
+        no3NLoadDaily: round(tanDaily * (1 - denitRemoval), 2),
+      },
     };
 
     return {
@@ -296,7 +329,8 @@ RAS.engine = (function () {
       inputs: { annual, density, cycles, turns, makeup, sf, temp, elec, fcr, salePrice,
         feedPrice: inputs.feedPrice || null, fingerlingPrice: inputs.fingerlingPrice || null,
         elecPrice: inputs.elecPrice || null, waterPrice: inputs.waterPrice || null,
-        laborPerYear: inputs.laborPerYear || null },
+        laborPerYear: inputs.laborPerYear || null,
+        ambientTemp: amb, region: regionKey || null, laborCount },
       culture: {
         tankVolumeNeed: round(tankVolumeNeed),
         tankD, tankH,
@@ -325,7 +359,7 @@ RAS.engine = (function () {
         turns,
       },
       biofilter: {
-        type: bf.type, rate: bf.rate,
+        type: bf.type, rate: round(nitrRate, 3),
         reactorVol: round(bfReactorVol, 1),
         reactorVolSf: round(bfReactorVolSf, 1),
         totalVol: round(bfTotalVol, 1),
@@ -353,6 +387,8 @@ RAS.engine = (function () {
         hvacPower: round(hvacPower, 1),
         hvacMode: hvacMode,
         thermalLoadW: round(thermalLoadW),
+        evapPower: round(evapW / 1000, 2), // kW（与 hvacPower 单位一致）
+        evapKgH: round(evapKgH, 1),
         ambientTemp: amb,
         miscPower: round(miscPower, 1),
         totalPower: round(totalPower, 1),
@@ -389,6 +425,7 @@ RAS.engine = (function () {
         opexFinger: round(opexFinger),
         opexElec: round(opexElec),
         opexLabor: round(opexLabor),
+        laborCount,
         opexMaint: round(opexMaint),
         opexWater: round(opexWater),
         opexTotal: round(opexTotal),
@@ -448,32 +485,40 @@ RAS.engine = (function () {
           area: d.building.buildingArea, vars: { annualTons: p, density: dens, turns } });
       }
     } else {
-      // 固定产量，搜索密度/循环/池径/补水/FCR/安全系数，按目标最小化
-      const densList = range(sp.stockingDensity * 0.7, sp.stockingDensity * 1.25, 5);
-      const turnsList = [6, 8, 10, 12, 14, 16, 18, 20];
+      // 固定产量，搜索密度/循环/池径/补水/FCR/安全系数/温度/地区，按目标最小化
+      const energyObj = (obj === "minEnergy" || obj === "pareto");
+      const densList = range(sp.stockingDensity * 0.7, sp.stockingDensity * 1.25, energyObj ? 10 : 5);
+      const turnsList = energyObj ? [8, 10, 12, 14] : [6, 8, 10, 12, 14, 16, 18, 20];
       const diamList = [6, 8, 10, 12];
       const makeList = [0.005, 0.01, 0.02, 0.03];
       const fcrBase = sp.fcr;
       const fcrList = range(fcrBase * 0.85, fcrBase * 1.15, 0.15); // FCR 纳入决策变量
       const sfList = [1.1, 1.2, 1.3];                              // 安全系数纳入决策变量
+      // P1-4：温度/气候纳入决策（仅能耗相关目标展开，控制组合数）
+      const baseTemp = opts.designTemp != null ? opts.designTemp : sp.designTemp;
+      const tempList = energyObj ? range(sp.tempRange[0], sp.tempRange[1], 3) : [baseTemp];
+      const ambKeys = ["harbin", "beijing", "shanghai", "guangzhou", "sanya"];
+      const ambEntries = energyObj ? ambKeys.filter((k) => K.climate.regions[k]).map((k) => [k, K.climate.regions[k]]) : [["__none__", { ambient: null }]];
       for (const density of densList)
         for (const turns of turnsList)
           for (const D of diamList)
             for (const mk of makeList)
               for (const fcr of fcrList)
-                for (const sf of sfList) {
-                  const d = compute({
-                    speciesKey: opts.speciesKey, annualTons: opts.annualTons,
-                    targetDensity: density, recircTurns: turns, makeupRate: mk,
-                    fcr, safety: sf, designTemp: opts.designTemp,
-                  });
-                  if (!feasible(d)) continue;
-                  candidates.push({
-                    d, cost: d.economics.capexTotal, energy: d.energy.energyIntensity,
-                    area: d.building.buildingArea,
-                    vars: { density, turns, tankD: D, makeup: mk, fcr, sf },
-                  });
-                }
+                for (const sf of sfList)
+                  for (const dt of tempList)
+                    for (const [rkey, rdef] of ambEntries) {
+                      const d = compute({
+                        speciesKey: opts.speciesKey, annualTons: opts.annualTons,
+                        targetDensity: density, recircTurns: turns, makeupRate: mk,
+                        fcr, safety: sf, designTemp: dt, ambientTemp: rdef.ambient, region: rkey,
+                      });
+                      if (!feasible(d)) continue;
+                      candidates.push({
+                        d, cost: d.economics.capexTotal, energy: d.energy.energyIntensity,
+                        area: d.building.buildingArea,
+                        vars: { density, turns, tankD: D, makeup: mk, fcr, sf, designTemp: dt, ambientTemp: rdef.ambient, region: rkey },
+                      });
+                    }
     }
 
     if (!candidates.length) {
@@ -544,6 +589,8 @@ RAS.engine = (function () {
       recircTurns: d.inputs.turns,
       makeupRate: d.inputs.makeup,
       designTemp: d.inputs.temp,
+      ambientTemp: d.inputs.ambientTemp,
+      region: d.inputs.region || null,
       safety: d.inputs.sf,
       fcr: d.inputs.fcr,
       salePrice: d.inputs.salePrice,

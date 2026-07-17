@@ -132,6 +132,7 @@
       b.type = "button";
       b.className = "chip";
       b.dataset.t = r.ambient;
+      b.dataset.region = key;
       b.textContent = r.name + " " + r.ambient + "℃";
       chips.appendChild(b);
     });
@@ -139,6 +140,8 @@
     chips.querySelectorAll(".chip").forEach((btn) => {
       btn.addEventListener("click", () => {
         document.getElementById("ambient").value = parseFloat(btn.dataset.t);
+        const regEl = document.getElementById("region");
+        if (regEl) regEl.value = btn.dataset.region;
         chips.querySelectorAll(".chip").forEach((b) => b.classList.remove("on"));
         btn.classList.add("on");
         if (form) form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event("submit", { cancelable: true }));
@@ -169,6 +172,7 @@
       makeupRate: num("makeup", 1) / 100,
       designTemp: document.getElementById("designTemp").value ? num("designTemp") : null,
       ambientTemp: document.getElementById("ambient").value ? num("ambient", 15) : 15,
+      region: document.getElementById("region") ? (document.getElementById("region").value || null) : null,
       safety: num("safety", 1.15),
       salePrice: document.getElementById("salePrice").value.trim() ? num("salePrice") : null,
       feedPrice: document.getElementById("feedPrice").value.trim() ? num("feedPrice") : null,
@@ -222,6 +226,8 @@
       <div class="section-title">水质可行性校核
         <span class="badge wq-${wq.status}">${head}</span></div>
       <div class="wq-grid">${cards}</div>
+      <div class="note" style="padding:6px 26px 0"><span class="ic">♻️</span>
+      <div>反硝化：脱氮率 <b>${Math.round(wq.denit.removal * 100)}%</b>，NO₃-N 稳态 <b>${wq.no3N}</b> mg/L（以 N 计），需反硝化反应器容积约 <b>${wq.denit.volume}</b> m³（负荷 ${wq.denit.no3NLoadDaily} kg NO₃-N/天）。</div></div>
       <div style="padding:0 26px 26px"><div class="note">
         <span class="ic">🔬</span>
         <div>稳态质量平衡校核：基于生物滤池/脱气塔/微滤机一阶去除与补水稀释推算系统浓度，供设计可行性判断。溶氧按供氧能力余量 ${wq.o2Margin}% 维持 ${wq.doTarget} mg/L；数值为工程估算，运行需在线监测 DO/pH/TAN/CO₂ 并预留余量。</div></div></div>`;
@@ -399,7 +405,7 @@
     }).join("");
     const opRows = [
       ["饲料", e.opexFeed], ["苗种", e.opexFinger], ["电费", e.opexElec],
-      ["水费", e.opexWater], ["人工", e.opexLabor], ["维护", e.opexMaint],
+      ["水费", e.opexWater], ["人工 (" + e.laborCount + " 人)", e.opexLabor], ["维护", e.opexMaint],
     ];
     host.innerHTML = `
       <div class="section-title" style="padding:24px 26px 0;justify-content:space-between">投资估算 (CAPEX) · 各投资项可展开
@@ -409,7 +415,7 @@
         <tbody>${capRows}</tbody>
         <tfoot><tr><td>合计 CAPEX</td><td class="num">${ec(e.capexTotal)}</td></tr></tfoot></table></div>
       <div class="note" style="padding:4px 26px 0"><span class="ic">📐</span>
-      <div>总投资 = 直接费(设备+土建) + 间接费(EPCM 12% + 调试 4% + 不可预见 6% + 其他 3% = 直接费 25%，封顶上限) + 可选土地费。规模因子 <b>${e.scaleFactor}</b>：单位投资随年产量呈亚线性变化（六 tenths 法则），大规更省、小规更贵，已计入各分项单价。表中「直接费子项合计」「间接费子项合计」为各自分项小计（不含土地），二者合计即工程费；「合计 CAPEX」为计入土地后的总投资。</div></div>
+      <div>总投资 = 直接费(设备+土建) + 间接费(EPCM 12% + 调试 4% + 不可预见 6% + 其他 3% = 直接费 25%，封顶上限) + 可选土地费。规模因子 <b>${e.scaleFactor}</b>：单位投资随年产量呈亚线性变化（六 tenths 法则），大规更省、小规更贵；各分项已按<b>固定/可变比例</b>拆分（规模因子仅作用于可变段）。选择地区后 CAPEX/电价/人工按<b>地区指数</b>调整。表中「直接费子项合计」「间接费子项合计」为各自分项小计（不含土地），二者合计即工程费；「合计 CAPEX」为计入土地后的总投资。</div></div>
       <div class="section-title" style="padding:8px 26px 0">运营成本估算 (OPEX / 年)</div>
       <div class="table-wrap" style="padding:14px 26px 6px"><table class="data">
         <thead><tr><th>运营成本项</th><th class="num">金额 / 年</th></tr></thead>
@@ -445,7 +451,7 @@
         <div>龙卷风图：固定其他因素，将每个驱动参数在基线 <b>±20%</b>（补水率 ±50%）间扰动，观察所选指标的变化幅度。条带越宽，该参数对结果越敏感——绿色为改善方向、红色为恶化方向。</div></div>
       </div>
       <div style="padding:0 26px 26px"><div class="note"><span class="ic">📌</span>
-      <div>经济参数为行业经验量级估算（人民币），实际受地区人工/地价/电价/苗种价格影响显著。饲料通常占 OPEX 的 70–80%。</div></div></div>`;
+      <div>经济参数为行业经验量级估算（人民币），实际受地区人工/地价/电价/苗种价格影响显著。饲料通常占 OPEX 的 70–80%。价格数据截至 <b>${K.economics.priceMeta.asOf}</b>（置信度：<b>${K.economics.priceMeta.confidence}</b>），建议项目级复核。</div></div></div>`;
     renderSensitivity(d);
     const snSel = document.getElementById("snMetric");
     if (snSel) snSel.addEventListener("change", () => renderSensitivity(d));
@@ -488,7 +494,7 @@
       ["饲料(" + (sp ? sp.name : "基准") + ")", sp && sp.feedPrice ? sp.feedPrice : ec.opex.feedPrice, "元/kg"],
       ["苗种", ec.opex.fingerlingPrice, "元/尾"],
       ["生产补水", ec.opex.waterPrice, "元/m³"],
-      ["人工", ec.opex.laborPerYear + " × " + ec.opex.laborCount, "元/人·年 × 人"],
+      ["人工", ec.opex.laborPerYear + " × " + ec.opex.laborBase + " 起（随产量 √规模）", "元/人·年 × 人"],
       ["维护", (ec.opex.maintenanceRate*100) + "% CAPEX", "年"],
       ["电价", ec.opex.elecPrice, "元/kWh"],
     ].map(r => `<tr><td>${r[0]}</td><td class="num">${r[1]}</td><td>${r[2]}</td></tr>`).join("");
@@ -496,10 +502,10 @@
       ["养殖池系统", "按产能目标与放养密度、养殖茬次反推所需养殖水体，确定池数、池径与有效容积。"],
       ["投喂与氮负荷", "由产量与饲料系数(FCR)估算年投喂量，推导总氨氮(TAN)等氮素日产量，作为生物滤池设计依据。"],
       ["水力学", "由养殖水体与日循环次数确定循环流量与补水流量，得出回用率与单位鱼比水耗。"],
-      ["生物滤池 (MBBR)", "按 TAN 负荷与硝化速率确定反应器容积与悬浮填料量，并叠加安全系数。"],
+      ["生物滤池 (MBBR)", "按 TAN 负荷与温度修正后的硝化速率(θ 系数)确定反应器容积与悬浮填料量，并叠加安全系数。"],
       ["增氧与脱碳", "按饲料氧耗配置供氧能力，按 CO₂ 产生量配置脱气塔，维持溶氧与气体平衡。"],
       ["固废处理", "按循环流量配置微滤机台数与单台处理量，并配置污泥浓缩/脱水单元。"],
-      ["能耗估算", "按水泵、增氧、脱气、控温、辅助等系统功率需求估算总装机与单位鱼比能耗。控温负荷随<strong>地区全年平均气温</strong>变化：净热需求 = 围护传热(建筑面积×U值×温差) + 补水升温(补水流量×比热×温差) − 内部得热(泵损+照明/代谢)；若环境低于设定温则加热、高于则制冷，分别按热泵 COP 与冷水机组 COP 折算电耗。"],
+      ["能耗估算", "按水泵、增氧、脱气、控温、辅助等系统功率需求估算总装机与单位鱼比能耗。控温负荷随<strong>地区全年平均气温</strong>变化：净热需求 = 围护传热(建筑面积×U值×温差) + 补水升温(补水流量×比热×温差) + 水面蒸发潜热(池面蒸发×汽化潜热) − 内部得热(泵损+照明/代谢)；若环境低于设定温则加热、高于则制冷，分别按热泵 COP 与冷水机组 COP 折算电耗。"],
       ["建筑规模", "按养殖区与设备区占地估算车间总面积与体积（含通道与辅助用房）。"],
       ["经济与校核", "汇总 CAPEX/OPEX（含水费）得出单位成本、盈利与回收期，并以稳态质量平衡校核水质可行性。"],
     ].map((s, i) => `<li><span class="doc-step-n">${i+1}</span><div><b>${s[0]}</b>　${s[1]}</div></li>`).join("");
@@ -639,7 +645,7 @@
     const dArea = b.building.buildingArea - base.building.buildingArea;
     const varTxt = res.objective === "maxCapacity"
       ? `最优年产量 <b>${b._raw.annual/1000} 吨</b>`
-      : `放养密度 <b>${v.density}</b> kg/m³ · 日循环 <b>${v.turns}</b> · 池径 <b>Ø${v.tankD}m</b> · 补水 <b>${(v.makeup*100).toFixed(1)}%</b> · FCR <b>${v.fcr}</b> · 安全系数 <b>${v.sf}</b>`;
+      : `放养密度 <b>${v.density}</b> kg/m³ · 日循环 <b>${v.turns}</b> · 池径 <b>Ø${v.tankD}m</b> · 补水 <b>${(v.makeup*100).toFixed(1)}%</b> · FCR <b>${v.fcr}</b> · 安全系数 <b>${v.sf}</b>` + (v.designTemp != null ? ` · 设定温 <b>${v.designTemp}℃</b> · 地区 <b>${v.region || "—"}</b>(<b>${v.ambientTemp}℃</b>)` : "");
     const topRows = res.top.map((t, i) => `<tr>
       <td>${i+1}</td><td>${t.yield} t</td><td>${E.rmb(t.capEx)}</td><td>${t.costPerKg} 元/kg</td>
       <td>${t.energy} kWh/kg</td><td>${Math.round(t.area)} m²</td><td>${t.vars.fcr}</td><td>${t.vars.sf}</td><td>${t.payback!=null?t.payback.toFixed(1):"—"} 年</td></tr>`).join("");
@@ -660,7 +666,7 @@
         <thead><tr><th>#</th><th>产能</th><th>CAPEX</th><th>单位成本</th><th>比能耗</th><th>面积</th><th>FCR</th><th>安全系数</th><th>回收期</th></tr></thead>
         <tbody>${topRows}</tbody></table></div>
       <div style="padding:0 26px 26px"><div class="note"><span class="ic">💡</span>
-      <div>寻优基于网格搜索：在品种经验区间内遍历决策变量（含密度/循环/池径/补水/<b>FCR/安全系数</b>），按约束过滤后取目标最优。下方 <b>成本-能耗 Pareto 前沿</b> 给出所有「无法在不恶化另一指标时优化」的折中解，供决策权衡。生产目标固定时，<b>最低成本</b>与<b>最低能耗</b>通常对应不同的密度/循环组合。</div></div></div>`;
+      <div>寻优基于网格搜索：在品种经验区间内遍历决策变量（含密度/循环/池径/补水/<b>FCR/安全系数</b>，能耗目标另纳入<b>设定水温与地区气候</b>），按约束过滤后取目标最优。下方 <b>成本-能耗 Pareto 前沿</b> 给出所有「无法在不恶化另一指标时优化」的折中解，供决策权衡。生产目标固定时，<b>最低成本</b>与<b>最低能耗</b>通常对应不同的密度/循环/温度/地区组合。</div></div></div>`;
   }
 
   /* 成本-能耗 Pareto 前沿可视化（可行解云 + 非支配前沿 + 候选列表） */
@@ -867,6 +873,8 @@
     document.getElementById("makeup").value = (inputs.makeupRate * 100).toFixed(1);
     document.getElementById("designTemp").value = inputs.designTemp || "";
     document.getElementById("ambient").value = (inputs.ambientTemp != null) ? inputs.ambientTemp : 15;
+    const regEl = document.getElementById("region");
+    if (regEl) regEl.value = (inputs.region != null) ? inputs.region : "";
     document.getElementById("safety").value = inputs.safety;
     document.getElementById("salePrice").value = (inputs.salePrice != null) ? inputs.salePrice : "";
     document.getElementById("feedPrice").value = (inputs.feedPrice != null) ? inputs.feedPrice : "";

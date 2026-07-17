@@ -154,6 +154,7 @@
         <div class="field">
           <label>地区全年平均气温 <span class="unit">(℃)</span></label>
           <input type="number" id="ambient" step="0.5" value="15" min="-30" max="40" />
+          <input type="hidden" id="region" />
           <span class="hint">用于计算加热/制冷负荷（车间围护 + 补水升温）；留 15 为温带默认</span>
           <div class="region-chips" id="regionChips"><!-- 地区预设由 knowledge.climate.regions 动态生成 --></div>
         </div>
