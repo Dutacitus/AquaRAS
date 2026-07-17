@@ -119,7 +119,7 @@ RAS.engine = (function () {
 
     // —— 5. 增氧与 CO2 脱除 ——
     const ox = K.equipment.oxygen;
-    const o2PerFeed = sp.o2PerFeed || ox.o2PerFeed || 1.0;   // 品种相关氧耗系数(kg O2/kg 饲料)
+    const o2PerFeed = (sp.o2PerFeed || ox.o2PerFeed || 1.0) * (K.process.o2FishCal != null ? K.process.o2FishCal : 1);   // 品种相关氧耗系数(kg O2/kg 饲料)，o2FishCal 为鱼呼吸氧耗标定因子(真实鱼代谢仅约 0.35–0.5，原默认偏高)
     const o2Daily = dailyFeedAvg * o2PerFeed;
     const o2Peak = dailyFeedPeak * o2PerFeed;
     const o2HourPeak = o2Peak / 24;
@@ -128,7 +128,8 @@ RAS.engine = (function () {
     const o2DemandH = (o2Peak + nitrifO2Daily) / 24;          // kg/h 峰值总氧耗(鱼代谢 + 硝化)
     const o2Supply = o2DemandH / ox.transferEff * sf;         // 设计供氧能力(覆盖鱼代谢+硝化，含 SF)
     const deg = K.equipment.degasser;
-    const co2Prod = o2Daily * K.process.co2Ratio;
+    // CO₂ 预算 = 鱼呼吸 CO₂ + 硝化产 CO₂（碱度消耗→CO₂，为 RAS 主要 CO₂ 源，原模型漏算）
+    const co2Prod = o2Daily * K.process.co2Ratio + tanDaily * (K.process.co2PerN != null ? K.process.co2PerN : 0);
     const co2Hour = co2Prod / 24;
 
     // —— 6. 固废处理 ——
@@ -389,9 +390,15 @@ RAS.engine = (function () {
       ? (tanDaily * 1000 * (1 - denitRemoval) + makeupFlow * bgNo3) / makeupFlow
       : 9999; // mg/L as N（无补水排换则累积）
     const denitVol = (tanDaily * (1 - denitRemoval)) / (K.process.denitRate != null ? K.process.denitRate : 0.25);
-    // P0-2 CO₂ 闭环：脱气塔脱除 + 补水稀释 → 稳态 CO₂；输出脱除量 co2Stripped
-    const co2Stripped = co2Prod * deg.co2Removal;  // kg/天 脱气塔脱除量
-    const cCo2 = (co2Prod * 1000) / (deg.co2Removal * recircFlow + makeupFlow);
+    // P0-2 CO₂ 闭环：脱气塔(主动) + 开放水面天然挥发(被动空气吹脱) + 补水稀释 → 稳态 CO₂
+    //   co2Kla×养殖池体积 = 等效天然挥发去除流量(m³/天)，双膜理论：敞口水体持续向大气逸出 CO₂(aq)
+    const co2Kla = K.process.co2Kla != null ? K.process.co2Kla : 0;       // 开放水面 CO₂ 体积传质系数(/天)
+    const co2Star = K.process.co2Star != null ? K.process.co2Star : 0.5; // 与大气(≈420ppm)平衡的水体 CO₂(aq) mg/L
+    const co2StripFlow = co2Kla * totalTankVol;                          // m³/天 等效天然挥发去除流量
+    const cCo2 = (co2Prod * 1000 + co2StripFlow * co2Star)
+               / (deg.co2Removal * recircFlow + makeupFlow + co2StripFlow);
+    const co2Stripped = deg.co2Removal * recircFlow * cCo2 / 1000;       // kg/天 脱气塔(主动)脱除量
+    const co2Natural = co2StripFlow * Math.max(0, cCo2 - co2Star) / 1000; // kg/天 开放水面天然挥发(被动)脱除量
     const cTss = (tssDaily * 1000) / (df.tssRemoval * recircFlow + makeupFlow);
     // P0-1 DO 闭环：供氧覆盖鱼代谢+硝化时池内可达 DO；供氧不足按比例下降并计缺口
     const o2Margin = o2DemandH > 0 ? (o2Supply - o2DemandH) / o2DemandH * 100 : 999;
@@ -405,7 +412,7 @@ RAS.engine = (function () {
       { key: "tan", name: "总氨氮 TAN", value: round(cTan, 2), unit: "mg/L", limit: tanHard, status: st(cTan, tanHard, tanHard * 1.5, true), note: "AOB 亚硝化 + 补水稀释" },
       { key: "no2", name: "亚硝态氮 NO₂", value: round(cNo2, 2), unit: "mg/L", limit: no2Hard, status: st(cNo2, no2Hard, no2Hard * 1.5, true), note: "NOB 硝化(NO₂→NO₃)，速率高于 AOB" },
       { key: "no3", name: "硝态氮 NO₃-N", value: round(no3Nmg, 1), unit: "mg/L（以 N 计）", limit: 300, status: st(no3Nmg, 300, wq.no3SoftCap, true), note: denitRemoval > 0 ? `反硝化脱除 ${Math.round(denitRemoval * 100)}%，剩余随补水交换` : "仅随补水交换，需排换水或反硝化" },
-      { key: "co2", name: "二氧化碳 CO₂", value: round(cCo2, 1), unit: "mg/L", limit: wq.co2Max * 2, status: st(cCo2, wq.co2Max * 2, wq.co2Max, true), note: `脱气塔脱除 ${round(co2Stripped, 1)} kg/天 + 补水稀释` },
+      { key: "co2", name: "二氧化碳 CO₂", value: round(cCo2, 1), unit: "mg/L", limit: wq.co2Max * 2, status: st(cCo2, wq.co2Max * 2, wq.co2Max, true), note: `脱气塔脱除 ${round(co2Stripped, 1)} kg/天 + 开放水面天然挥发 ~${round(co2Natural, 1)} kg/天 + 补水稀释` },
       { key: "tss", name: "悬浮固体 TSS", value: round(cTss, 1), unit: "mg/L", limit: wq.ssMax, status: st(cTss, wq.ssMax, wq.ssMax * 1.5, true), note: "微滤机去除" },
       { key: "do", name: "溶氧 DO", value: round(o2Achieved, 1), unit: "mg/L", limit: doMinV, status: o2Deficit > 0.1 ? "fail" : "ok", note: "供氧余量 " + round(o2Margin, 0) + "%，池内可达 " + round(o2Achieved, 1) + " mg/L" },
     ];
@@ -416,6 +423,7 @@ RAS.engine = (function () {
       o2Margin: round(o2Margin, 0), o2Sat: round(o2SatV, 1), doTarget: round(doTarget, 1),
       o2Achieved: round(o2Achieved, 2), o2Deficit: round(o2Deficit, 2),
       co2Stripped: round(co2Stripped, 1),
+      co2Natural: round(co2Natural, 1),
       no3N: round(no3Nmg, 1),
       denit: {
         removal: round(denitRemoval, 2),
@@ -533,16 +541,6 @@ RAS.engine = (function () {
       },
       economics: {
         scaleFactor: round(scaleFactor, 3),
-        capexTanks: round(capexTanks),
-        capexBio: round(capexBio),
-        capexSolids: round(capexSolids),
-        capexOxy: round(capexOxy),
-        capexDegasser: round(capexDegasser),
-        capexUv: round(capexUv),
-        capexPumps: round(capexPumps),
-        capexCtl: round(capexCtl),
-        capexBuilding: round(capexBuilding),
-        capexHvac: round(capexHvac),
         capexDirect: round(capexDirect),
         capexEpcm: round(capexEpcm),
         capexCommissioning: round(capexCommissioning),
