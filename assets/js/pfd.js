@@ -89,6 +89,18 @@ RAS.pfd = (function () {
       </g>
       <text x="376" y="282" class="pfd-flow-label">排渣 ~${d.solids.tssDaily} kg/d</text>
 
+      <!-- 分支：反硝化反应器（侧流脱氮，自回水管分流、缺氧反硝化后回注回水管）-->
+      ${node(514, 400, eqW, eqH, "反硝化反应器", `${d.waterQuality.denit.volume} m³ · 脱氮 ${Math.round(d.waterQuality.denit.removal * 100)}%`, "c9", "dn")}
+      <g class="pfd-arrow pfd-denit">
+        <path d="M 520 ${yRet} L 520 400" class="pfd-line"/>
+        <polygon points="520,400 515,390 525,390" class="pfd-head"/>
+      </g>
+      <g class="pfd-arrow pfd-denit">
+        <path d="M 680 ${yRet} L 680 400" class="pfd-line"/>
+        <polygon points="680,${yRet} 675,${yRet + 10} 685,${yRet + 10}" class="pfd-head"/>
+      </g>
+      <text x="600" y="352" class="pfd-flow-label">NO₃ 侧流脱氮</text>
+
       <!-- 图例 -->
       <g class="pfd-legend" transform="translate(150, ${H - 16})">
         <rect x="0" y="-14" width="14" height="14" rx="3" class="pfd-box c2"/>
@@ -99,10 +111,12 @@ RAS.pfd = (function () {
         <text x="250" y="-2" class="pfd-sub">补水</text>
         <rect x="330" y="-14" width="14" height="14" rx="3" class="pfd-box c7"/>
         <text x="350" y="-2" class="pfd-sub">排污</text>
+        <rect x="430" y="-14" width="14" height="14" rx="3" class="pfd-box c9"/>
+        <text x="450" y="-2" class="pfd-sub">反硝化</text>
         <g class="pfd-swu-wrap">
-          <rect x="430" y="-16" width="208" height="22" rx="11" class="pfd-swu"/>
-          <circle cx="446" cy="-5" r="4.5" class="pfd-swu-dot"/>
-          <text x="458" y="-1" class="pfd-swu-txt">比水耗 ${d.hydraulics.specificWaterUse} m³/kg</text>
+          <rect x="550" y="-16" width="208" height="22" rx="11" class="pfd-swu"/>
+          <circle cx="566" cy="-5" r="4.5" class="pfd-swu-dot"/>
+          <text x="578" y="-1" class="pfd-swu-txt">比水耗 ${d.hydraulics.specificWaterUse} m³/kg</text>
         </g>
       </g>
     </svg>`;

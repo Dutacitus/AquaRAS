@@ -49,17 +49,17 @@ RAS.pid = (function () {
   }
 
   function render(d) {
-    const W = 1180, H = 620;
+    const W = 1180, H = 650;
     const eqY = 160, eqH = 86, eqW = 172;
     const xs = [150, 352, 554, 756, 958];
     const cy = eqY + eqH / 2;           // 设备中心 y = 203
     const Q = d.hydraulics.recircFlowH;
     const yRet = eqY + eqH + 78;        // 回水管 y = 324
     const yBus = 472;                   // 信号总线 y
-    const dcsX = 300, dcsY = 488, dcsW = 640, dcsH = 70;
+    const dcsX = 300, dcsY = 512, dcsW = 640, dcsH = 70;
     const railX = 52, railBusX = 106;   // 仪表轨中心 & 轨内竖母线 x
     const dcsEntryX = 340;              // 总线进入 DCS 的 x
-    const instYs = [104, 158, 212, 266, 320, 374, 428];
+    const instYs = [104, 158, 212, 266, 320, 374, 428, 484];
 
     // 仪表：[tag, 中文名, 轨内序号, 联动 key]
     const insts = [
@@ -70,10 +70,11 @@ RAS.pid = (function () {
       ["TT-01", "温度", 4, "he"],
       ["PT-01", "压力", 5, "uv"],
       ["LSH-01", "高液位报警", 6, "tk"],
+      ["AT-03", "硝酸氮NO₃", 7, "dn"],
     ];
 
     // 仪表轨 + 各仪表短横支线 + 轨内竖母线
-    let railSvg = `<rect x="16" y="82" width="124" height="372" rx="14" class="pid-rail"/>`;
+    let railSvg = `<rect x="16" y="82" width="124" height="430" rx="14" class="pid-rail"/>`;
     insts.forEach(([tag, label, i, key]) => {
       const yi = instYs[i];
       railSvg += inst(railX, yi, tag, label, "right", key);
@@ -130,11 +131,24 @@ RAS.pid = (function () {
       <polygon points="${xs[1]},420 ${xs[1] - 1},410 ${xs[1] + 9},410" class="pid-head pid-sludge"/>
       ${equip(xs[1], 420, eqW, eqH, "SLUDGE", "污泥处理", "脱水", "c7", "sludge")}
 
+      <!-- 反硝化反应器 DN-01（侧流脱氮：自回水管分流、缺氧反硝化后回注）-->
+      ${equip(600, 420, eqW, eqH, "DN-01", "反硝化反应器", `${d.waterQuality.denit.volume}m³ · 脱氮${Math.round(d.waterQuality.denit.removal * 100)}%`, "c9", "dn")}
+      <g class="pid-pipe pid-denit">
+        <line x1="690" y1="${yRet}" x2="690" y2="420" class="pid-line"/>
+        <polygon points="690,420 685,410 695,410" class="pid-head"/>
+      </g>
+      <text x="700" y="376" class="pid-flow-label denit-txt">侧流</text>
+      <g class="pid-pipe pid-denit">
+        <line x1="740" y1="420" x2="740" y2="${yRet}" class="pid-line"/>
+        <polygon points="740,${yRet} 735,${yRet + 10} 745,${yRet + 10}" class="pid-head"/>
+      </g>
+      <text x="750" y="376" class="pid-flow-label denit-txt">回注</text>
+
       <!-- 集中控制系统 -->
       <g class="pid-dcs" filter="url(#pidShadow)">
         <rect x="${dcsX}" y="${dcsY}" width="${dcsW}" height="${dcsH}" rx="14" class="pid-box c8"/>
         <text x="${dcsX + 18}" y="${dcsY + 24}" class="pid-title left">集中控制系统 (PLC / DCS)</text>
-        <text x="${dcsX + 18}" y="${dcsY + 44}" class="pid-sub left">控制回路：LIC 液位→FV-01 · AIC 溶氧→氧锥 · TIC 温度→HE-01 · FIC 流量→P-01</text>
+        <text x="${dcsX + 18}" y="${dcsY + 44}" class="pid-sub left">控制回路：LIC 液位→FV-01 · AIC 溶氧→氧锥 · TIC 温度→HE-01 · FIC 流量→P-01 · AIC 硝酸氮→碳源投加(DN-01)</text>
         <text x="${dcsX + 18}" y="${dcsY + 62}" class="pid-sub left">联锁：LSH-01 高液位停泵 · DO 低于 ${d.species.doMin} 报警 · 备用纯氧 / 发电机自启</text>
       </g>
       <!-- 控制信号(DCS→FV-01，正交阶梯) -->
@@ -145,12 +159,13 @@ RAS.pid = (function () {
         <circle cx="8" cy="-8" r="9" class="pid-bubble"/><text x="22" y="-4" class="pid-sub">仪表测点</text>
         <rect x="120" y="-16" width="14" height="14" rx="3" class="pid-box c8"/><text x="140" y="-4" class="pid-sub">控制系统</text>
         <rect x="230" y="-16" width="14" height="14" rx="3" class="pid-valve-box" transform="rotate(45 237 -9)"/><text x="250" y="-4" class="pid-sub">控制阀</text>
-        <line x1="330" y1="-8" x2="356" y2="-8" class="pid-signal"/><text x="362" y="-4" class="pid-sub">信号线</text>
-        <line x1="430" y1="-8" x2="456" y2="-8" class="pid-control"/><text x="462" y="-4" class="pid-sub">控制信号</text>
+        <line x1="320" y1="-8" x2="346" y2="-8" class="pid-signal"/><text x="352" y="-4" class="pid-sub">信号线</text>
+        <line x1="420" y1="-8" x2="446" y2="-8" class="pid-control"/><text x="452" y="-4" class="pid-sub">控制信号</text>
+        <rect x="520" y="-16" width="14" height="14" rx="3" class="pid-box c9"/><text x="540" y="-4" class="pid-sub">反硝化</text>
         <g class="pid-swu-wrap">
-          <rect x="560" y="-16" width="208" height="22" rx="11" class="pid-swu"/>
-          <circle cx="576" cy="-5" r="4.5" class="pid-swu-dot"/>
-          <text x="588" y="-1" class="pid-swu-txt">比水耗 ${d.hydraulics.specificWaterUse} m³/kg</text>
+          <rect x="610" y="-16" width="208" height="22" rx="11" class="pid-swu"/>
+          <circle cx="626" cy="-5" r="4.5" class="pid-swu-dot"/>
+          <text x="638" y="-1" class="pid-swu-txt">比水耗 ${d.hydraulics.specificWaterUse} m³/kg</text>
         </g>
       </g>
     </svg>`;

@@ -230,7 +230,7 @@
       <div>反硝化：脱氮率 <b>${Math.round(wq.denit.removal * 100)}%</b>，NO₃-N 稳态 <b>${wq.no3N}</b> mg/L（以 N 计），需反硝化反应器容积约 <b>${wq.denit.volume}</b> m³（负荷 ${wq.denit.no3NLoadDaily} kg NO₃-N/天）。</div></div>
       <div style="padding:0 26px 26px"><div class="note">
         <span class="ic">🔬</span>
-        <div>稳态质量平衡校核：基于生物滤池/脱气塔/微滤机一阶去除与补水稀释推算系统浓度，供设计可行性判断。溶氧按供氧能力余量 ${wq.o2Margin}% 维持 ${wq.doTarget} mg/L；数值为工程估算，运行需在线监测 DO/pH/TAN/CO₂ 并预留余量。</div></div></div>`;
+        <div>稳态质量平衡校核：基于两段硝化（AOB/NOB）+ 反硝化 + 脱气塔 + 微滤机一阶去除，并叠加补水稀释与水源背景浓度，推算系统浓度，供设计可行性判断。溶氧按供氧能力（覆盖鱼代谢 + 硝化耗氧，余量 ${wq.o2Margin}%）闭环判定池内可达 <b>${wq.o2Achieved}</b> mg/L${wq.o2Deficit > 0.1 ? `（缺口 ${wq.o2Deficit} mg/L，供氧不足）` : ""}；数值为工程估算，运行需在线监测 DO/pH/TAN/CO₂ 并预留余量。</div></div></div>`;
   }
   /* 敏感度（龙卷风图）：基于 engine.sensitivity 的 ±% 扰动结果渲染水平条带 */
   function renderSensitivity(d) {
@@ -361,6 +361,7 @@
       ["圆形养殖池", c.tankCount + " 个", `Ø${c.tankD} m × ${c.tankH} m，有效 ${c.singleTankVol} m³`, "PP/玻璃钢/混凝土"],
       ["转鼓微滤机", so.units + " 台", `${so.screen} µm 筛网，单台 ${so.eachFlow} m³/h`, "不锈钢"],
       ["MBBR 生物滤池", bf.units + " 座", `总 ${bf.totalVol} m³，填料 ${bf.mediaFill*100}%`, "曝气+悬浮填料"],
+      ["反硝化反应器", "1 座", `容积 ${d.waterQuality.denit.volume} m³，脱氮率 ${Math.round(d.waterQuality.denit.removal*100)}%（侧流脱氮）`, "缺氧+碳源投加"],
       ["增氧系统", "1 套", `供氧 ${ox.o2Supply} kg/h（${ox.type}）`, "氧气锥+LHO"],
       ["CO₂ 脱除塔", "1 座", `${ox.degasserType}`, "填料式"],
       ["循环水泵", "≥2 台", `${hy.recircFlowH} m³/h，一用一备`, "变频"],
@@ -485,6 +486,7 @@
       ["微滤机", eq.drumFilter.type + "，" + eq.drumFilter.screen + " µm 筛网，TSS 去除率 " + (eq.drumFilter.tssRemoval*100) + "%"],
       ["增氧系统", eq.oxygen.type + "，氧耗 " + eq.oxygen.o2PerFeed + " kg O₂/kg 饲料，传质效率 " + (eq.oxygen.transferEff*100) + "%"],
       ["CO₂ 脱除", eq.degasser.type + "，CO₂ 去除率 " + (eq.degasser.co2Removal*100) + "%"],
+      ["反硝化", "侧流反硝化反应器，脱氮率 " + (K.process.denitRemoval*100) + "%，容积负荷 " + K.process.denitRate + " kg NO₃-N/m³·d"],
       ["循环水泵", "扬程 " + eq.pump.head + " m，效率 " + (eq.pump.eff*100) + "%"],
       ["控温", "热泵 COP≈" + eq.heat.cop],
     ].map(r => `<tr><td><b>${r[0]}</b></td><td>${r[1]}</td></tr>`).join("");
@@ -502,8 +504,9 @@
       ["养殖池系统", "按产能目标与放养密度、养殖茬次反推所需养殖水体，确定池数、池径与有效容积。"],
       ["投喂与氮负荷", "由产量与饲料系数(FCR)估算年投喂量，推导总氨氮(TAN)等氮素日产量，作为生物滤池设计依据。"],
       ["水力学", "由养殖水体与日循环次数确定循环流量与补水流量，得出回用率与单位鱼比水耗。"],
-      ["生物滤池 (MBBR)", "按 TAN 负荷与温度修正后的硝化速率(θ 系数)确定反应器容积与悬浮填料量，并叠加安全系数。"],
-      ["增氧与脱碳", "按饲料氧耗配置供氧能力，按 CO₂ 产生量配置脱气塔，维持溶氧与气体平衡。"],
+      ["生物滤池 (MBBR)", "按 TAN 负荷与温度修正后的硝化速率(θ 系数)确定反应器容积与悬浮填料量，并叠加安全系数。分段考虑 AOB 亚硝化(TAN→NO₂)与 NOB 硝化(NO₂→NO₃)两步速率，NO₂ 稳态更低。"],
+      ["生物脱氮（反硝化）", "MBBR 完成硝化后，NO₃ 经侧流反硝化反应器在缺氧 + 碳源条件下由异养菌还原为 N₂ 逸出；按 NO₃-N 负荷与反硝化容积负荷(denitRate)确定反应器容积，脱氮率 denitRemoval 计入稳态 NO₃ 质量平衡。"],
+      ["增氧与脱碳", "按饲料氧耗 + 硝化耗氧配置供氧能力（覆盖鱼代谢与硝化峰值，含安全系数），按 CO₂ 产生量配置脱气塔，维持溶氧与气体平衡。"],
       ["固废处理", "按循环流量配置微滤机台数与单台处理量，并配置污泥浓缩/脱水单元。"],
       ["能耗估算", "按水泵、增氧、脱气、控温、辅助等系统功率需求估算总装机与单位鱼比能耗。控温负荷随<strong>地区全年平均气温</strong>变化：净热需求 = 围护传热(围护表面积[屋面+外墙]×U值×温差) + 补水升温(补水流量×比热×温差) + 水面蒸发潜热(池面蒸发×汽化潜热) − 内部得热(泵损+照明/代谢)；若环境低于设定温则加热、高于则制冷，分别按热泵 COP 与冷水机组 COP 折算电耗。"],
       ["建筑规模", "按养殖区与设备区占地估算车间总面积与体积（含通道与辅助用房）。"],
@@ -554,7 +557,7 @@
 
       <div class="doc-section">
         <h3>三、水质可行性校核方法</h3>
-        <p class="doc-p">在设备尺寸确定后，引擎以<strong>稳态质量平衡</strong>复核系统实际浓度：将各污染物的产生速率，对照生物滤池（硝化）、脱气塔（CO₂）、微滤机（TSS）的一阶去除能力，并叠加新鲜补水稀释，推算 TAN / NO₂ / NO₃ / CO₂ / TSS / DO 的系统浓度，与上方限值比对，给出「达标 / 预警 / 超限」判定。硝酸盐(NO₃)仅随补水交换去除，故在补水率偏低时需通过加大排换水或增设反硝化单元控制。</p>
+        <p class="doc-p">在设备尺寸确定后，引擎以<strong>稳态质量平衡</strong>复核系统实际浓度：将各污染物的产生速率，对照生物滤池（两段硝化：AOB 亚硝化 + NOB 硝化）、反硝化反应器（NO₃→N₂）、脱气塔（CO₂）、微滤机（TSS）的一阶去除能力，并叠加新鲜补水的稀释与<strong>水源背景浓度</strong>(TAN/NO₂/NO₃)，推算 TAN / NO₂ / NO₃ / CO₂ / TSS / DO 的系统浓度，与上方限值比对，给出「达标 / 预警 / 超限」判定。其中硝酸盐稳态 = (硝化生成×(1−脱氮率) + 水源背景) / 补水流量：反硝化单元可显著削减 NO₃ 负荷，剩余随补水交换控制；溶氧(DO)按供氧能力(覆盖鱼代谢 + 硝化耗氧)余量判定池内可达浓度，供氧不足时按比例下降并计缺口。</p>
       </div>
 
       <div class="doc-confidential">
@@ -1012,6 +1015,8 @@
 
   /* ---------------- 初始化 ---------------- */
   function init() {
+    const sv = document.getElementById("sysVersion");
+    if (sv && K && K.meta) sv.textContent = K.meta.version;   // 首页版本号跟随系统版本（knowledge.meta.version）
     initTheme(); initSpecies(); initRegionChips(); initTabs(); initMagnetic();
     initModelControls(); initExport(); initOptimizer(); initLibrary(); initLinking();
     renderDoc();

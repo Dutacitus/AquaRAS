@@ -87,8 +87,11 @@ RAS.engine = (function () {
 
     // —— 4. 生物滤池 (MBBR) ——
     const bf = K.equipment.biofilter;
-    // P0-1：硝化速率温度修正（v1.5.0）：有效速率 = rate × θ^(T−25)，冷水品种反应器更大
-    const nitrRate = bf.rate * Math.pow(bf.nitrTheta != null ? bf.nitrTheta : 1.08, temp - 25);
+    // P0-3 两段硝化（v1.6.0）：温度修正速率。AOB(亚硝化)为限速步用于定容；NOB(硝化)更快用于 NO₂ 稳态
+    const nitrTheta = bf.nitrTheta != null ? bf.nitrTheta : 1.08;
+    const nitrRate = bf.rate * Math.pow(nitrTheta, temp - 25);                  // AOB 限速步：生物滤池定容
+    const rNitrit = (bf.rateNitritation != null ? bf.rateNitritation : bf.rate) * Math.pow(nitrTheta, temp - 25); // TAN→NO₂
+    const rNitrat = (bf.rateNitratation != null ? bf.rateNitratation : bf.rate) * Math.pow(nitrTheta, temp - 25); // NO₂→NO₃
     const bfReactorVol = tanDaily / nitrRate;
     const bfReactorVolSf = bfReactorVol * sf;
     const bfTotalVol = bfReactorVolSf / bf.mediaFill;
@@ -101,7 +104,10 @@ RAS.engine = (function () {
     const o2Daily = dailyFeedAvg * o2PerFeed;
     const o2Peak = dailyFeedPeak * o2PerFeed;
     const o2HourPeak = o2Peak / 24;
-    const o2Supply = o2HourPeak / ox.transferEff * sf;
+    // P0-1 溶氧闭环（v1.6.0）：供氧能力按「峰值鱼代谢 + 硝化耗氧」定容(含安全系数)，确保池内可达 DO
+    const nitrifO2Daily = K.process.nitrifO2 * tanDaily;       // kg/天 硝化耗氧
+    const o2DemandH = (o2Peak + nitrifO2Daily) / 24;          // kg/h 峰值总氧耗(鱼代谢 + 硝化)
+    const o2Supply = o2DemandH / ox.transferEff * sf;         // 设计供氧能力(覆盖鱼代谢+硝化，含 SF)
     const deg = K.equipment.degasser;
     const co2Prod = o2Daily * K.process.co2Ratio;
     const co2Hour = co2Prod / 24;
@@ -283,44 +289,58 @@ RAS.engine = (function () {
     const roi = capexTotal > 0 ? (grossProfit / capexTotal) * 100 : null;      // 年化 ROI(%)
     const marginRate = revenue > 0 ? (grossProfit / revenue) * 100 : null;     // 毛利率(%)
 
-    /* —— 水质可行性闭环校核（稳态质量平衡：一阶去除 + 补水稀释） —— */
+    /* —— 水质可行性闭环校核（稳态质量平衡：两段硝化 + 一阶去除 + 补水稀释 + 水源背景） —— */
     const wq = K.waterQuality;
     const tanHard = Math.min(wq.tanMax, sp.tanMax || wq.tanMax);
     const no2Hard = wq.no2Max;
     const doMinV = Math.min(wq.doMin, sp.doMin || wq.doMin);
-    const kTan = (nitrRate * 1000) / tanHard;   // 1/d：温度修正后的有效硝化速率
-    const kNo2 = (nitrRate * 1000) / no2Hard;
+    const o2SatV = o2Sat(temp);
+    const doTarget = Math.min(doMinV + 1.5, o2SatV);
+    // P0-4 补水背景浓度：水源 TAN/NO₂/NO₃ 计入稳态质量平衡（用户可经 inputs.makeupBackground 覆盖）
+    const bg = (inputs.makeupBackground && typeof inputs.makeupBackground === "object")
+      ? inputs.makeupBackground : (K.defaults.makeupBackground || { tan: 0, no2: 0, no3: 0 });
+    const bgTan = bg.tan != null ? bg.tan : 0;
+    const bgNo2 = bg.no2 != null ? bg.no2 : 0;
+    const bgNo3 = bg.no3 != null ? bg.no3 : 0;
+    // P0-3 两段硝化：TAN 由 AOB(rNitrit) 去除；NO₂ 由 NOB(rNitrat,更快) 去除 → NO₂ 稳态更低
     const denomBf = (k) => k * bfReactorVolSf + makeupFlow;
-    const cTan = (tanDaily * 1000) / denomBf(kTan);
-    const cNo2 = (tanDaily * 1000) / denomBf(kNo2);
-    // P1-6：NO3 稳态 = 硝化生成 − 反硝化去除 − 补水稀释（质量平衡，以 N 计再换算 NO3）
+    const cTan = (tanDaily * 1000 + makeupFlow * bgTan) / denomBf(rNitrit * 1000 / tanHard); // mg/L as N
+    const cNo2 = (tanDaily * 1000 + makeupFlow * bgNo2) / denomBf(rNitrat * 1000 / no2Hard); // mg/L as N
+    // P1-6 / P0-4：NO₃ 稳态 = 硝化生成×(1−反硝化去除) + 水源背景，随补水交换(以 N 计)
     const denitRemoval = K.process.denitRemoval != null ? K.process.denitRemoval : 0;
     const no3Factor = K.process.no3Factor != null ? K.process.no3Factor : 4.43;
-    const no3Nmg = makeupFlow > 0 ? (tanDaily * 1000 * (1 - denitRemoval)) / makeupFlow : 9999; // mg/L as N
+    const no3Nmg = makeupFlow > 0
+      ? (tanDaily * 1000 * (1 - denitRemoval) + makeupFlow * bgNo3) / makeupFlow
+      : 9999; // mg/L as N（无补水排换则累积）
     const cNo3 = no3Nmg * no3Factor;
     const denitVol = (tanDaily * (1 - denitRemoval)) / (K.process.denitRate != null ? K.process.denitRate : 0.25);
+    // P0-2 CO₂ 闭环：脱气塔脱除 + 补水稀释 → 稳态 CO₂；输出脱除量 co2Stripped
+    const co2Stripped = co2Prod * deg.co2Removal;  // kg/天 脱气塔脱除量
     const cCo2 = (co2Prod * 1000) / (deg.co2Removal * recircFlow + makeupFlow);
     const cTss = (tssDaily * 1000) / (df.tssRemoval * recircFlow + makeupFlow);
-    const o2SatV = o2Sat(temp);
-    const o2DemandH = (o2Peak + K.process.nitrifO2 * tanDaily) / 24;   // kg/h：鱼代谢 + 硝化耗氧(峰值)
+    // P0-1 DO 闭环：供氧覆盖鱼代谢+硝化时池内可达 DO；供氧不足按比例下降并计缺口
     const o2Margin = o2DemandH > 0 ? (o2Supply - o2DemandH) / o2DemandH * 100 : 999;
-    const doTarget = Math.min(doMinV + 1.5, o2SatV);
+    const o2Ratio = o2DemandH > 0 ? Math.min(1, o2Supply / o2DemandH) : 1;
+    const o2Achieved = o2Ratio >= 1 ? doTarget : round(doTarget * o2Ratio, 2);
+    const o2Deficit = Math.max(0, round(doMinV - o2Achieved, 2));
     const st = (v, hard, soft, lowerBetter) => lowerBetter
       ? (v > hard ? "fail" : v > soft ? "warn" : "ok")
       : (v < hard ? "fail" : v < soft ? "warn" : "ok");
     const checks = [
-      { key: "tan", name: "总氨氮 TAN", value: round(cTan, 2), unit: "mg/L", limit: tanHard, status: st(cTan, tanHard, tanHard * 1.5, true), note: "生物滤池硝化 + 补水稀释" },
-      { key: "no2", name: "亚硝态氮 NO₂", value: round(cNo2, 2), unit: "mg/L", limit: no2Hard, status: st(cNo2, no2Hard, no2Hard * 1.5, true), note: "二级硝化" },
+      { key: "tan", name: "总氨氮 TAN", value: round(cTan, 2), unit: "mg/L", limit: tanHard, status: st(cTan, tanHard, tanHard * 1.5, true), note: "AOB 亚硝化 + 补水稀释" },
+      { key: "no2", name: "亚硝态氮 NO₂", value: round(cNo2, 2), unit: "mg/L", limit: no2Hard, status: st(cNo2, no2Hard, no2Hard * 1.5, true), note: "NOB 硝化(NO₂→NO₃)，速率高于 AOB" },
       { key: "no3", name: "硝态氮 NO₃-N", value: round(no3Nmg, 1), unit: "mg/L（以 N 计）", limit: 300, status: st(no3Nmg, 300, wq.no3SoftCap, true), note: denitRemoval > 0 ? `反硝化脱除 ${Math.round(denitRemoval * 100)}%，剩余随补水交换` : "仅随补水交换，需排换水或反硝化" },
-      { key: "co2", name: "二氧化碳 CO₂", value: round(cCo2, 1), unit: "mg/L", limit: wq.co2Max * 2, status: st(cCo2, wq.co2Max * 2, wq.co2Max, true), note: "脱气塔 + 补水，敏感品种需加大脱气" },
+      { key: "co2", name: "二氧化碳 CO₂", value: round(cCo2, 1), unit: "mg/L", limit: wq.co2Max * 2, status: st(cCo2, wq.co2Max * 2, wq.co2Max, true), note: `脱气塔脱除 ${round(co2Stripped, 1)} kg/天 + 补水稀释` },
       { key: "tss", name: "悬浮固体 TSS", value: round(cTss, 1), unit: "mg/L", limit: wq.ssMax, status: st(cTss, wq.ssMax, wq.ssMax * 1.5, true), note: "微滤机去除" },
-      { key: "do", name: "溶氧 DO", value: round(doTarget, 1), unit: "mg/L", limit: doMinV, status: o2DemandH > o2Supply ? "fail" : "ok", note: "供氧余量 " + round(o2Margin, 0) + "%" },
+      { key: "do", name: "溶氧 DO", value: round(o2Achieved, 1), unit: "mg/L", limit: doMinV, status: o2Deficit > 0.1 ? "fail" : "ok", note: "供氧余量 " + round(o2Margin, 0) + "%，池内可达 " + round(o2Achieved, 1) + " mg/L" },
     ];
     const wqStatus = checks.some((c) => c.status === "fail") ? "fail"
       : (checks.some((c) => c.status === "warn") ? "warn" : "ok");
     const waterQuality = {
       checks, status: wqStatus, feasible: wqStatus !== "fail",
       o2Margin: round(o2Margin, 0), o2Sat: round(o2SatV, 1), doTarget: round(doTarget, 1),
+      o2Achieved: round(o2Achieved, 2), o2Deficit: round(o2Deficit, 2),
+      co2Stripped: round(co2Stripped, 1),
       no3N: round(no3Nmg, 1),
       denit: {
         removal: round(denitRemoval, 2),
@@ -365,6 +385,8 @@ RAS.engine = (function () {
       },
       biofilter: {
         type: bf.type, rate: round(nitrRate, 3),
+        rateNitritation: round(rNitrit, 3),
+        rateNitratation: round(rNitrat, 3),
         reactorVol: round(bfReactorVol, 1),
         reactorVolSf: round(bfReactorVolSf, 1),
         totalVol: round(bfTotalVol, 1),
@@ -376,6 +398,8 @@ RAS.engine = (function () {
         o2Daily: round(o2Daily, 1),
         o2Peak: round(o2Peak, 1),
         o2HourPeak: round(o2HourPeak, 1),
+        o2DemandH: round(o2DemandH, 1),
+        nitrifO2Daily: round(nitrifO2Daily, 1),
         o2Supply: round(o2Supply, 1),
         co2Hour: round(co2Hour, 1),
         degasserType: deg.type,
