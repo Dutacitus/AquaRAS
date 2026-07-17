@@ -784,34 +784,12 @@
       <div class="doc-confidential">
         <div class="doc-lock">🔒 核心计算逻辑保密</div>
         <p>本系统采用 <strong>AquaRAS 专有工艺计算引擎</strong>，其<strong>核心算法、设备选型系数、经济模型参数与实现代码均为商业机密，不在本文档中披露</strong>。本文档仅说明计算体系、所引用的行业/文献标准与工程方法论，用于帮助用户理解设计依据与结果边界。</p>
-        <p class="doc-cap">本系统输出为工程量级估算，<strong>实际工程须由具备资质的设计单位结合场地条件、设备选型与水文/气候数据，并依据现行国家与行业规范深化设计与施工图</strong>。AquaRAS 不对直接采用估算结果造成的工程风险承担责任。</p>
+        <p class="doc-cap"><strong>免责声明：本引擎计算数据仅供参考。</strong>本系统输出为工程量级估算，<strong>实际工程须由具备资质的设计单位结合场地条件、设备选型与水文/气候数据，并依据现行国家与行业规范深化设计与施工图</strong>。AquaRAS 不对直接采用估算结果造成的工程风险承担责任。</p>
+        <p class="doc-cap"><strong>关于作者：</strong>水产专业硕士研究生，多年工厂化循环水（RAS）从业经验。</p>
       </div>
 
-      <div class="doc-section doc-selftest">
-        <h3>五、引擎自检（可盈利方案基准验证）</h3>
-        <p class="doc-p">点击下方按钮运行引擎自检：以一组固定的<strong>可盈利代表方案</strong>（加州鲈鱼 100t/年，RAS 精品批发价 45 元/kg）为 golden case，验证引擎的盈利性、水质可行性与内部计算一致性（CAPEX 对账、水费公式、回收期/ROI/毛利率公式、多品种默认盈利）。全部断言通过即代表引擎逻辑自洽。</p>
-        <button type="button" id="runSelfCheck" class="btn-primary magnetic">▶ 运行引擎自检</button>
-        <div id="selfCheckResult" class="selfcheck-result" style="margin-top:14px"></div>
-      </div>`;
+    `;
 
-    const scBtn = host.querySelector("#runSelfCheck");
-    if (scBtn) scBtn.addEventListener("click", () => { renderSelfCheck(RAS.engine.selfCheck()); });
-  }
-  function renderSelfCheck(res) {
-    const box = document.getElementById("selfCheckResult");
-    if (!box) return;
-    const s = res.summary;
-    const rows = res.checks.map((c) => `<div class="sc-row ${c.pass ? "sc-ok" : "sc-fail"}">
-      <span class="sc-badge">${c.pass ? "✓" : "✗"}</span>
-      <span class="sc-name">${c.name}</span>
-      ${c.detail ? `<span class="sc-detail">${c.detail}</span>` : ""}
-    </div>`).join("");
-    box.innerHTML = `
-      <div class="sc-summary ${res.pass ? "sc-pass" : "sc-fail"}">
-        <div class="sc-big">${res.pass ? "自检通过 PASS" : "自检失败 FAIL"}</div>
-        <div class="sc-scheme">代表方案：加州鲈鱼 ${s.scale} · 鱼价 ${s.salePrice} 元/kg · 单位成本 ${s.costPerKg} 元/kg · 毛利率 ${s.marginRate}% · 回收期 ${s.paybackYears != null ? s.paybackYears.toFixed(1) : "—"} 年 · 水质 ${s.wqStatus}</div>
-      </div>
-      <div class="sc-checks">${rows}</div>`;
   }
   function capexLabel(k) {
     return ({ tanks: "养殖池系统", biofilter: "生物滤池", solids: "固废处理", oxygen: "增氧系统",

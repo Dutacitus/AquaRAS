@@ -283,11 +283,13 @@ RAS.engine = (function () {
       { key: "hvac", label: "控温系统(热泵)", unit: "m³", qty: totalTankVol, val: capexHvac },
       { key: "building", label: "车间土建", unit: "m²", qty: buildingArea, val: capexBuilding },
     ];
+    const matlKeys = { tanks: 1, pumps: 1, controls: 1 };                     // 仅腐蚀敏感设备受材质溢价
     const directRows = directDefs.map((c) => {
       const split = cdet[c.key].split != null ? cdet[c.key].split : 1;        // P2-8 可变比例
       const effScale = (1 - split) + split * scaleFactor;                     // 固定段不随规模变化
+      const matl = matlKeys[c.key] ? matlFactor : 1;                         // 海水品种(>1)对池体/水泵/自控加材质溢价，与 cpx 口径一致
       const subs = cdet[c.key].subs.map((s) => ({
-        label: s[0], rate: round(s[1] * effScale * regCost), amount: round(c.qty * s[1] * effScale * regCost),
+        label: s[0], rate: round(s[1] * effScale * regCost * matl), amount: round(c.qty * s[1] * effScale * regCost * matl),
       }));
       const total = subs.reduce((a, x) => a + x.amount, 0);
       return { key: c.key, label: c.label, unit: c.unit, qty: round(c.qty), subs, total, indirect: false };
@@ -866,83 +868,11 @@ RAS.engine = (function () {
     return out;
   }
 
-  /* ============== 引擎自检（可盈利方案 golden case + 一致性断言） ==============
-   * 返回 { golden, checks[], pass, summary }
-   * 用途：验证引擎逻辑自洽，并提供一个"默认即可盈利"的代表方案。
-   * golden case：加州鲈鱼 100t/年，RAS 精品批发价中值 45 元/kg（塘头 28、精品 55–68），
-   *   配置经扫描确认可盈利且水质不严重超标，作为引擎正确性基准用例。
-   */
-  function selfCheck() {
-    const golden = compute({
-      speciesKey: "bass", annualTons: 100, salePrice: 45,
-      targetDensity: 60, recircTurns: 12, makeupRate: 0.02, fcr: 1.20, safety: 1.15,
-    });
-    const e = golden.economics, wq = golden.waterQuality;
-    const checks = [];
-    const A = (name, cond, detail) => checks.push({ name, pass: !!cond, detail: detail == null ? "" : String(detail) });
-
-    // —— 盈利性 ——
-    A("年毛利为正", e.grossProfit > 0, "毛利 " + e.grossProfit + " 元");
-    A("毛利率 > 10%", e.marginRate > 10, "毛利率 " + e.marginRate + "%");
-    A("投资回收期 < 16 年", e.paybackYears != null && e.paybackYears < 16, "回收期 " + (e.paybackYears != null ? e.paybackYears.toFixed(1) : "—") + " 年");
-    A("年化 ROI 为正", e.roi != null && e.roi > 0, "ROI " + e.roi + "%");
-
-    // —— 水质可行性 ——
-    A("水质未超限(fail)", wq.status !== "fail", "WQ=" + wq.status);
-    A("供氧余量 > 0", wq.o2Margin > 0, "o2Margin " + wq.o2Margin + "%");
-    A("TAN/NO2/DO 核心指标达标", wq.checks.filter((c) => ["tan", "no2", "do"].includes(c.key)).every((c) => c.status === "ok"), "三项核心指标均 ok");
-
-    // —— 内部一致性（对账 + 公式）——
-    let catSum = 0, subRecon = true;
-    e.capexBreakdown.forEach((c) => {
-      if (c.subtotal) return;   // 小计行仅展示用，不参与对账与总额
-      const s = c.subs.reduce((a, x) => a + x.amount, 0);
-      if (Math.abs(s - c.total) > 1) subRecon = false;
-      catSum += c.total;
-    });
-    A("CAPEX 子项合计=分类额(容差1元)", subRecon, "");
-    A("CAPEX 分类合计=CAPEX 总额(容差8元)", Math.abs(catSum - e.capexTotal) <= 8, "分类和 " + catSum + " / 总额 " + e.capexTotal);
-
-    // 水费公式（用 round 后的补水流量估算，容差 2000 元）
-    const expectWater = golden.hydraulics.makeupFlow * 365 * 5;
-    A("水费 = 补水×365×水价", Math.abs(e.opexWater - expectWater) < 2000, "实际 " + e.opexWater + " / 估算 " + Math.round(expectWater));
-
-    // 盈利三公式
-    if (e.grossProfit > 0) {
-      A("回收期 = CAPEX/毛利", Math.abs(e.paybackYears - e.capexTotal / e.grossProfit) < 0.01, "");
-      A("ROI = 毛利/CAPEX×100", Math.abs(e.roi - e.grossProfit / e.capexTotal * 100) < 0.2, "");
-    }
-    if (e.revenue > 0) A("毛利率 = 毛利/营收×100", Math.abs(e.marginRate - e.grossProfit / e.revenue * 100) < 0.2, "");
-
-    // 多品种默认盈利（高价品种应直接可盈利且水质不 fail，证明引擎可产出盈利方案）
-    const multiOk = ["salmon", "trout", "turbot"].every((sk) => {
-      const d = compute({ speciesKey: sk, annualTons: 100 });
-      return d.economics.grossProfit > 0 && d.waterQuality.status !== "fail";
-    });
-    A("鲑/鳟/鲆 默认市场价下均可盈利且水质不 fail", multiOk, "");
-
-    // 无 NaN / 有限数
-    const finite = [e.capexTotal, e.opexTotal, e.costPerKg, e.revenue, e.grossProfit, e.paybackYears, e.roi, e.marginRate]
-      .every((v) => v == null || (typeof v === "number" && isFinite(v)));
-    A("经济数值均为有限数(无 NaN)", finite, "");
-
-    const pass = checks.every((c) => c.pass);
-    return {
-      golden, checks, pass,
-      summary: {
-        species: "加州鲈鱼", scale: "100 t/年", salePrice: 45,
-        capex: e.capexTotal, opex: e.opexTotal, costPerKg: e.costPerKg,
-        revenue: e.revenue, grossProfit: e.grossProfit, marginRate: e.marginRate,
-        paybackYears: e.paybackYears, roi: e.roi, wqStatus: wq.status,
-      },
-    };
-  }
-
   // 经济数值格式化（人民币）
   function rmb(v) {
     if (v >= 10000) return (v / 10000).toLocaleString("zh-CN", { maximumFractionDigits: 1 }) + " 万元";
     return Math.round(v).toLocaleString("zh-CN") + " 元";
   }
 
-  return { compute, optimize, sensitivity, monteCarlo, selfCheck, round, fmt, rmb };
+  return { compute, optimize, sensitivity, monteCarlo, round, fmt, rmb };
 })();

@@ -376,8 +376,9 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
 .note-warn b { color: #f59e0b; }
 
 /* ---------- Footer ---------- */
-.footer { margin-top: 40px; text-align: center; color: var(--text-faint); font-size: 12.5px; }
+.footer { margin-top: 40px; text-align: center; color: var(--text-faint); font-size: 12.5px; line-height: 1.9; }
 .footer a { color: var(--brand); text-decoration: none; }
+.footer-author { display: block; margin-top: 6px; color: var(--text-soft); font-size: 12px; }
 
 /* ---------- Magnetic ---------- */
 .magnetic { transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1); will-change: transform; }
