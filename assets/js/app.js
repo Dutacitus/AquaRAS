@@ -734,8 +734,19 @@
           <h4>③ 投资估算基准 (CAPEX)</h4>
           <table class="data doc-table"><thead><tr><th>投资项</th><th class="num">单价</th><th>单位</th></tr></thead><tbody>${capRows}</tbody></table>
           <p class="doc-cap">直接费按养殖水体（土建按面积）估算，详见「经济估算」中各投资项的一级分解。总投资另含 <b>间接费</b>（EPCM 12% + 调试 4% + 不可预见 6% + 其他 3% = 直接费 25%，封顶上限）与可选 <b>土地费</b>；并应用 <b>规模经济（分段曲线）</b>：单位投资随年产量呈亚线性变化，但按产能档位采用不同规模指数（&lt;30t 更陡、&gt;1000t 趋缓，下限 0.55×、上限 2.5×），比单一 0.6 次幂常数更贴合工程实际（参考规模 ${K.economics.capexModel.refAnnualTons} t/年）。本表为参考规模下的基准单价。</p>
+          <p class="doc-cap"><b>规模因子解读：</b>规模因子 = 当前规模单位产能投资 ÷ 参考规模（${K.economics.capexModel.refAnnualTons} t/年）单位投资的倍数。&gt;1 表示小规不经济（单位投资更高），&lt;1 表示大规有规模经济（单位投资更低），=1 即为参考规模。</p>
+          <p class="doc-cap">公式：<code>规模因子 = (参考规模 ÷ 年产量) ^ (1 − 指数)</code>，按产量档位取指数——&lt;30t 用 0.55（最陡）、30–300t 用 0.72、300–1000t 用 0.82、&gt;1000t 用 0.88（趋缓）。结果夹在 [0.55, 2.5]：单位投资最多比基准低 45% 或高 2.5×，防极端规模失真。</p>
+          <table class="data doc-table"><thead><tr><th>年产量</th><th class="num">规模因子</th><th>单位投资为基准</th></tr></thead><tbody>
+            <tr><td>&le;30 t</td><td class="num">2.50×</td><td>250%（封顶）</td></tr>
+            <tr><td>100 t</td><td class="num">1.36×</td><td>136%</td></tr>
+            <tr><td>300 t</td><td class="num">1.00×</td><td>100%（基准）</td></tr>
+            <tr><td>600 t</td><td class="num">0.88×</td><td>88%</td></tr>
+            <tr><td>1000 t</td><td class="num">0.81×</td><td>81%</td></tr>
+            <tr><td>10000 t</td><td class="num">0.66×</td><td>66%</td></tr>
+          </tbody></table>
+          <p class="doc-cap">落地方式：每项投资按可变比例 split 拆分，<code>有效规模因子 = (1 − split) + split × 规模因子</code>，仅可变段（池体/设备）跟随规模变化，固定段（EPCM、调试、部分土建）不随规模变，故总投资不会等比下降。</p>
         </div>
-        <div class="doc-card">
+      <div class="doc-card">
           <h4>④ 运营成本基准 (OPEX)</h4>
           <table class="data doc-table"><thead><tr><th>成本项</th><th class="num">单价</th><th>单位</th></tr></thead><tbody>${opRows}</tbody></table>
           <p class="doc-cap">水费按生产补水量 × 水价估算；饲料通常占 OPEX 的 70–80%。维护费改按各设备自身年维护率与寿命分摊并计提重置准备，比单一总率更贴近实际（高价易耗件费率高、寿命短）。</p>
@@ -756,6 +767,18 @@
       <div class="doc-section">
         <h3>四、参数不确定性与蒙特卡洛区间</h3>
         <p class="doc-p">工程模型系数（MBBR 硝化速率、热泵 COP、补水率、反硝化负荷、水面蒸发率、硝化温度系数等）本身存在取值不确定度。引擎内置 <b>uncertainty 参数集</b>（每项含 low / exp / high 三角分布），在「经济估算」面板点击「运行蒙特卡洛」后，对 N=2000 次抽样重算整条链路，输出 <b>单位成本 / 比能耗 / 总投资 / 年毛利 / 回收期 / 毛利率</b> 的 <b>P10–P90 区间</b>与直方图，并统计水质「达标/预警/超限」的通过率。结果从单点升级为区间，帮助识别方案风险敞口——P50 为最可能值，区间越宽代表对系数不确定越敏感。采样仅扰动<b>模型系数与可校准输入</b>，用户自定义售价 / 密度等不纳入抽样。</p>
+          <p class="doc-cap"><b>P10 / P50 / P90 读法：</b>P50 为中位数（一半模拟比它好、一半比它差，代表典型结果）；P10 为第 10 百分位（90% 的模拟比它差），对「越低越好」的指标（成本、比能耗、回收期）是乐观下限，对「越高越好」的指标（毛利、年利润）是悲观下限；P90 为第 90 百分位（90% 的模拟比它好），方向相反。[P10, P90] 覆盖中间 80% 的情形（80% 置信带）。</p>
+          <p class="doc-cap"><b>采样对象：</b>仅扰动 uncertainty 参数集中的 7 个模型系数（三角分布 low / exp / high），不抽样用户自定义的售价、密度、电价、土地费等市场输入——模型系数的不确定由本分析量化，市场波动由用户自行调参评估。</p>
+          <table class="data doc-table"><thead><tr><th>指标</th><th class="num">P10</th><th class="num">P50</th><th class="num">P90</th><th>方向</th></tr></thead><tbody>
+            <tr><td>单位成本 (元/kg)</td><td class="num">33.2</td><td class="num">34.1</td><td class="num">35.3</td><td>越低越好</td></tr>
+            <tr><td>比能耗 (kWh/kg)</td><td class="num">6.69</td><td class="num">7.24</td><td class="num">7.94</td><td>越低越好</td></tr>
+            <tr><td>年毛利 (万元)</td><td class="num">97.4</td><td class="num">108.9</td><td class="num">117.7</td><td>越高越好</td></tr>
+            <tr><td>回收期 (年)</td><td class="num">9.06</td><td class="num">9.79</td><td class="num">10.94</td><td>越低越好</td></tr>
+            <tr><td>毛利率 (%)</td><td class="num">21.6</td><td class="num">24.2</td><td class="num">26.2</td><td>越高越好</td></tr>
+          </tbody></table>
+          <p class="doc-cap"><b>示例（加州鲈 100 t/年、售价 45 元/kg、N=2000 一次运行）：</b>成本区间仅 33.2–35.3（跨度约 6%），因成本主驱动是饲料/电价/售价，均不在本抽样内；总投资在该运行下近似恒定——CAPEX 由规模与设备定容决定，被扰动的运行系数不改变定容逻辑。</p>
+          <p class="doc-cap"><b>水质可行率：</b>每次重算统计水质「达标/预警/超限」占比，即工艺失效概率。本例 ok 0% / warn 69% / fail 31%——即便经济指标尚可，仍有约 1/3 场景水质超限，提示当前安全系数下工艺风险偏高，应加大余量或调整设计。直方图展示单位成本与回收期的分布形态（单峰/拖尾/偏态）。</p>
+          <p class="doc-cap"><b>与敏感度（龙卷风图）互补：</b>龙卷风图单参数逐一 ±20% 扰动，回答「哪些参数最关键」；蒙特卡洛多参数同时随机，回答「综合不确定下结果区间多宽、工艺失效概率多大」。配合：先找关键源，再看联合分布。</p>
       </div>
 
       <div class="doc-confidential">
