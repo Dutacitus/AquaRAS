@@ -383,11 +383,9 @@ RAS.engine = (function () {
     const cNo2 = (tanDaily * 1000 + makeupFlow * bgNo2) / denomBf(rNitrat * 1000 / no2Hard); // mg/L as N
     // P1-6 / P0-4：NO₃ 稳态 = 硝化生成×(1−反硝化去除) + 水源背景，随补水交换(以 N 计)
     const denitRemoval = K.process.denitRemoval != null ? K.process.denitRemoval : 0;
-    const no3Factor = K.process.no3Factor != null ? K.process.no3Factor : 4.43;
     const no3Nmg = makeupFlow > 0
       ? (tanDaily * 1000 * (1 - denitRemoval) + makeupFlow * bgNo3) / makeupFlow
       : 9999; // mg/L as N（无补水排换则累积）
-    const cNo3 = no3Nmg * no3Factor;
     const denitVol = (tanDaily * (1 - denitRemoval)) / (K.process.denitRate != null ? K.process.denitRate : 0.25);
     // P0-2 CO₂ 闭环：脱气塔脱除 + 补水稀释 → 稳态 CO₂；输出脱除量 co2Stripped
     const co2Stripped = co2Prod * deg.co2Removal;  // kg/天 脱气塔脱除量

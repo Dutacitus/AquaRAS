@@ -33,23 +33,23 @@
  *   - 可选土地费(默认0，用户可经 landCost 覆盖)；营运资金已取消，不再计入总投资
  *   维护费基数由"含间接费的总投资"改为"直接费"(更贴合实际资产维护对象)。
  *
- * v1.6.0 (2026 P0 质量守恒闭环 + 反硝化全流程贯通)：
- *   - P0-3 两段硝化：biofilter 新增 rateNitritation(AOB, TAN→NO₂) 与 rateNitratation(NOB, NO₂→NO₃)，
+ * v1.6.0 (2026 质量守恒闭环 + 反硝化全流程贯通)：
+ *   - 两段硝化：biofilter 新增 rateNitritation(AOB, TAN→NO₂) 与 rateNitratation(NOB, NO₂→NO₃)，
  *     NOB 通常 1.5–3× AOB，稳态 NO₂ 更低更真实；AOB 仍为反应器定容限速步
- *   - P0-1 溶氧闭环：供氧能力按「峰值鱼代谢 + 硝化耗氧」定容(含安全系数)，池内可达 DO 闭环判定
- *   - P0-2 CO₂ 闭环：脱气塔脱除量 co2Stripped 输出，稳态 CO₂ 浓度校核
- *   - P0-4 补水背景：defaults.makeupBackground(TAN/NO₂/NO₃) 计入稳态质量平衡
+ *   - 溶氧闭环：供氧能力按「峰值鱼代谢 + 硝化耗氧」定容(含安全系数)，池内可达 DO 闭环判定
+ *   - CO₂ 闭环：脱气塔脱除量 co2Stripped 输出，稳态 CO₂ 浓度校核
+ *   - 补水背景：defaults.makeupBackground(TAN/NO₂/NO₃) 计入稳态质量平衡
  *   - 反硝化反应器贯通 PFD/PID/BOM/设计计算书各板块（此前仅计算层存在）
  *
- * v1.7.0 (2026 P1 模型保真度提升)：
- *   - P1-1 季节性双工况 HVAC(bin method)：regions 加 amp(年温差振幅)，引擎按 12 月均温序列积分年 HVAC 能耗
+ * v1.7.0 (2026 模型保真度提升)：
+ *   - 季节性双工况 HVAC(bin method)：regions 加 amp(年温差振幅)，引擎按 12 月均温序列积分年 HVAC 能耗
  *     （冬季制热×copHeat + 夏季制冷×copCool，含蒸发潜热），年能耗更准；无地区时退化为单点
- *   - P1-3 水足迹闭合：取水 = 蒸发损失 + 排污(bleed)，校验补水率是否覆盖蒸发(evapCovered 告警)，输出 m³/kg
- *   - P1-4 固废处置能耗与成本：process.solidsDisposalEnergy(kWh/kg 干固) + opex.solidsDisposalPrice(元/kg)，
+ *   - 水足迹闭合：取水 = 蒸发损失 + 排污(bleed)，校验补水率是否覆盖蒸发(evapCovered 告警)，输出 m³/kg
+ *   - 固废处置能耗与成本：process.solidsDisposalEnergy(kWh/kg 干固) + opex.solidsDisposalPrice(元/kg)，
  *     污泥脱水外运比能耗计入总能耗、处置单价计入 OPEX
- *   - P1-5 泵达西–魏斯巴赫阻力法：pump 加 pipeDiameter/pipeLength/pipeRoughness/staticLift/minorLossK，
+ *   - 泵达西–魏斯巴赫阻力法：pump 加 pipeDiameter/pipeLength/pipeRoughness/staticLift/minorLossK，
  *     扬程 = 提升高度 + 沿程(hf) + 局部(hm)，功率 = ρgQH/η（Swamee-Jain 摩阻系数）
- *   - P1-6 饲料蛋白消化率联动排泄：species.proteinDigestibility + process.nExcretionRef，
+ *   - 饲料蛋白消化率联动排泄：species.proteinDigestibility + process.nExcretionRef，
  *     nExcretionFraction = 基准×(ref/dig)，消化率↑→可排泄氮比例↓（高蛋白低消化率不再被低估）
  *
  * v1.5.2 (2026 热负荷与显示修正)：
@@ -67,16 +67,16 @@
  *   - 错字：「低圧」→「低压」(knowledge.js 三处)
  *
  * v1.5.0 (2026 模型保真度增强，全部为「计算模型系数/结构」优化，用户可自定义数据不动):
- *   - P0 硝化速率温度修正：biofilter.nitrTheta(1.08)，有效速率 = rate × theta^(T−25)，冷水品种反应器更合理
- *   - P0 TAN 改用饲料蛋白：tanPerFeed 现 = feedProtein × 0.16 × nExcretionFraction(0.50)，高蛋白排泄更高
- *   - P1 HVAC 蒸发潜热：heat.evapLatent/evapRate/evapTempRef，水面蒸发潜热纳入温控负荷
- *   - P1 人工随规模：opex.laborBase + laborPerTon×√产量，取代固定 4 人
- *   - P1 反硝化/NO3：process.denitRemoval(0.85)+denitRate(0.25)，NO3 稳态计入生物脱氮 + 脱氮反应器容积
- *   - P1 价格 asOf/confidence：economics.priceMeta + meta.dataAsOf/confidence
- *   - P2 CAPEX 固定/可变分段：capexDetail[].split(可变比例)，规模因子仅作用于可变段
- *   - P2 地区索引：regions[].costIndex/powerIndex/laborIndex，影响 CAPEX/电价/人工
- *   - P2 魔法数收回：defaults/makeupRate/recircTurns/safety、process.peakFeedFactor/sysWaterFactor/no3Factor、heat.pumpLossFrac、equipment.*.loadFactor
- *   - P2 设备工况修正：oxygen/pump 加 loadFactor(部分负荷效率折扣)
+ *   - 硝化速率温度修正：biofilter.nitrTheta(1.08)，有效速率 = rate × theta^(T−25)，冷水品种反应器更合理
+ *   - TAN 改用饲料蛋白：tanPerFeed 现 = feedProtein × 0.16 × nExcretionFraction(0.50)，高蛋白排泄更高
+ *   - HVAC 蒸发潜热：heat.evapLatent/evapRate/evapTempRef，水面蒸发潜热纳入温控负荷
+ *   - 人工随规模：opex.laborBase + laborPerTon×√产量，取代固定 4 人
+ *   - 反硝化/NO3：process.denitRemoval(0.85)+denitRate(0.25)，NO3 稳态计入生物脱氮 + 脱氮反应器容积
+ *   - 价格 asOf/confidence：economics.priceMeta + meta.dataAsOf/confidence
+ *   - CAPEX 固定/可变分段：capexDetail[].split(可变比例)，规模因子仅作用于可变段
+ *   - 地区索引：regions[].costIndex/powerIndex/laborIndex，影响 CAPEX/电价/人工
+ *   - 魔法数收回知识库：defaults/makeupRate/recircTurns/safety、process.peakFeedFactor/sysWaterFactor、heat.pumpLossFrac、equipment.*.loadFactor
+ *   - 设备工况修正：oxygen/pump 加 loadFactor(部分负荷效率折扣)
  *
  * 所有数值为"设计基准值"，引擎在计算时会结合安全系数与用户自定义微调。
  */
@@ -86,7 +86,7 @@ window.RAS_KNOWLEDGE = {
     title: "RAS 工艺设计知识库",
     dataAsOf: "2025–2026",
     confidence: "中",
-    note: "v1.8.0 P2 精细化：不确定性区间+蒙特卡洛(P10/P50/P90)/品种库扩展(海淡水salinity驱动材质·溶氧·水体密度)/CAPEX分段规模经济/维护费分设备寿命/能耗分项展示。v1.1.0 校准经济性/价格；v1.2.0 校准工程模型系数；v1.3.0 重构投资估算(规模经济+间接费+UV/脱气塔)；v1.4.0 HVAC 气候化(地区气温驱动温控)；v1.4.1 间接费收紧至直接费25%上限、取消营运资金。v1.5.0 模型增强：P0 MBBR 硝化速率加温度修正(theta)+TAN 改用饲料蛋白；P1 HVAC 补蒸发潜热/寻优纳入温度与地区/人工随规模/反硝化NO3模型/价格加asOf与置信度；P2 CAPEX 固定+可变分段/地区成本·电价·人工指数/引擎魔法数收回知识库/设备能耗加工况修正/知识库模块化与引用绑定。v1.6.0 P0 质量守恒闭环：两段硝化(AOB/NOB 分速率)+溶氧闭环(供氧覆盖鱼代谢与硝化)+CO₂脱气闭环+补水背景浓度；反硝化反应器贯通 PFD/PID/BOM/计算书。v1.7.0 P1 模型保真度：季节性双工况 HVAC(bin method 月均温积分，年能耗更准)/水足迹闭合(蒸发+排污，校验补水覆盖蒸发)/固废处置能耗与成本(脱水外运比能耗+处置单价)/泵达西–魏斯巴赫阻力法(扬程=提升+沿程+局部)/饲料蛋白消化率联动排泄(消化率↑→可排泄氮比例↓)。用户可自定义数据(售价/密度/FCR/气温取值/土地费/单价覆盖项)不在此轮优化。",
+    note: "v1.8.0 精细化升级：①参数不确定性区间 + 蒙特卡洛（P10/P50/P90）抽样；②品种库扩展（海/淡/半咸水，salinity 驱动材质溢价·溶氧饱和度·水体密度）；③CAPEX 分段规模经济曲线；④维护费按设备寿命分项；⑤能耗分项展示（泵/氧/脱气/温控/杂项）。v1.1.0 校准经济性/价格；v1.2.0 校准工程模型系数；v1.3.0 重构投资估算(规模经济+间接费+UV/脱气塔)；v1.4.0 HVAC 气候化(地区气温驱动温控)；v1.4.1 间接费收紧至直接费25%上限、取消营运资金。v1.5.0 模型增强：MBBR 硝化速率加温度修正(theta)+TAN 改用饲料蛋白；HVAC 补蒸发潜热/寻优纳入温度与地区/人工随规模/反硝化NO3模型/价格加asOf与置信度；CAPEX 固定+可变分段/地区成本·电价·人工指数/引擎魔法数收回知识库/设备能耗加工况修正/知识库模块化与引用绑定。v1.6.0 质量守恒闭环：两段硝化(AOB/NOB 分速率)+溶氧闭环(供氧覆盖鱼代谢与硝化)+CO₂脱气闭环+补水背景浓度；反硝化反应器贯通 PFD/PID/BOM/计算书。v1.7.0 模型保真度：季节性双工况 HVAC(bin method 月均温积分，年能耗更准)/水足迹闭合(蒸发+排污，校验补水覆盖蒸发)/固废处置能耗与成本(脱水外运比能耗+处置单价)/泵达西–魏斯巴赫阻力法(扬程=提升+沿程+局部)/饲料蛋白消化率联动排泄(消化率↑→可排泄氮比例↓)。用户可自定义数据(售价/密度/FCR/气温取值/土地费/单价覆盖项)不在此轮优化。",
     sourceMap: {
       "MBBR 硝化速率": "d'Aquin & Timmons (2012); 渔业机械仪器研究所 (2025)",
       "HVAC 能耗(含蒸发潜热)": "Aydın et al. (2026); 工程经验",
@@ -173,7 +173,6 @@ window.RAS_KNOWLEDGE = {
     tanPerFeed: 0.037,   // kg TAN / kg 饲料（[已弃用] 旧常数；v1.5.0 起 TAN 由 feedProtein×0.16×nExcretionFraction 推导，此值仅作兜底）
     nExcretionFraction: 0.50, // 饲料氮中排泄为溶解无机氮(TAN)的比例（其余留存鱼体或颗粒态）；推导 TAN = feedProtein×0.16×本值；v1.7.0 起再乘 (nExcretionRef/蛋白消化率)
     nExcretionRef: 0.85, // 参考蛋白消化率：消化率=本值时 nExcretionFraction 取基准值（消化率↑→实际排泄比例↓）
-    no3Factor: 4.43,     // 质量换算：1 份 N 硝化生成 4.43 份 NO3（=62/14，NO3/N）
     solidsDisposalEnergy: 0.08, // kWh/kg 干固 — 污泥脱水+外运处置比能耗（脱水~0.05 + 运输~0.03，集约化 RAS 典型）
     tssPerFeed: 0.28,    // kg TSS / kg 饲料（固废产率；文献 25–35%，取 28%）
     co2Ratio: 0.9,       // CO2 产量 / 耗氧（呼吸商 RQ≈0.9）
