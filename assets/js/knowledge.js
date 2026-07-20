@@ -82,11 +82,11 @@
  */
 window.RAS_KNOWLEDGE = {
   meta: {
-    version: "1.12.0",
+    version: "1.13.1",
     title: "RAS 工艺设计知识库",
     dataAsOf: "2026",
     confidence: "中",
-    note: "v1.12.0 碳酸盐体系闭环（碱度守恒 + pH 子模型）+ NH₃ 非离子氨毒性（仅模型系数，用户可自定义数据不动）：①碱度守恒——硝化每氧化 1g N 耗 7.14g 碱度(以CaCO₃计，化学计量 2 mol 碱度/mol N)，碱度仅随补水交换流失、不被滤池/脱气去除；稳态碱度 = 源水碱度 − 硝化净耗/补水量，若低于目标操作碱度(120 mg/L)则反算需投加 NaHCO₃ 量(kg/天、kg/kg鱼)。②pH 子模型——由稳态 CO₂(aq) 与总碱度经碳酸一级/二级解离平衡(温度/盐度修正 pK1/pK2)数值求解 [H⁺] 得 pH；低 pH→硝化速率折减(第二限速步，pH<7 按指数衰减至 0.2)→稳态 TAN 反弹，低排放设计可行性判定自此真实。③NH₃ 非离子氨——由 pH 与温度经 pKa(随温降)求离解比例，NH₃ = TAN × 离解率；毒性判据 急性 0.02 / 慢性 0.01 mg/L(N)。v1.11.1 蒙特卡洛硝化速率口径修正（仅模型系数，用户可自定义数据不动）：蒙特卡洛不确定性参数原指向「设计定容速率 equipment.biofilter.rate」，但稳态 TAN 平衡用的是「实际运行速率 equipment.biofilter.rateNitritation」。基准二者同为 0.60 时会在公式里抵消，但 MC 扰动设计速率会反物理地使生物滤池被「低估尺寸」→ TAN 反而升高→出现 29–31% 的伪失败(fail)。修正：MC 参数改指 rateNitritation（实际运行速率），定容速率保持设计值 0.60 不变；现低实现速率→TAN 升高（真实失败尾）、高实现速率→TAN 降低，方向正确，基准算例数值不变。v1.11.0 CO₂ 质量守恒补全（仅模型系数，用户可自定义数据不动）：补入此前漏算的「开放水面天然挥发（被动空气吹脱）」通道——等效去除流量=co2Kla(3.0/天)×养殖池体积，与大气平衡值 co2Star=0.5 mg/L；稳态 CO₂ 由脱气塔(主动)+天然挥发(被动)+补水稀释三项共同决定，量纲 g/天÷(m³/天)=mg/L 自洽。此前 v1.10.0 仅靠下调鱼呼吸系数压浓度，现机制补全后判定更可信。v1.10.0 水质子模型校准（仅模型系数，用户可自定义数据不动）：①鱼呼吸氧耗标定 o2FishCal=0.45（真实鱼代谢仅约 0.35–0.5 kg O₂/kg 饲料，原默认 0.9–1.0 偏高致 CO₂/供氧/能耗系统性高估）；②CO₂ 预算补全硝化产 CO₂（碱度消耗→CO₂，RAS 主要 CO₂ 源，co2PerN≈4.57 kg CO₂/kg TAN，原模型漏算）；默认方案稳态 CO₂ 由 27.7(鲈)/38.4(罗非·鲶) 降至 ≤15(鲈)/≤30(罗非·鲶) mg/L。③TSS 固废产率 0.28→0.22、微滤机去除率 0.90→0.93（高效微滤机，文献可达 0.93–0.95），高密度品种 TSS 由 13→≤10 mg/L。④收敛 CAPEX 输出：移除 economics 中未含规模因子的 capexTanks/capexBio/.../capexBuilding 等 10 个冗余字段（与 capexBreakdown 口径不一致，UI 未使用，属误读源），仅保留 capexDirect(已含规模/地区缩放) 与 capexTotal。v1.9.0 投资估算造价校准（基于 2025–2026 真实工程招标与造价标准）：车间土建 900→1200 元/m²（参照 2025 钢结构厂房造价指南与宣威/潍坊 RAS 项目真实造价，真实区间 1200–1500 取低中值）；补充真实锚点（宣威 2025、广西/剑阁 2025–2026 设备中标价、工程建设其他费用定额、建标[2013]44号）；间接费维持直接费 25% 上限。v1.8.0 精细化升级：①参数不确定性区间 + 蒙特卡洛（P10/P50/P90）抽样；②品种库扩展（海/淡/半咸水，salinity 驱动材质溢价·溶氧饱和度·水体密度）；③CAPEX 分段规模经济曲线；④维护费按设备寿命分项；⑤能耗分项展示（泵/氧/脱气/温控/杂项）。v1.1.0 校准经济性/价格；v1.2.0 校准工程模型系数；v1.3.0 重构投资估算(规模经济+间接费+UV/脱气塔)；v1.4.0 HVAC 气候化(地区气温驱动温控)；v1.4.1 间接费收紧至直接费25%上限、取消营运资金。v1.5.0 模型增强：MBBR 硝化速率加温度修正(theta)+TAN 改用饲料蛋白；HVAC 补蒸发潜热/寻优纳入温度与地区/人工随规模/反硝化NO3模型/价格加asOf与置信度；CAPEX 固定+可变分段/地区成本·电价·人工指数/引擎魔法数收回知识库/设备能耗加工况修正/知识库模块化与引用绑定。v1.6.0 质量守恒闭环：两段硝化(AOB/NOB 分速率)+溶氧闭环(供氧覆盖鱼代谢与硝化)+CO₂脱气闭环+补水背景浓度；反硝化反应器贯通 PFD/PID/BOM/计算书。v1.7.0 模型保真度：季节性双工况 HVAC(bin method 月均温积分，年能耗更准)/水足迹闭合(蒸发+排污，校验补水覆盖蒸发)/固废处置能耗与成本(脱水外运比能耗+处置单价)/泵达西–魏斯巴赫阻力法(扬程=提升+沿程+局部)/饲料蛋白消化率联动排泄(消化率↑→可排泄氮比例↓)。用户可自定义数据(售价/密度/FCR/气温取值/土地费/单价覆盖项)不在此轮优化。",
+    note: "v1.13.1 全引擎兜底审计修正（仅模型系数/公式口径，用户可自定义数据不动）：①碱度稳态 1000× 单位 BUG 修复——alkNat=bgAlk−consM/makeupFlow 中 consM/makeupFlow 量纲为 mg/m³、与 bgAlk(mg/L) 相减漏了 ÷1000，导致 alkNat 恒为极大负值、低换水/高换水设计均被静默判为需全额投加 NaHCO₃（与补水率脱钩）；修正为 ÷1000 后，高换水(如 25–50%)时源水碱度可满足需求→不再投加，cAlkSys 如实反映自然碱度。②碱度状态判定补全——此前仅按 NaHCO₃ 投加负担分级，与展示的碱度下限 alkMin 脱节；现同时判 cAlkSys<alkMin→fail、自然碱度低于操作目标 alkTarget→warn，使「碱度」检查的物理语义自洽。③溶氧余量(DO 闭环)改用实际注入水体的氧量 o2Delivered=o2Supply×传质效率 计算余量/可达 DO，消除原按铭牌产能口径导致的约 1/传质效率(≈5%) 余量高估。审计 harness 5000 组随机模糊 + 边界(补水0/0.5、极端温度、极小5t/超大2000t、全地区)全绿，golden 鲈@45 毛利率27.2%/回收10.58y/能耗5.6 与 v1.13.0 零回退。v1.13.0 电力碳足迹 + 水足迹真水平衡（仅模型系数/知识库，用户可自定义数据不动）：①电力碳足迹——地区库 regions[] 增加 carbonFactor(kgCO₂e/kWh，电网排放因子)，无地区时回退 defaults.carbonFactor(0.58，中国全国电网均值2023)；年碳排放 = 年电耗 × carbonFactor → kgCO₂e/年 与 kgCO₂e/kg鱼。新增挪威/智利/越南/苏格兰等海外产区(含各自碳因子与气候/造价/人工指数)。②水足迹真水平衡——原 bleed=makeup−evap 仅估两项，现补全「污泥脱水饼带水 + 微滤机反冲洗 + 脱气塔雾损」三类损耗（process.sludgeCakeWc/drumBackwashFrac/degasserMistFrac），真水平衡：年取水 = 蒸发 + 排污(bleed) + 污泥带水 + 雾损，并校验补水率是否覆盖全部损耗(否则水位下降告警)；新增「消耗性水足迹」= 蒸发 + 污泥带水 + 雾损（不返还环境，区别于可排放的 bleed）。v1.12.0 碳酸盐体系闭环（碱度守恒 + pH 子模型）+ NH₃ 非离子氨毒性（仅模型系数，用户可自定义数据不动）：①碱度守恒——硝化每氧化 1g N 耗 7.14g 碱度(以CaCO₃计，化学计量 2 mol 碱度/mol N)，碱度仅随补水交换流失、不被滤池/脱气去除；稳态碱度 = 源水碱度 − 硝化净耗/补水量，若低于目标操作碱度(120 mg/L)则反算需投加 NaHCO₃ 量(kg/天、kg/kg鱼)。②pH 子模型——由稳态 CO₂(aq) 与总碱度经碳酸一级/二级解离平衡(温度/盐度修正 pK1/pK2)数值求解 [H⁺] 得 pH；低 pH→硝化速率折减(第二限速步，pH<7 按指数衰减至 0.2)→稳态 TAN 反弹，低排放设计可行性判定自此真实。③NH₃ 非离子氨——由 pH 与温度经 pKa(随温降)求离解比例，NH₃ = TAN × 离解率；毒性判据 急性 0.02 / 慢性 0.01 mg/L(N)。v1.11.1 蒙特卡洛硝化速率口径修正（仅模型系数，用户可自定义数据不动）：蒙特卡洛不确定性参数原指向「设计定容速率 equipment.biofilter.rate」，但稳态 TAN 平衡用的是「实际运行速率 equipment.biofilter.rateNitritation」。基准二者同为 0.60 时会在公式里抵消，但 MC 扰动设计速率会反物理地使生物滤池被「低估尺寸」→ TAN 反而升高→出现 29–31% 的伪失败(fail)。修正：MC 参数改指 rateNitritation（实际运行速率），定容速率保持设计值 0.60 不变；现低实现速率→TAN 升高（真实失败尾）、高实现速率→TAN 降低，方向正确，基准算例数值不变。v1.11.0 CO₂ 质量守恒补全（仅模型系数，用户可自定义数据不动）：补入此前漏算的「开放水面天然挥发（被动空气吹脱）」通道——等效去除流量=co2Kla(3.0/天)×养殖池体积，与大气平衡值 co2Star=0.5 mg/L；稳态 CO₂ 由脱气塔(主动)+天然挥发(被动)+补水稀释三项共同决定，量纲 g/天÷(m³/天)=mg/L 自洽。此前 v1.10.0 仅靠下调鱼呼吸系数压浓度，现机制补全后判定更可信。v1.10.0 水质子模型校准（仅模型系数，用户可自定义数据不动）：①鱼呼吸氧耗标定 o2FishCal=0.45（真实鱼代谢仅约 0.35–0.5 kg O₂/kg 饲料，原默认 0.9–1.0 偏高致 CO₂/供氧/能耗系统性高估）；②CO₂ 预算补全硝化产 CO₂（碱度消耗→CO₂，RAS 主要 CO₂ 源，co2PerN≈4.57 kg CO₂/kg TAN，原模型漏算）；默认方案稳态 CO₂ 由 27.7(鲈)/38.4(罗非·鲶) 降至 ≤15(鲈)/≤30(罗非·鲶) mg/L。③TSS 固废产率 0.28→0.22、微滤机去除率 0.90→0.93（高效微滤机，文献可达 0.93–0.95），高密度品种 TSS 由 13→≤10 mg/L。④收敛 CAPEX 输出：移除 economics 中未含规模因子的 capexTanks/capexBio/.../capexBuilding 等 10 个冗余字段（与 capexBreakdown 口径不一致，UI 未使用，属误读源），仅保留 capexDirect(已含规模/地区缩放) 与 capexTotal。v1.9.0 投资估算造价校准（基于 2025–2026 真实工程招标与造价标准）：车间土建 900→1200 元/m²（参照 2025 钢结构厂房造价指南与宣威/潍坊 RAS 项目真实造价，真实区间 1200–1500 取低中值）；补充真实锚点（宣威 2025、广西/剑阁 2025–2026 设备中标价、工程建设其他费用定额、建标[2013]44号）；间接费维持直接费 25% 上限。v1.8.0 精细化升级：①参数不确定性区间 + 蒙特卡洛（P10/P50/P90）抽样；②品种库扩展（海/淡/半咸水，salinity 驱动材质溢价·溶氧饱和度·水体密度）；③CAPEX 分段规模经济曲线；④维护费按设备寿命分项；⑤能耗分项展示（泵/氧/脱气/温控/杂项）。v1.1.0 校准经济性/价格；v1.2.0 校准工程模型系数；v1.3.0 重构投资估算(规模经济+间接费+UV/脱气塔)；v1.4.0 HVAC 气候化(地区气温驱动温控)；v1.4.1 间接费收紧至直接费25%上限、取消营运资金。v1.5.0 模型增强：MBBR 硝化速率加温度修正(theta)+TAN 改用饲料蛋白；HVAC 补蒸发潜热/寻优纳入温度与地区/人工随规模/反硝化NO3模型/价格加asOf与置信度；CAPEX 固定+可变分段/地区成本·电价·人工指数/引擎魔法数收回知识库/设备能耗加工况修正/知识库模块化与引用绑定。v1.6.0 质量守恒闭环：两段硝化(AOB/NOB 分速率)+溶氧闭环(供氧覆盖鱼代谢与硝化)+CO₂脱气闭环+补水背景浓度；反硝化反应器贯通 PFD/PID/BOM/计算书。v1.7.0 模型保真度：季节性双工况 HVAC(bin method 月均温积分，年能耗更准)/水足迹闭合(蒸发+排污，校验补水覆盖蒸发)/固废处置能耗与成本(脱水外运比能耗+处置单价)/泵达西–魏斯巴赫阻力法(扬程=提升+沿程+局部)/饲料蛋白消化率联动排泄(消化率↑→可排泄氮比例↓)。用户可自定义数据(售价/密度/FCR/气温取值/土地费/单价覆盖项)不在此轮优化。",
     sourceMap: {
       "MBBR 硝化速率": "d'Aquin & Timmons (2012); 渔业机械仪器研究所 (2025)",
       "HVAC 能耗(含蒸发潜热)": "Aydın et al. (2026); 工程经验",
@@ -94,6 +94,8 @@ window.RAS_KNOWLEDGE = {
       "价格/单价": "广东省水产协会 (2025); 国网 (2025); 鱼粉 Mysteel (2025)",
       "反硝化/NO3": "Timmons & Ebeling (2010); 工程经验",
       "碳酸盐/pH/NH3": "Timmons & Ebeling (2010); Emerson (1975) 碳酸平衡; US EPA (1989) 氨毒性准则",
+      "电力碳足迹/电网因子": "IEA (2023) CO₂ Emissions from Fuel Combustion; 生态环境部 2023 电力排放因子",
+      "水足迹/污泥含水率": "Timmons & Ebeling (2010); 工程经验(板框脱水 75–85% 含水)",
     },
   },
 
@@ -197,6 +199,10 @@ window.RAS_KNOWLEDGE = {
     nahco3Eff: 0.5957,  // g CaCO₃当量 / g NaHCO₃（84 g/mol NaHCO₃ 提供 1 mol = 50 g CaCO₃当量）
     nh3Acute: 0.02,     // mg/L(N) 非离子氨急性毒性阈值（超过判超限）
     nh3Chronic: 0.01,   // mg/L(N) 非离子氨慢性毒性阈值（超过判预警）
+    // —— 水足迹真水平衡（v1.13.0）：污泥脱水 + 微滤机反冲洗 + 脱气塔雾损 ——
+    sludgeCakeWc: 0.80, // 脱水污泥饼含水率（质量分数；板框/螺旋挤压典型 75–85%，取 80%）；决定"饼带水"= 干固×wc/(1−wc)
+    drumBackwashFrac: 0.08, // 微滤机反冲洗年水量 / 取水量（间歇反冲洗折算，RAS 典型 5–10%，取 8%）；属不返还损耗
+    degasserMistFrac: 0.005, // 脱气塔气水接触雾损 / 取水量（极小，<1%）；属不返还损耗
   },
 
   // 参数不确定性区间（v1.8.0 P2-1）：供蒙特卡洛采样，结果从单点升级为区间
@@ -228,6 +234,7 @@ window.RAS_KNOWLEDGE = {
     // P0-4 水源背景浓度（mg/L，以 N 计）：计入稳态质量平衡，真实地表水/地下水含微量氨氮与硝酸盐
     // 用户可在表单覆盖（inputs.makeupBackground），引擎回退此默认值
     makeupBackground: { tan: 0.05, no2: 0.01, no3: 2.0, alk: 150 },
+    carbonFactor: 0.58, // 默认电网排放因子 kgCO₂e/kWh（中国全国电网均值 2023，生态环境部）；指定地区时回退 regions[].carbonFactor
   },
 
   // 气候模型（v1.4.0）：地区全年平均气温驱动 HVAC 负荷
@@ -238,14 +245,19 @@ window.RAS_KNOWLEDGE = {
     defaultAmbient: 15,  // °C 默认全年平均气温（温带，未指定地区时）
     cpWater: 4186,       // J/(kg·K) 水比热容
     regions: {
-      harbin:    { name: "哈尔滨", ambient: 4,  amp: 19, costIndex: 0.95, powerIndex: 1.00, laborIndex: 0.85 },
-      beijing:   { name: "北京",   ambient: 12, amp: 13, costIndex: 1.15, powerIndex: 1.05, laborIndex: 1.25 },
-      shanghai:  { name: "上海",   ambient: 17, amp: 11, costIndex: 1.12, powerIndex: 1.02, laborIndex: 1.20 },
-      guangzhou: { name: "广州",   ambient: 22, amp: 7,  costIndex: 1.08, powerIndex: 1.00, laborIndex: 1.05 },
-      sanya:     { name: "三亚",   ambient: 26, amp: 3,  costIndex: 1.10, powerIndex: 1.08, laborIndex: 0.95 },
-      kunming:   { name: "昆明",   ambient: 15, amp: 8,  costIndex: 0.95, powerIndex: 0.95, laborIndex: 0.85 },
-      wuhan:     { name: "武汉",   ambient: 17, amp: 11, costIndex: 1.00, powerIndex: 1.00, laborIndex: 1.00 },
-      chengdu:   { name: "成都",   ambient: 16, amp: 7,  costIndex: 0.98, powerIndex: 0.98, laborIndex: 0.95 },
+      harbin:    { name: "哈尔滨", ambient: 4,  amp: 19, costIndex: 0.95, powerIndex: 1.00, laborIndex: 0.85, carbonFactor: 0.85 },
+      beijing:   { name: "北京",   ambient: 12, amp: 13, costIndex: 1.15, powerIndex: 1.05, laborIndex: 1.25, carbonFactor: 0.80 },
+      shanghai:  { name: "上海",   ambient: 17, amp: 11, costIndex: 1.12, powerIndex: 1.02, laborIndex: 1.20, carbonFactor: 0.65 },
+      guangzhou: { name: "广州",   ambient: 22, amp: 7,  costIndex: 1.08, powerIndex: 1.00, laborIndex: 1.05, carbonFactor: 0.45 },
+      sanya:     { name: "三亚",   ambient: 26, amp: 3,  costIndex: 1.10, powerIndex: 1.08, laborIndex: 0.95, carbonFactor: 0.45 },
+      kunming:   { name: "昆明",   ambient: 15, amp: 8,  costIndex: 0.95, powerIndex: 0.95, laborIndex: 0.85, carbonFactor: 0.25 },
+      wuhan:     { name: "武汉",   ambient: 17, amp: 11, costIndex: 1.00, powerIndex: 1.00, laborIndex: 1.00, carbonFactor: 0.60 },
+      chengdu:   { name: "成都",   ambient: 16, amp: 7,  costIndex: 0.98, powerIndex: 0.98, laborIndex: 0.95, carbonFactor: 0.35 },
+      // 海外产区（碳因子主导 ESG 评价；气候/造价/人工指数供 CAPEX/OPEX 地区缩放）
+      norway:    { name: "挪威(鲑)",   ambient: 7,  amp: 10, costIndex: 1.60, powerIndex: 0.60, laborIndex: 1.80, carbonFactor: 0.03 },
+      chile:     { name: "智利(鲑)",   ambient: 12, amp: 8,  costIndex: 1.40, powerIndex: 0.80, laborIndex: 1.30, carbonFactor: 0.30 },
+      vietnam:   { name: "越南(虾/巴沙)", ambient: 27, amp: 4,  costIndex: 0.70, powerIndex: 1.10, laborIndex: 0.60, carbonFactor: 0.45 },
+      scotland:  { name: "苏格兰(鲑)", ambient: 9,  amp: 8,  costIndex: 1.70, powerIndex: 0.70, laborIndex: 1.90, carbonFactor: 0.15 },
     },
   },
 

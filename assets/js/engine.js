@@ -92,16 +92,14 @@ RAS.engine = (function () {
     const specificWaterUse = (makeupFlow * 365) / annual;   // 年补水总量 / 年产量 → m³/kg
     const waterReuse = 1 - makeup;
 
-    // P1-3 水足迹闭合（v1.7.0）：取水 = 蒸发损失 + 排污(bleed)；校验补水率是否覆盖蒸发（否则池面下降告警）
+    // P1-3 水足迹（取水侧基础项）：年取水 = makeupFlow×365；开放池面蒸发量（真水平衡的"蒸发"项，其余损耗项在 tssDaily 之后补全）
     const evapRateP13 = (K.equipment.heat.evapRate) * (temp / (K.equipment.heat.evapTempRef || 25));
     const waterSurfaceArea = totalTankVol / tankH;
     const evapKgH = waterSurfaceArea * evapRateP13;                 // kg/h 开放池面蒸发量
     const evapVolYr = evapKgH * 24 * 365 / 1000;                    // m³/年 蒸发损失
     const makeupVolYr = makeupFlow * 365;                           // m³/年 补水量(=取水)
-    const bleedVolYr = Math.max(0, makeupVolYr - evapVolYr);        // m³/年 排污(bleed) = 补水 − 蒸发
     const recircVolYr = recircFlow * 365;                           // m³/年 循环量
     const evapFracOfRecirc = recircVolYr > 0 ? evapVolYr / recircVolYr : (makeup + 1); // 蒸发占循环量比例
-    const evapCovered = evapFracOfRecirc <= makeup;                 // 补水率是否覆盖蒸发(否则池面下降)
     const waterFootprint = specificWaterUse;                       // m³/kg（=取水/产量）
 
     // —— 4. 生物滤池 (MBBR) ——
@@ -136,6 +134,18 @@ RAS.engine = (function () {
     const df = K.equipment.drumFilter;
     const tssPerFeed = K.process.tssPerFeed;
     const tssDaily = dailyFeedAvg * tssPerFeed;
+
+    // P1-3 水足迹真水平衡（v1.13.0）：取水 = 蒸发 + 排污(bleed) + 污泥带水 + 脱气塔雾损（此前仅 evap+bleed 两项，未闭合）
+    const sludgeCakeWc = K.process.sludgeCakeWc != null ? K.process.sludgeCakeWc : 0.80; // 脱水饼含水率
+    const sludgeDryYr = tssDaily * 365;                                                     // kg/年 干固形物
+    const sludgeWaterVolYr = sludgeDryYr * sludgeCakeWc / (1 - sludgeCakeWc) / 1000;        // m³/年 脱水饼带水(不返还)
+    const drumBackwashVolYr = makeupVolYr * (K.process.drumBackwashFrac != null ? K.process.drumBackwashFrac : 0.08); // m³/年 微滤机反冲洗(占取水,不返还)
+    const degasserMistVolYr = makeupVolYr * (K.process.degasserMistFrac != null ? K.process.degasserMistFrac : 0.005); // m³/年 脱气塔雾损(占取水,不返还)
+    const lossOtherVolYr = sludgeWaterVolYr + drumBackwashVolYr + degasserMistVolYr;        // m³/年 其他损耗合计
+    const bleedVolYr = Math.max(0, makeupVolYr - evapVolYr - lossOtherVolYr);               // m³/年 排污=取水−蒸发−其他损耗
+    const totalLossVolYr = evapVolYr + lossOtherVolYr;                                      // m³/年 不返还总损耗(>取水则水位下降)
+    const waterCovered = totalLossVolYr <= makeupVolYr;                                     // 补水率是否覆盖全部损耗
+    const waterConsumption = totalLossVolYr / annual;                                       // m³/kg 消耗性水足迹(蒸发+污泥带水+雾损)
     const drumUnits = Math.max(1, Math.ceil(recircFlowH / 300));
     const drumEachFlow = recircFlowH / drumUnits;
     // P1-4 固废处置能耗与成本（v1.7.0）：脱水/外运/堆肥比能耗计入总能耗，处置单价计入 OPEX
@@ -227,6 +237,12 @@ RAS.engine = (function () {
     const totalPower = pumpPower + oxyPower + fanPower + hvacPower + miscPower + solidsPower;
     const energyIntensity = (totalPower * 24 * 365) / annual;
     const annualEnergy = totalPower * 24 * 365 / 1000;
+
+    // P1 电力碳足迹（v1.13.0）：年电耗 × 地区电网排放因子 → 电力碳排放(kgCO₂e)；地区优先，回退全国均值
+    const carbonFactor = (regionDef && regionDef.carbonFactor != null) ? regionDef.carbonFactor
+                       : (K.defaults.carbonFactor != null ? K.defaults.carbonFactor : 0.58); // kgCO₂e/kWh
+    const annualCarbon = annualEnergy * 1000 * carbonFactor;  // MWh/年 ×1000=kWh/年 → ×因子 = kgCO₂e/年
+    const carbonPerKg = annual > 0 ? annualCarbon / annual : 0; // kgCO₂e/kg鱼
 
     // —— 8. 建筑面积（按单位养殖水体占地，含通道与辅助用房）——
     const bld = K.building;
@@ -398,7 +414,7 @@ RAS.engine = (function () {
     const alkConsumeDay = tanDaily * alkPerN;                                 // kg CaCO₃/天
     const consM = alkConsumeDay * 1e6;                                        // mg/天
     const srcM = makeupFlow * bgAlk;                                          // mg/天 源水补入
-    const alkNat = makeupFlow > 0 ? bgAlk - consM / makeupFlow : -1e9;        // mg/L 无投加时稳态碱度
+    const alkNat = makeupFlow > 0 ? bgAlk - consM / (makeupFlow * 1000) : -1e9; // mg/L 无投加时稳态碱度（consM/makeupFlow 单位 mg/m³ → ÷1000 转 mg/L）
     let cAlkSys, doseM;
     if (alkNat >= alkTarget) { cAlkSys = alkNat; doseM = 0; }
     else { cAlkSys = alkTarget; doseM = Math.max(0, consM - srcM + makeupFlow * alkTarget); }
@@ -448,8 +464,9 @@ RAS.engine = (function () {
 
     const cTss = (tssDaily * 1000) / (df.tssRemoval * recircFlow + makeupFlow);
     // P0-1 DO 闭环：供氧覆盖鱼代谢+硝化时池内可达 DO；供氧不足按比例下降并计缺口
-    const o2Margin = o2DemandH > 0 ? (o2Supply - o2DemandH) / o2DemandH * 100 : 999;
-    const o2Ratio = o2DemandH > 0 ? Math.min(1, o2Supply / o2DemandH) : 1;
+    const o2Delivered = o2Supply * ox.transferEff;                    // kg/h 实际注入水体的氧（扣除传质损失）
+    const o2Margin = o2DemandH > 0 ? (o2Delivered - o2DemandH) / o2DemandH * 100 : 999;
+    const o2Ratio = o2DemandH > 0 ? Math.min(1, o2Delivered / o2DemandH) : 1;
     const o2Achieved = o2Ratio >= 1 ? doTarget : round(doTarget * o2Ratio, 2);
     const o2Deficit = Math.max(0, round(doMinV - o2Achieved, 2));
     const st = (v, hard, soft, lowerBetter) => lowerBetter
@@ -460,7 +477,7 @@ RAS.engine = (function () {
       { key: "no2", name: "亚硝态氮 NO₂", value: round(cNo2, 2), unit: "mg/L", limit: no2Hard, status: st(cNo2, no2Hard, no2Hard * 1.5, true), note: "NOB 硝化(NO₂→NO₃)，速率高于 AOB" },
       { key: "no3", name: "硝态氮 NO₃-N", value: round(no3Nmg, 1), unit: "mg/L（以 N 计）", limit: 300, status: st(no3Nmg, 300, wq.no3SoftCap, true), note: denitRemoval > 0 ? `反硝化脱除 ${Math.round(denitRemoval * 100)}%，剩余随补水交换` : "仅随补水交换，需排换水或反硝化" },
       { key: "co2", name: "二氧化碳 CO₂", value: round(cCo2, 1), unit: "mg/L", limit: wq.co2Max * 2, status: st(cCo2, wq.co2Max * 2, wq.co2Max, true), note: `脱气塔脱除 ${round(co2Stripped, 1)} kg/天 + 开放水面天然挥发 ~${round(co2Natural, 1)} kg/天 + 补水稀释` },
-      { key: "alk", name: "碱度(以CaCO₃计)", value: round(cAlkSys, 0), unit: "mg/L", limit: alkMin, status: nahco3PerKgFish > 1.5 ? "fail" : (doseM > 0 && nahco3PerKgFish > 0.8 ? "warn" : "ok"), note: doseM > 0 ? `需投加 NaHCO₃ ${round(nahco3Day, 1)} kg/天(≈${round(nahco3PerKgFish, 3)} kg/kg鱼)` : "源水碱度充足，无需投加" },
+      { key: "alk", name: "碱度(以CaCO₃计)", value: round(cAlkSys, 0), unit: "mg/L", limit: alkMin, status: (nahco3PerKgFish > 1.5 || cAlkSys < alkMin) ? "fail" : (nahco3PerKgFish > 0.8 || (doseM === 0 && cAlkSys < alkTarget)) ? "warn" : "ok", note: doseM > 0 ? `需投加 NaHCO₃ ${round(nahco3Day, 1)} kg/天(≈${round(nahco3PerKgFish, 3)} kg/kg鱼)` : "源水碱度充足，无需投加" },
       { key: "ph", name: "pH", value: round(pH, 2), unit: "", limit: `${wq.phLow}–${wq.phHigh}`, status: (pH < wq.phLow || pH > wq.phHighHard) ? "fail" : (pH > wq.phHigh ? "warn" : "ok"), note: `CO₂ ${round(cCo2, 1)} mg/L + 碱度 ${round(cAlkSys, 0)} mg/L 碳酸平衡` },
       { key: "nh3", name: "非离子氨 NH₃", value: round(cNH3, 4), unit: "mg/L(N)", limit: K.process.nh3Acute, status: cNH3 > K.process.nh3Acute ? "fail" : (cNH3 > K.process.nh3Chronic ? "warn" : "ok"), note: `TAN ${round(cTan, 2)} × 离解率 ${round(fNH3 * 100, 1)}% (pKa ${round(pKaNH3, 2)})` },
       { key: "tss", name: "悬浮固体 TSS", value: round(cTss, 1), unit: "mg/L", limit: wq.ssMax, status: st(cTss, wq.ssMax, wq.ssMax * 1.5, true), note: "微滤机去除" },
@@ -526,8 +543,20 @@ RAS.engine = (function () {
         evapVolYr: round(evapVolYr),
         bleedVolYr: round(bleedVolYr),
         makeupVolYr: round(makeupVolYr),
+        sludgeWaterVolYr: round(sludgeWaterVolYr),
+        drumBackwashVolYr: round(drumBackwashVolYr),
+        degasserMistVolYr: round(degasserMistVolYr),
+        waterConsumption: round(waterConsumption, 5),
         evapFrac: round(evapFracOfRecirc, 4),
-        evapCovered: evapCovered,
+        evapCovered: waterCovered,
+        waterCovered: waterCovered,
+      },
+      environment: {
+        carbonFactor: round(carbonFactor, 3),
+        gridLabel: regionDef && regionDef.name ? regionDef.name : "未指定地区(全国均值)",
+        annualCarbon: round(annualCarbon),
+        annualCarbonT: round(annualCarbon / 1000, 2),
+        carbonPerKg: round(carbonPerKg, 4),
       },
       biofilter: {
         type: bf.type, rate: round(nitrRate, 3),
