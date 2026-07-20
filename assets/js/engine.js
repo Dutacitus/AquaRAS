@@ -859,7 +859,7 @@ RAS.engine = (function () {
     // 用户可自定义输入的有效当前值（未显式设置时回退到品种/知识库默认），用于水价/电价等敏感度
     const sp0 = (d.inputs.speciesKey && K.species && K.species[d.inputs.speciesKey]) || null;
     const op0 = (K.economics && K.economics.opex) || {};
-    const reg0 = (d.inputs.region && K.regions && K.regions[d.inputs.region]) || null;
+    const reg0 = (d.inputs.region && K.climate.regions && K.climate.regions[d.inputs.region]) || null;
     const regPower0 = reg0 && reg0.powerIndex != null ? reg0.powerIndex : 1;
     const effCur = {
       fcr: (d.inputs.fcr && d.inputs.fcr > 0) ? d.inputs.fcr : (sp0 ? sp0.fcr : 1.3),
@@ -1007,7 +1007,7 @@ RAS.engine = (function () {
     const sp = (inp && inp.speciesKey && K.species && K.species[inp.speciesKey]) || null;
     const ec = K.economics || {};
     const op = (ec && ec.opex) || {};
-    const reg = (inp && inp.region && K.regions && K.regions[inp.region]) || null;
+    const reg = (inp && inp.region && K.climate.regions && K.climate.regions[inp.region]) || null;
     const regPower = reg && reg.powerIndex != null ? reg.powerIndex : 1;
     const defs = [
       { key: "fcr", label: "饲料系数 FCR", band: 0.20,
