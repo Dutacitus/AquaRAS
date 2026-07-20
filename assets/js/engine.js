@@ -190,7 +190,7 @@ RAS.engine = (function () {
     const bldWallArea = 4 * bldFootSide * K.building.height;
     const envArea = bldArea + bldWallArea;                                  // m² 实际围护表面积（屋顶+外墙）
     const UA = envArea * heat.uEnvelope;                                    // W/℃ 围护传热系数
-    const makeupKgH = makeupFlowH * 1000;                                   // kg/h 补水质量流量（makeupFlowH 为 m³/h）
+    const makeupKgH = makeupFlowH * swDensity;                              // kg/h 补水质量流量（按实际水体密度，淡水1000/海水~1025）
     const internalW = pumpPower * 1000 * (heat.pumpLossFrac != null ? heat.pumpLossFrac : 0.12) + totalTankVol * heat.internalLoadW; // 室内得热(泵损+照明/代谢)
     const evapW = evapKgH * (heat.evapLatent || 2.44e6) / 3600;             // W 蒸发潜热负荷（复用第3节水足迹的 evapKgH）
     // 单点设计工况（年均气温 amb）：用于参考显示
@@ -413,11 +413,11 @@ RAS.engine = (function () {
     const bgAlk = bg.alk != null ? bg.alk : 150;                              // mg/L 源水碱度
     const alkConsumeDay = tanDaily * alkPerN;                                 // kg CaCO₃/天
     const consM = alkConsumeDay * 1e6;                                        // mg/天
-    const srcM = makeupFlow * bgAlk;                                          // mg/天 源水补入
+    const srcM = makeupFlow * bgAlk * 1000;                                  // mg/天 源水补入（makeupFlow[m³/天]×bgAlk[mg/L]×1000 = mg/天，与 consM 同量纲）
     const alkNat = makeupFlow > 0 ? bgAlk - consM / (makeupFlow * 1000) : -1e9; // mg/L 无投加时稳态碱度（consM/makeupFlow 单位 mg/m³ → ÷1000 转 mg/L）
     let cAlkSys, doseM;
     if (alkNat >= alkTarget) { cAlkSys = alkNat; doseM = 0; }
-    else { cAlkSys = alkTarget; doseM = Math.max(0, consM - srcM + makeupFlow * alkTarget); }
+    else { cAlkSys = alkTarget; doseM = Math.max(0, consM - srcM + makeupFlow * alkTarget * 1000); } // 投加量 mg/天：源水与维持目标两项均×1000 与 consM(mg/天) 同量纲
     const nahco3Day = doseM > 0 ? doseM / 1e6 / (K.process.nahco3Eff != null ? K.process.nahco3Eff : 0.5957) : 0; // kg NaHCO₃/天
     const nahco3PerKgFish = nahco3Day * 365 / Math.max(1, annual);           // kg/kg 鱼
 
