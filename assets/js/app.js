@@ -185,6 +185,8 @@
       elecPrice: document.getElementById("elecPrice").value.trim() ? num("elecPrice") : null,
       waterPrice: document.getElementById("waterPrice").value.trim() ? num("waterPrice") : null,
       laborPerYear: document.getElementById("laborPerYear").value.trim() ? num("laborPerYear") : null,
+      dischargeLevel: (() => { const el = document.getElementById("dischargeLevel"); return el ? parseInt(el.value, 10) : 2; })(),
+      tailwaterTech: (() => { const el = document.getElementById("tailwaterTech"); return el ? el.value : "none"; })(),
     };
   }
   function renderAll(d) {
@@ -236,6 +238,52 @@
       <div style="padding:0 26px 26px"><div class="note">
         <span class="ic">🔬</span>
         <div>稳态质量平衡校核：基于两段硝化（AOB/NOB）+ 反硝化 + 脱气塔 + 微滤机一阶去除，并叠加补水稀释与水源背景浓度，推算系统浓度，供设计可行性判断。溶氧按供氧能力（覆盖鱼代谢 + 硝化耗氧，余量 ${wq.o2Margin}%）闭环判定池内可达 <b>${wq.o2Achieved}</b> mg/L${wq.o2Deficit > 0.1 ? `（缺口 ${wq.o2Deficit} mg/L，供氧不足）` : ""}；数值为工程估算，运行需在线监测 DO/pH/TAN/CO₂ 并预留余量。</div></div></div>`;
+  }
+  /* 尾水排放合规区块（v1.13.8，对照 DB44/2462-2024 五项限值 + 受纳水域等级选择） */
+  function renderTailwater(d) {
+    const tw = (d.waterQuality && d.waterQuality.tailwater) || d.compliance;
+    if (!tw || !tw.available) return "";
+    const tt = d.tailwaterTreatment || { key: "none", name: "无（直排）" };
+    const lab = { ok: "达标", fail: "超限" };
+    const cards = tw.items.map((it) => `
+      <div class="wq-item wq-${it.status}">
+        <div class="wq-top"><span class="wq-name">${it.name}</span>
+          <span class="wq-pill wq-${it.status}">${lab[it.status]}</span></div>
+        <div class="wq-val">${it.value}<small>${it.unit}</small></div>
+        <div class="wq-lim">限值 ${it.limitStr} ${it.unit}</div>
+      </div>`).join("");
+    const lvl = tw.level;
+    const selL = (v) => (v === lvl ? " selected" : "");
+    const techKey = tt.key || "none";
+    const techOpts = Object.entries(K.tailwaterTreatment || {}).map(([k, t]) =>
+      `<option value="${k}"${k === techKey ? " selected" : ""}>${t.name}</option>`).join("");
+    const head = tw.allPass ? "五项全部达标" : "存在不达标项，尾水不得直接排放";
+    const tnRaw = tt.cTnRaw, tnPol = tt.cTnPol, tnDrop = (tt.removal && Math.round(tt.removal.tn * 100)) || 0;
+    const treatNote = techKey === "none"
+      ? `<div class="muted" style="font-size:12px;padding:4px 26px 14px">未设末端处理：排放口浓度 = 系统循环水浓度（TN ${tnRaw} mg/L）。选上方工艺可对排放口做二次削减，多数可使 TN 降至 DB44 限值内。</div>`
+      : `<div class="note" style="padding:8px 26px 14px"><span class="ic">♻️</span><div>尾水处理单元 <b>${tt.name}</b>：总氮 ${tnRaw} → <b>${tnPol}</b> mg/L（去除 ${tnDrop}%）；总磷 ${tt.cTpRaw} → ${tt.cTpPol}、COD ${tt.cCodRaw} → ${tt.cCodPol}、SS ${tt.cTssRaw} → ${tt.cTssPol} mg/L。单元投资 <b>${Math.round(tt.capex).toLocaleString("zh-CN")} 元</b>、年运行 <b>${Math.round(tt.opexYr).toLocaleString("zh-CN")} 元</b>、占地约 <b>${tt.footprint} m²</b>（处理流量 ${tt.treatedM3d} m³/d）。</div></div>`;
+    const concl = tw.allPass
+      ? (techKey === "none" ? "当前设计排放口浓度满足标准，可依法排放。" : `经 <b>${tt.name}</b> 处理后排放口浓度满足标准，可依法排放。`)
+      : (techKey === "none" ? "⚠️ 部分指标超出标准，需增加尾水处理（如强化脱氮除磷、增设尾水净化塘/湿地）或重新认定受纳水域等级。" : `⚠️ 经 <b>${tt.name}</b> 处理后仍有指标超限，建议升级工艺（如多级生物净化组合）或重新认定受纳水域等级。`);
+    return `
+      <div class="section-title">尾水排放合规 (DB44/2462-2024)
+        <span class="badge wq-${tw.status}">${head}</span></div>
+      <div style="padding:0 26px 6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <label style="font-size:13px;color:#cbd5e1">受纳水域</label>
+        <select id="dischargeLevel" class="text-input" style="max-width:280px">
+          <option value="2"${selL(2)}>二级（一般水域）</option>
+          <option value="1"${selL(1)}>一级（重点保护水域：饮用水源/自然保护区等）</option>
+        </select>
+        <span class="muted" style="font-size:12px">${tw.waterType === "seawater" ? "海水" : "淡水"} · ${tw.standardName}</span>
+      </div>
+      <div style="padding:0 26px 8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <label style="font-size:13px;color:#cbd5e1">末端尾水处理</label>
+        <select id="tailwaterTech" class="text-input" style="max-width:300px">${techOpts}</select>
+      </div>
+      <div class="wq-grid">${cards}</div>
+      ${treatNote}
+      <div class="note" style="padding:8px 26px 20px"><span class="ic">🏞️</span>
+      <div>${tw.waterType === "seawater" ? "海水" : "淡水"}养殖尾水按 <b>${tw.level === 1 ? "一级" : "二级"}</b> 限值判定：pH ${tw.limit.phLow}–${tw.limit.phHigh}、悬浮物 ≤${tw.limit.ss}、COD(Mn) ≤${tw.limit.cod}、总氮 ≤${tw.limit.tn}、总磷 ≤${tw.limit.tp} mg/L。${concl}本判定基于稳态质量平衡推算的排放口浓度（与系统循环水同浓度，末端处理后按处理效率二次削减），供合规性预判；正式排放须按标准方法采样监测。</div></div>`;
   }
   /* 敏感度（龙卷风图）：基于 engine.sensitivity 的 ±% 扰动结果渲染水平条带 */
   function renderSensitivity(d) {
@@ -511,9 +559,14 @@
         metricCard("车间体积", b.buildingVol, "m³", "层高约 6m"),
       ])}
       ${renderWQSection(d.waterQuality)}
+      ${renderTailwater(d)}
       <div style="padding:0 26px 26px"><div class="note">
         <span class="ic">⚠️</span>
         <div><b>设计说明：</b>生物滤池硝化负荷已含水温折减与安全系数 ${d.inputs.sf}。需配置备用发电机、备用纯氧、在线监测（DO/pH/TAN/温度）与自动化控制，确保水质阈值 ${K.waterQuality.tanMax} mg/L TAN、DO>${K.waterQuality.doMin} mg/L。</div></div></div>`;
+    const twSel = document.getElementById("dischargeLevel");
+    if (twSel) twSel.addEventListener("change", () => compute());
+    const twTechSel = document.getElementById("tailwaterTech");
+    if (twTechSel) twTechSel.addEventListener("change", () => compute());
   }
 
   /* ---------------- 渲染：PFD / P&ID ---------------- */

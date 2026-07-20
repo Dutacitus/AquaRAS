@@ -147,6 +147,13 @@ RAS.engine = (function () {
     const degasserMistVolYr = makeupVolYr * (K.process.degasserMistFrac != null ? K.process.degasserMistFrac : 0.005); // m³/年 脱气塔雾损(占取水,不返还)
     const lossOtherVolYr = sludgeWaterVolYr + drumBackwashVolYr + degasserMistVolYr;        // m³/年 其他损耗合计
     const bleedVolYr = Math.max(0, makeupVolYr - evapVolYr - lossOtherVolYr);               // m³/年 排污=取水−蒸发−其他损耗
+    // P1-2b 尾水深度处理单元（v1.13.9）：按文献去除率对排放口二次削减 + 计入经济账
+    const twTechKey = (inputs && inputs.tailwaterTech && K.tailwaterTreatment && K.tailwaterTreatment[inputs.tailwaterTech]) ? inputs.tailwaterTech : "none";
+    const twTech = (K.tailwaterTreatment && K.tailwaterTreatment[twTechKey]) || { name: "无（直排）", tn: 0, tp: 0, cod: 0, ss: 0, capexPerM3d: 0, opexPerM3: 0, footprintPerM3d: 0 };
+    const twTreatedM3d = (bleedVolYr + drumBackwashVolYr + degasserMistVolYr) / 365; // m³/d 处理流量=排污+反冲洗+雾损(液排出部分)
+    const capexTail = twTech.capexPerM3d * twTreatedM3d;       // 元 单元投资
+    const opexTailYr = twTech.opexPerM3 * twTreatedM3d * 365;  // 元/年 单元运行
+    const footprintTail = twTech.footprintPerM3d * twTreatedM3d; // m² 占地
     const totalLossVolYr = evapVolYr + lossOtherVolYr;                                      // m³/年 不返还总损耗(>取水则水位下降)
     const waterCovered = totalLossVolYr <= makeupVolYr;                                     // 补水率是否覆盖全部损耗
     const waterConsumption = totalLossVolYr / annual;                                       // m³/kg 消耗性水足迹(蒸发+污泥带水+雾损)
@@ -335,7 +342,7 @@ RAS.engine = (function () {
     const opexElec = annualEnergy * 1000 * elecPrice;
     const opexLabor = laborPrice * laborCount;
     const opexWater = makeupFlow * 365 * waterPrice;   // 生产补水费（补水流量 × 年 × 水价）
-    const opexTotal = opexFeed + opexFinger + opexElec + opexLabor + opexMaint + opexWater + opexSolids;
+    const opexTotal = opexFeed + opexFinger + opexElec + opexLabor + opexMaint + opexWater + opexSolids + opexTailYr;
     const costPerKg = opexTotal / annual;
 
     // 9.5 间接费（按直接费比例，合计上限 = 直接费 × indirectCap）
@@ -377,7 +384,7 @@ RAS.engine = (function () {
     }];
     const capexCostRows = [...directRows, ...directSubtotalRow, ...indirectRows, ...indirectSubtotalRow, ...landRow];
     const capexBreakdown = capexCostRows;          // 小计行仅供阅读，不计入总额
-    const capexTotal = capexCostRows.filter((c) => !c.subtotal).reduce((a, c) => a + c.total, 0);
+    const capexTotal = capexCostRows.filter((c) => !c.subtotal).reduce((a, c) => a + c.total, 0) + capexTail;
 
     /* —— 盈利 / 投资回报 —— */
     const revenue = annual * salePrice;                                  // 元/年
@@ -497,6 +504,25 @@ RAS.engine = (function () {
       { key: "tss", name: "悬浮固体 TSS", value: round(cTss, 1), unit: "mg/L", limit: wq.ssMax, status: st(cTss, wq.ssMax, wq.ssMax * 1.5, true), note: "微滤机去除" },
       { key: "do", name: "有效溶氧 DO", value: round(effectiveDo, 1), unit: "mg/L", limit: doMinV, status: effDoDeficit > 0.1 ? "fail" : "ok", note: "池内实测 " + round(o2Achieved, 1) + " mg/L" + (co2DoePenalty > 0 ? "；高 CO₂(" + round(cCo2, 1) + " mg/L)经 Bohr 效应折减 " + Math.round(co2DoePenalty * 100) + "%→有效 " + round(effectiveDo, 1) : "") + "；供氧余量 " + round(o2Margin, 0) + "%" },
     ];
+    // P1-2 尾水排放污染物浓度（v1.13.8，对照 DB44/2462-2024 合规）：稳态质量平衡推算排放口浓度（与循环水同浓度）
+    const cTn = cTan + cNo2 + no3Nmg; // mg/L as N — 总氮 = TAN + NO₂ + NO₃（均以 N 计）
+    const pDaily = dailyFeedAvg * (K.process.feedPContent != null ? K.process.feedPContent : 0.012)
+                 * (K.process.pExcreteFrac != null ? K.process.pExcreteFrac : 0.35); // kg P/天 排泄磷负荷
+    const cTp = makeupFlow > 0
+      ? (pDaily * 1000) / ((K.process.pCapture != null ? K.process.pCapture : 0.85) * recircFlow + makeupFlow)
+      : 9999; // mg/L 总磷（无补水排换则累积）
+    const codDaily = dailyFeedAvg * (K.process.codPerFeed != null ? K.process.codPerFeed : 0.45); // kg COD/天 有机负荷
+    const cCod = makeupFlow > 0
+      ? (codDaily * 1000) / ((K.process.codCapture != null ? K.process.codCapture : 0.80) * recircFlow + makeupFlow)
+      : 9999; // mg/L COD(Mn)（无补水排换则累积）
+    const waterType = (matlFactor > 1 || (sp.salinity != null && sp.salinity > 0.5)) ? "seawater" : "freshwater";
+    const dischargeLevel = (inputs && inputs.dischargeLevel === 1) ? 1 : 2;
+    // v1.13.9 末端处理二次削减：排放口经尾水单元处理后浓度
+    const cTnPol = cTn * (1 - twTech.tn);
+    const cTpPol = cTp * (1 - twTech.tp);
+    const cCodPol = cCod * (1 - twTech.cod);
+    const cTssPol = cTss * (1 - twTech.ss);
+    const tailwater = tailwaterCompliance({ cTn: cTnPol, cTp: cTpPol, cCod: cCodPol, cTss: cTssPol, pH, waterType, dischargeLevel }, K);
     const wqStatus = checks.some((c) => c.status === "fail") ? "fail"
       : (checks.some((c) => c.status === "warn") ? "warn" : "ok");
     const waterQuality = {
@@ -519,6 +545,10 @@ RAS.engine = (function () {
         volume: round(denitVol, 1),
         no3NLoadDaily: round(tanDaily * (1 - denitRemoval), 2),
       },
+      cTn: round(cTn, 2),
+      cTp: round(cTp, 3),
+      cCod: round(cCod, 1),
+      tailwater,
     };
 
     return {
@@ -650,6 +680,8 @@ RAS.engine = (function () {
         capexIndirect: round(capexIndirect),
         capexLand: round(capexLand),
         capexTotal: round(capexTotal),
+        capexTailwater: round(capexTail),
+        opexTailwater: round(opexTailYr),
         opexFeed: round(opexFeed),
         opexFinger: round(opexFinger),
         opexElec: round(opexElec),
@@ -669,6 +701,17 @@ RAS.engine = (function () {
         marginRate: marginRate != null ? round(marginRate, 1) : null,
       },
       waterQuality,
+      compliance: tailwater,
+      tailwaterTreatment: {
+        key: twTechKey, name: twTech.name,
+        cTnRaw: round(cTn, 2), cTnPol: round(cTnPol, 2),
+        cTpRaw: round(cTp, 3), cTpPol: round(cTpPol, 3),
+        cCodRaw: round(cCod, 1), cCodPol: round(cCodPol, 1),
+        cTssRaw: round(cTss, 1), cTssPol: round(cTssPol, 1),
+        treatedM3d: round(twTreatedM3d, 1),
+        capex: round(capexTail), opexYr: round(opexTailYr), footprint: round(footprintTail, 1),
+        removal: { tn: round(twTech.tn, 2), tp: round(twTech.tp, 2), cod: round(twTech.cod, 2), ss: round(twTech.ss, 2) },
+      },
       _raw: { annual, density, cycles, turns, makeup, sf, temp, elec, sp },
     };
   }
@@ -1128,5 +1171,47 @@ RAS.engine = (function () {
     return Math.round(v).toLocaleString("zh-CN") + " 元";
   }
 
-  return { compute, optimize, sensitivity, monteCarlo, sobol, round, fmt, rmb };
+  /*
+   * 尾水排放合规判定（v1.13.8）
+   * 对照广东省《水产养殖尾水排放标准》DB44/2462-2024 淡水/海水 × 一级/二级 五项限值
+   * 判定 pH / 悬浮物 / COD(Mn) / 总氮 TN / 总磷 TP 是否达标。
+   * opts: { cTn, cTp, cCod, cTss, pH, waterType: "freshwater"|"seawater", dischargeLevel: 1|2 }
+   * 返回 { available, standardName, waterType, level, limit, items[], allPass, status }
+   *   items[]: { key, name, value, unit, limit, pass, status }
+   */
+  function tailwaterCompliance(opts, K2) {
+    const KK = K2 || K;
+    const std = (KK.standards && KK.standards.db44_2462_2024) || null;
+    if (!std) return { available: false };
+    const wt = opts.waterType === "seawater" ? "seawater" : "freshwater";
+    const lvl = opts.dischargeLevel === 1 ? 1 : 2;
+    const lim = std[wt]["level" + lvl];
+    const items = [
+      { key: "ph", name: "pH", value: round(opts.pH, 2), unit: "",
+        limitStr: `${lim.phLow}–${lim.phHigh}`, limit: lim.phHigh,
+        pass: opts.pH >= lim.phLow && opts.pH <= lim.phHigh },
+      { key: "ss", name: "悬浮物 SS", value: round(opts.cTss, 1), unit: "mg/L",
+        limitStr: `${lim.ss}`, limit: lim.ss, pass: opts.cTss <= lim.ss },
+      { key: "cod", name: "化学需氧量 COD(Mn)", value: round(opts.cCod, 1), unit: "mg/L",
+        limitStr: `${lim.cod}`, limit: lim.cod, pass: opts.cCod <= lim.cod },
+      { key: "tn", name: "总氮 TN", value: round(opts.cTn, 2), unit: "mg/L（以 N 计）",
+        limitStr: `${lim.tn}`, limit: lim.tn, pass: opts.cTn <= lim.tn },
+      { key: "tp", name: "总磷 TP", value: round(opts.cTp, 3), unit: "mg/L",
+        limitStr: `${lim.tp}`, limit: lim.tp, pass: opts.cTp <= lim.tp },
+    ];
+    items.forEach((it) => { it.status = it.pass ? "ok" : "fail"; });
+    const allPass = items.every((it) => it.pass);
+    return {
+      available: true,
+      standardName: std.name,
+      waterType: wt,
+      level: lvl,
+      limit: lim,
+      items,
+      allPass,
+      status: allPass ? "ok" : "fail",
+    };
+  }
+
+  return { compute, optimize, sensitivity, monteCarlo, sobol, round, fmt, rmb, tailwaterCompliance };
 })();
