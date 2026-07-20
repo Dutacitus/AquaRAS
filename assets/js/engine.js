@@ -956,11 +956,123 @@ RAS.engine = (function () {
     return out;
   }
 
+  /* ============== Sobol 全局敏感性 · 主导因子方差分解（P1-3） ==============
+   * 对 knowledge.uncertainty.params 的模型系数做 Saltelli(2010) 方差分解：
+   *   一阶  S_i  = (1/N·Σ Y_B·Y_ABi − f0²) / V          // 该系数单独贡献的方差占比
+   *   总阶  ST_i = (1/(2N)·Σ (Y_A − Y_ABi)²) / V         // 含与其他系数交互的总贡献
+   * 仅扰动模型系数（不碰用户自定义输入），复用与 monteCarlo 相同的三角分布与 withOverrides 注入。
+   * 采样：A/B 独立矩阵 + 各 A_Bi（A 第 i 列替换为 B 的第 i 列）→ 总评估 N·(k+2)。
+   * 内置可复现 PRNG(mulberry32)，同一 seed 结果固定，便于审计与复核。
+   */
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function sobol(inputs, opts) {
+    opts = opts || {};
+    const N = opts.N && opts.N > 0 ? opts.N : 1024;
+    const params = (K.uncertainty && K.uncertainty.params) || [];
+    const k = params.length;
+    const metrics = ["costPerKg", "energyIntensity", "capexTotal", "grossProfit", "paybackYears", "marginRate"];
+    const metricUnit = { costPerKg: "元/kg", energyIntensity: "kWh/kg", capexTotal: "元", grossProfit: "元", paybackYears: "年", marginRate: "%" };
+    function pickMetric(d, key) {
+      if (key === "energyIntensity") return d.energy.energyIntensity;
+      if (key === "capexTotal") return d.economics.capexTotal;
+      if (key === "grossProfit") return d.economics.grossProfit;
+      if (key === "paybackYears") return d.economics.paybackYears;
+      if (key === "marginRate") return d.economics.marginRate;
+      return d.economics.costPerKg;
+    }
+    if (!k) return { N, seed: opts.seed != null ? opts.seed : 0x9e3779b9, params: [], metrics: {} };
+
+    const seed0 = opts.seed != null ? opts.seed : 0x9e3779b9;
+    const rng = mulberry32(seed0);
+    function triR(low, mode, high) {
+      if (!(high > low)) return mode;
+      const u = rng();
+      const fc = (mode - low) / (high - low);
+      if (u < fc) return low + Math.sqrt(u * (high - low) * (mode - low));
+      return high - Math.sqrt((1 - u) * (high - low) * (high - mode));
+    }
+    // 采样矩阵 A / B（均 N×k）
+    const A = [], B = [];
+    for (let j = 0; j < N; j++) {
+      const ra = new Array(k), rb = new Array(k);
+      for (let i = 0; i < k; i++) { ra[i] = triR(params[i].low, params[i].exp, params[i].high); rb[i] = triR(params[i].low, params[i].exp, params[i].high); }
+      A.push(ra); B.push(rb);
+    }
+    // 整行评估（同时注入全部 k 个系数）——inputKey 经 inputs、其余经知识库 withOverrides
+    function evalRow(row) {
+      const inp = Object.assign({}, inputs);
+      const over = {};
+      for (let i = 0; i < k; i++) {
+        const p = params[i];
+        if (p.inputKey) inp[p.inputKey] = row[i];
+        else over[p.path] = row[i];
+      }
+      return withOverrides(over, () => compute(inp));
+    }
+    // Y_A, Y_B
+    const yA = {}, yB = {};
+    metrics.forEach((m) => { yA[m] = new Array(N); yB[m] = new Array(N); });
+    for (let j = 0; j < N; j++) {
+      const dA = evalRow(A[j]), dB = evalRow(B[j]);
+      metrics.forEach((m) => { yA[m][j] = pickMetric(dA, m); yB[m][j] = pickMetric(dB, m); });
+    }
+    // Y_ABi：A 第 i 列替换为 B 第 i 列
+    const yAB = [];
+    for (let i = 0; i < k; i++) { yAB[i] = {}; metrics.forEach((m) => (yAB[i][m] = new Array(N))); }
+    for (let i = 0; i < k; i++) {
+      for (let j = 0; j < N; j++) {
+        const row = A[j].slice(); row[i] = B[j][i];
+        const dAB = evalRow(row);
+        metrics.forEach((m) => (yAB[i][m][j] = pickMetric(dAB, m)));
+      }
+    }
+    const clamp01 = (x) => (x > 1 ? 1 : x < 0 ? 0 : x);
+    const out = { N, seed: seed0, params: params.map((p) => ({ key: p.key, label: p.label })), metrics: {} };
+    metrics.forEach((m) => {
+      // 有限性预检（任一非有限则跳过该指标）
+      let ok = true;
+      for (let j = 0; j < N && ok; j++) { if (!isFinite(yA[m][j]) || !isFinite(yB[m][j])) ok = false; }
+      for (let i = 0; i < k && ok; i++) for (let j = 0; j < N && ok; j++) { if (!isFinite(yAB[i][m][j])) ok = false; }
+      if (!ok) { out.metrics[m] = { unit: metricUnit[m], valid: false, indices: [], dominant: null, note: "存在非有限输出，已跳过" }; return; }
+      let mean = 0; for (let j = 0; j < N; j++) mean += yA[m][j]; mean /= N;
+      let varr = 0; for (let j = 0; j < N; j++) { const dd = yA[m][j] - mean; varr += dd * dd; } varr /= N;
+      if (varr < 1e-15) { out.metrics[m] = { unit: metricUnit[m], mean: round(mean, 3), valid: true, indices: [], dominant: null, note: "输出方差≈0（结果对系数不敏感）" }; return; }
+      const indices = [];
+      for (let i = 0; i < k; i++) {
+        let sumS = 0, sumST = 0;
+        for (let j = 0; j < N; j++) {
+          const yb = yB[m][j], ya = yA[m][j], yab = yAB[i][m][j];
+          sumS += yb * yab;                       // Saltelli 2010 一阶
+          sumST += (ya - yab) * (ya - yab);       // Saltelli 2010 总阶
+        }
+        let S = (sumS / N - mean * mean) / varr;
+        let ST = (sumST / (2 * N)) / varr;
+        S = clamp01(S); ST = clamp01(ST);
+        indices.push({ key: params[i].key, label: params[i].label, S: round(S, 3), ST: round(ST, 3), interaction: round(Math.max(0, ST - S), 3) });
+      }
+      indices.sort((a, b) => b.ST - a.ST);
+      out.metrics[m] = {
+        unit: metricUnit[m], valid: true, mean: round(mean, 3), variance: round(varr, 4),
+        indices, dominant: indices[0] ? indices[0].label : null,
+        top2: indices.slice(0, 2).map((x) => x.label),
+        stSum: round(indices.reduce((s, x) => s + x.ST, 0), 3),
+      };
+    });
+    return out;
+  }
+
   // 经济数值格式化（人民币）
   function rmb(v) {
     if (v >= 10000) return (v / 10000).toLocaleString("zh-CN", { maximumFractionDigits: 1 }) + " 万元";
     return Math.round(v).toLocaleString("zh-CN") + " 元";
   }
 
-  return { compute, optimize, sensitivity, monteCarlo, round, fmt, rmb };
+  return { compute, optimize, sensitivity, monteCarlo, sobol, round, fmt, rmb };
 })();

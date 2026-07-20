@@ -453,11 +453,19 @@
         metricCard("日循环次数", hy.turns, "次", "系统换水强度"),
         metricCard("年取水量", hy.makeupVolYr, "m³/年", "新水消耗总量"),
         metricCard("年蒸发损失", hy.evapVolYr, "m³/年", `占取水 ${hy.makeupVolYr > 0 ? (hy.evapVolYr / hy.makeupVolYr * 100).toFixed(1) : "0"}%`, "brand"),
-        metricCard("年排污量", hy.bleedVolYr, "m³/年", "bleed 排放"),
+        metricCard("年排污量(bleed)", hy.bleedVolYr, "m³/年", "可排放废水"),
+        metricCard("年污泥带水", hy.sludgeWaterVolYr, "m³/年", "脱水饼含水", "brand"),
+        metricCard("年反冲洗/雾损", (hy.drumBackwashVolYr + hy.degasserMistVolYr), "m³/年", "不返还损耗"),
+        metricCard("消耗性水足迹", hy.waterConsumption, "m³/kg", "蒸发+污泥+雾损", "accent"),
       ])}
-      <div style="padding:0 26px 6px"><div class="note ${hy.evapCovered ? "" : "note-warn"}">
+      <div style="padding:0 26px 6px"><div class="note ${hy.waterCovered ? "" : "note-warn"}">
         <span class="ic">💧</span>
-        <div>水足迹闭合：年取水 <b>${hy.makeupVolYr.toLocaleString()}</b> m³ = 蒸发 <b>${hy.evapVolYr.toLocaleString()}</b> m³ + 排污 <b>${hy.bleedVolYr.toLocaleString()}</b> m³。${hy.evapCovered ? "蒸发损失已被补水率覆盖，池面水位稳定。" : "⚠️ 补水率不足以覆盖蒸发，池面将下降，需提高补水率。"}</div></div></div>
+        <div>水足迹真水平衡：年取水 <b>${hy.makeupVolYr.toLocaleString()}</b> m³ = 蒸发 <b>${hy.evapVolYr.toLocaleString()}</b> + 排污 <b>${hy.bleedVolYr.toLocaleString()}</b> + 污泥带水 <b>${hy.sludgeWaterVolYr.toLocaleString()}</b> + 反冲洗/雾损 <b>${(hy.drumBackwashVolYr + hy.degasserMistVolYr).toLocaleString()}</b> m³。${hy.waterCovered ? "补水率覆盖全部损耗，池面水位稳定。" : "⚠️ 补水率不足以覆盖蒸发+污泥+雾损，池面将下降，需提高补水率。"}</div></div></div>
+      ${section("环境足迹 (Footprint)", "Environment", [
+        metricCard("电网碳因子", d.environment.carbonFactor, "kgCO₂e/kWh", d.environment.gridLabel, "brand"),
+        metricCard("单位鱼碳足迹", d.environment.carbonPerKg, "kgCO₂e/kg", "电力碳排放强度", "accent"),
+        metricCard("年碳排放", d.environment.annualCarbonT, "tCO₂e/年", "全厂电力排放"),
+      ])}
       ${section("生物滤池 (MBBR)", "Biofilter", [
         metricCard("反应器容积", bf.reactorVol, "m³", `硝化负荷 ${bf.rate} kg TAN/m³·d`),
         metricCard("含填料总容积", bf.totalVol, "m³", `填充率 ${bf.mediaFill*100}%`, "brand"),
@@ -628,6 +636,12 @@
         <span class="muted" style="font-size:12px">对 MBBR 硝化速率 / 热泵 COP / 补水率等模型系数做三角分布抽样，输出成本与回收期 P10–P90 区间</span>
       </div>
       <div id="mcResult" style="padding:6px 26px 8px"></div>
+      <div class="section-title" style="padding:18px 26px 0">参数不确定性 · Sobol 主因子分析</div>
+      <div style="padding:10px 26px 0;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <button id="sobolRun" class="btn-lux">运行 Sobol 主因子（N=1024）</button>
+        <span class="muted" style="font-size:12px">Saltelli 方差分解：量化 8 个模型系数对各指标的一阶(S)与总阶(ST)贡献，ST−S 即交互效应，定位真正驱动结果方差的主导因子</span>
+      </div>
+      <div id="sobolResult" style="padding:6px 26px 8px"></div>
       <div style="padding:0 26px 26px"><div class="note"><span class="ic">📌</span>
       <div>经济参数为行业经验量级估算（人民币），实际受地区人工/地价/电价/苗种价格影响显著。饲料通常占 OPEX 的 70–80%。价格数据截至 <b>${K.economics.priceMeta.asOf}</b>（置信度：<b>${K.economics.priceMeta.confidence}</b>），建议项目级复核。</div></div></div>`;
     renderSensitivity(d);
@@ -655,6 +669,64 @@
         }
       }, 20);
     });
+    const sobolBtn = document.getElementById("sobolRun");
+    if (sobolBtn) sobolBtn.addEventListener("click", () => {
+      const box = document.getElementById("sobolResult");
+      sobolBtn.disabled = true; sobolBtn.textContent = "计算中…（约 1–2 秒）";
+      setTimeout(() => {
+        try {
+          const res = E.sobol(readInputs(), { N: 1024 });
+          renderSobol(res);
+        } catch (err) {
+          if (box) box.innerHTML = `<div class="note-warn"><span class="ic">⚠️</span><div>Sobol 计算失败：${String(err && err.message || err)}</div></div>`;
+        } finally {
+          sobolBtn.disabled = false; sobolBtn.textContent = "运行 Sobol 主因子（N=1024）";
+        }
+      }, 20);
+    });
+  }
+
+  /* ---------------- 渲染：Sobol 主因子分析 ---------------- */
+  function renderSobol(res) {
+    const host = document.getElementById("sobolResult");
+    if (!host) return;
+    if (!res || !res.metrics || !Object.keys(res.metrics).length) {
+      host.innerHTML = `<div class="note"><span class="ic">ℹ️</span><div>知识库未配置不确定性参数（K.uncertainty.params 为空），无法进行 Sobol 分解。</div></div>`;
+      return;
+    }
+    const metricLabel = { costPerKg: "单位成本", energyIntensity: "比能耗", capexTotal: "总投资", grossProfit: "年毛利", paybackYears: "回收期", marginRate: "毛利率" };
+    const METRIC_ORDER = ["costPerKg", "energyIntensity", "capexTotal", "grossProfit", "paybackYears", "marginRate"];
+    let html = `<div class="note" style="margin:6px 0 12px"><span class="ic">🧮</span><div>基于 Saltelli (2010) 方差分解，N=${res.N}（seed=${res.seed} 可复现）。<b>ST</b> 为总阶指数（含交互），ST−S 为该因子的交互贡献；各指标 ΣST≈1 表示分解闭合。仅扰动模型系数，用户自定义输入未参与抽样。</div></div>`;
+    METRIC_ORDER.forEach((mk) => {
+      const m = res.metrics[mk];
+      if (!m) return;
+      html += `<div class="sobol-card">`;
+      html += `<div class="sobol-head"><span class="sobol-title">${metricLabel[mk] || mk}</span><span class="sobol-unit">${m.unit}</span>`;
+      if (m.valid && m.mean != null) html += `<span class="sobol-mean">均值 ${m.mean}</span>`;
+      html += `</div>`;
+      if (!m.valid) {
+        html += `<div class="sobol-note">⚠️ ${m.note || "该指标计算无效"}</div>`;
+      } else if (m.dominant == null) {
+        html += `<div class="sobol-note">ℹ️ ${m.note || "输出方差≈0，结果对 8 个系数均不敏感"}</div>`;
+      } else {
+        const top2 = (m.top2 || []).join(" / ");
+        html += `<div class="sobol-dominant">主导因子：<b>${m.dominant}</b>${top2 ? ` <span class="muted">（次：${top2}）</span>` : ""}</div>`;
+        html += `<div class="sobol-bars">`;
+        m.indices.forEach((it) => {
+          const w = Math.max(2, Math.round(it.ST * 100));
+          const interact = it.interaction > 0.001 ? `<span class="sobol-inter" title="交互贡献 ST−S">交互 ${it.interaction}</span>` : "";
+          html += `<div class="sobol-bar-row">
+            <span class="sobol-bar-label">${it.label}</span>
+            <span class="sobol-bar-track"><span class="sobol-bar-fill" style="width:${w}%"></span></span>
+            <span class="sobol-bar-val">S=${it.S} · ST=${it.ST} ${interact}</span>
+          </div>`;
+        });
+        html += `</div>`;
+        html += `<div class="sobol-foot muted">ΣST=${m.stSum}（闭合性检查，越接近 1 越可信）</div>`;
+      }
+      html += `</div>`;
+    });
+    host.innerHTML = html;
   }
 
   /* ---------------- 渲染：设计计算书（计算标准 + 方法论 + 核心逻辑保密） ---------------- */
@@ -698,7 +770,7 @@
     const steps = [
       ["养殖池系统", "按产能目标与放养密度、养殖茬次反推所需养殖水体，确定池数、池径与有效容积。"],
       ["投喂与氮负荷", "由产量与饲料系数(FCR)估算年投喂量，推导总氨氮(TAN)等氮素日产量，作为生物滤池设计依据。"],
-      ["水力学", "由养殖水体与日循环次数确定循环流量与补水流量，得出回用率与单位鱼比水耗。进一步闭合水足迹：年取水 = 池面蒸发 + 排污(bleed)，单位鱼水足迹 = 取水/产量（m³/kg），并校核蒸发是否被补水率覆盖。"],
+      ["水力学", "由养殖水体与日循环次数确定循环流量与补水流量，得出回用率与单位鱼比水耗。水足迹真水平衡：年取水 = 蒸发 + 排污(bleed) + 污泥脱水带水 + 微滤机反冲洗/脱气塔雾损，单位鱼水足迹 = 取水/产量（m³/kg），并校验补水率是否覆盖全部损耗（否则水位下降）。消耗性水足迹另计蒸发+污泥+雾损（不返还环境）。环境足迹按年电耗 × 地区电网排放因子给出电力碳足迹（kgCO₂e/kg鱼）。"],
       ["生物滤池 (MBBR)", "按 TAN 负荷与温度修正后的硝化速率(θ 系数)确定反应器容积与悬浮填料量，并叠加安全系数。分段考虑 AOB 亚硝化(TAN→NO₂)与 NOB 硝化(NO₂→NO₃)两步速率，NO₂ 稳态更低。"],
       ["生物脱氮（反硝化）", "MBBR 完成硝化后，NO₃ 经侧流反硝化反应器在缺氧 + 碳源条件下由异养菌还原为 N₂ 逸出；按 NO₃-N 负荷与反硝化容积负荷(denitRate)确定反应器容积，脱氮率 denitRemoval 计入稳态 NO₃ 质量平衡。"],
       ["增氧与脱碳", "按饲料氧耗 + 硝化耗氧配置供氧能力（覆盖鱼代谢与硝化峰值，含安全系数），按 CO₂ 产生量配置脱气塔；稳态 CO₂ 由<strong>脱气塔(主动) + 养殖池敞口水面天然挥发(被动空气吹脱) + 补水稀释</strong>三者共同决定（双膜理论，等效去除流量=co2Kla×养殖池体积），并非仅依赖脱气塔。"],

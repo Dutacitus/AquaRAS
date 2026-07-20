@@ -375,6 +375,30 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
 .note-warn { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.45); color: var(--text); }
 .note-warn b { color: #f59e0b; }
 
+/* ---------- Sobol 主因子分析 ---------- */
+.sobol-card { margin: 14px 0; padding: 16px 18px; border-radius: var(--radius-sm);
+  background: var(--surface); border: 1px solid var(--border); box-shadow: var(--card-shadow); }
+.sobol-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.sobol-title { font-size: 15.5px; font-weight: 800; color: var(--text); letter-spacing: -0.01em; }
+.sobol-unit { font-size: 12px; color: var(--text-faint); font-family: var(--font-num); }
+.sobol-mean { font-size: 12.5px; color: var(--brand); font-family: var(--font-num); margin-left: auto; }
+.sobol-dominant { font-size: 13.5px; color: var(--text-soft); margin-bottom: 12px; }
+.sobol-dominant b { color: var(--accent); }
+.sobol-bars { display: flex; flex-direction: column; gap: 8px; }
+.sobol-bar-row { display: grid; grid-template-columns: 150px 1fr auto; align-items: center; gap: 12px; }
+.sobol-bar-label { font-size: 12.5px; color: var(--text-soft); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sobol-bar-track { height: 9px; border-radius: 6px; background: rgba(100, 116, 139, 0.14); overflow: hidden; }
+.sobol-bar-fill { display: block; height: 100%; border-radius: 6px;
+  background: linear-gradient(90deg, var(--brand), var(--accent)); transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
+.sobol-bar-val { font-size: 11px; color: var(--text-faint); font-family: var(--font-num); white-space: nowrap; }
+.sobol-inter { color: var(--brand-2); margin-left: 6px; }
+.sobol-foot { font-size: 11.5px; margin-top: 10px; }
+.sobol-note { font-size: 12.5px; color: var(--text-soft); padding: 4px 0; }
+@media (max-width: 640px) {
+  .sobol-bar-row { grid-template-columns: 96px 1fr; }
+  .sobol-bar-val { grid-column: 1 / -1; margin-top: -2px; }
+}
+
 /* ---------- Footer ---------- */
 .footer { margin-top: 40px; text-align: center; color: var(--text-faint); font-size: 12.5px; line-height: 1.9; }
 .footer a { color: var(--brand); text-decoration: none; }
