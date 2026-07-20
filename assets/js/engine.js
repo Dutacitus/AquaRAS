@@ -118,8 +118,12 @@ RAS.engine = (function () {
     // —— 5. 增氧与 CO2 脱除 ——
     const ox = K.equipment.oxygen;
     const o2PerFeed = (sp.o2PerFeed || ox.o2PerFeed || 1.0) * (K.process.o2FishCal != null ? K.process.o2FishCal : 1);   // 品种相关氧耗系数(kg O2/kg 饲料)，o2FishCal 为鱼呼吸氧耗标定因子(真实鱼代谢仅约 0.35–0.5，原默认偏高)
-    const o2Daily = dailyFeedAvg * o2PerFeed;
-    const o2Peak = dailyFeedPeak * o2PerFeed;
+    // P2-1 鱼代谢 Q10 温度修正：鱼呼吸耗氧随水温升高（每 10℃ 约翻倍，文献 1.8–2.4），以 o2RefTemp 为标定基准
+    const o2RefTemp = K.process.o2RefTemp != null ? K.process.o2RefTemp : 25;        // ℃ 氧耗标定参考温度
+    const q10O2 = K.process.q10O2 != null ? K.process.q10O2 : 2.0;                  // 鱼代谢 Q10
+    const o2PerFeedEff = o2PerFeed * Math.pow(q10O2, (temp - o2RefTemp) / 10);       // 温度修正后鱼呼吸氧耗系数（高温↑/低温↓）
+    const o2Daily = dailyFeedAvg * o2PerFeedEff;
+    const o2Peak = dailyFeedPeak * o2PerFeedEff;
     const o2HourPeak = o2Peak / 24;
     // P0-1 溶氧闭环（v1.6.0）：供氧能力按「峰值鱼代谢 + 硝化耗氧」定容(含安全系数)，确保池内可达 DO
     const nitrifO2Daily = K.process.nitrifO2 * tanDaily;       // kg/天 硝化耗氧
@@ -473,6 +477,12 @@ RAS.engine = (function () {
     const o2Ratio = o2DemandH > 0 ? Math.min(1, o2Delivered / o2DemandH) : 1;
     const o2Achieved = o2Ratio >= 1 ? doTarget : round(doTarget * o2Ratio, 2);
     const o2Deficit = Math.max(0, round(doMinV - o2Achieved, 2));
+    // P2-2 CO₂–O₂ 交互：高 CO₂（鱼类高碳酸血经 Bohr 效应）降低氧利用率→有效溶解氧低于仪表读数
+    const co2DoeThresh = K.process.co2DoeThresh != null ? K.process.co2DoeThresh : 16;  // mg/L CO₂ 折减起效阈值（典型 RAS 控 CO₂<15）
+    const co2DoeScale = K.process.co2DoeScale != null ? K.process.co2DoeScale : 40;     // mg/L 折减尺度（超出阈值每 40 mg/L 折减 1.0，封顶 50%）
+    const co2DoePenalty = cCo2 > co2DoeThresh ? Math.min(0.5, (cCo2 - co2DoeThresh) / co2DoeScale) : 0;
+    const effectiveDo = o2Achieved * (1 - co2DoePenalty);
+    const effDoDeficit = Math.max(0, round(doMinV - effectiveDo, 2));
     const st = (v, hard, soft, lowerBetter) => lowerBetter
       ? (v > hard ? "fail" : v > soft ? "warn" : "ok")
       : (v < hard ? "fail" : v < soft ? "warn" : "ok");
@@ -485,7 +495,7 @@ RAS.engine = (function () {
       { key: "ph", name: "pH", value: round(pH, 2), unit: "", limit: `${wq.phLow}–${wq.phHigh}`, status: (pH < wq.phLow || pH > wq.phHighHard) ? "fail" : (pH > wq.phHigh ? "warn" : "ok"), note: `CO₂ ${round(cCo2, 1)} mg/L + 碱度 ${round(cAlkSys, 0)} mg/L 碳酸平衡` },
       { key: "nh3", name: "非离子氨 NH₃", value: round(cNH3, 4), unit: "mg/L(N)", limit: round(nh3AcuteT, 4), status: cNH3 > nh3AcuteT ? "fail" : (cNH3 > nh3ChronicT ? "warn" : "ok"), note: `TAN ${round(cTan, 2)} × 离解率 ${round(fNH3 * 100, 1)}% (pKa ${round(pKaNH3, 2)})；温度修正限值 急${round(nh3AcuteT, 4)}/慢${round(nh3ChronicT, 4)} @${Math.round(temp)}℃` },
       { key: "tss", name: "悬浮固体 TSS", value: round(cTss, 1), unit: "mg/L", limit: wq.ssMax, status: st(cTss, wq.ssMax, wq.ssMax * 1.5, true), note: "微滤机去除" },
-      { key: "do", name: "溶氧 DO", value: round(o2Achieved, 1), unit: "mg/L", limit: doMinV, status: o2Deficit > 0.1 ? "fail" : "ok", note: "供氧余量 " + round(o2Margin, 0) + "%，池内可达 " + round(o2Achieved, 1) + " mg/L" },
+      { key: "do", name: "有效溶氧 DO", value: round(effectiveDo, 1), unit: "mg/L", limit: doMinV, status: effDoDeficit > 0.1 ? "fail" : "ok", note: "池内实测 " + round(o2Achieved, 1) + " mg/L" + (co2DoePenalty > 0 ? "；高 CO₂(" + round(cCo2, 1) + " mg/L)经 Bohr 效应折减 " + Math.round(co2DoePenalty * 100) + "%→有效 " + round(effectiveDo, 1) : "") + "；供氧余量 " + round(o2Margin, 0) + "%" },
     ];
     const wqStatus = checks.some((c) => c.status === "fail") ? "fail"
       : (checks.some((c) => c.status === "warn") ? "warn" : "ok");
@@ -493,6 +503,7 @@ RAS.engine = (function () {
       checks, status: wqStatus, feasible: wqStatus !== "fail",
       o2Margin: round(o2Margin, 0), o2Sat: round(o2SatV, 1), doTarget: round(doTarget, 1),
       o2Achieved: round(o2Achieved, 2), o2Deficit: round(o2Deficit, 2),
+      effectiveDo: round(effectiveDo, 2), effDoDeficit: round(effDoDeficit, 2), co2DoePenalty: round(co2DoePenalty, 3),
       co2Stripped: round(co2Stripped, 1),
       co2Natural: round(co2Natural, 1),
       ph: round(pH, 2),
