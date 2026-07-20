@@ -856,19 +856,32 @@ RAS.engine = (function () {
     const baseVal = pickMetric(d, metric);
     const base = toInputsFromDesign(d);
     const eff = d.inputs;
+    // 用户可自定义输入的有效当前值（未显式设置时回退到品种/知识库默认），用于水价/电价等敏感度
+    const sp0 = (d.inputs.speciesKey && K.species && K.species[d.inputs.speciesKey]) || null;
+    const op0 = (K.economics && K.economics.opex) || {};
+    const reg0 = (d.inputs.region && K.regions && K.regions[d.inputs.region]) || null;
+    const regPower0 = reg0 && reg0.powerIndex != null ? reg0.powerIndex : 1;
+    const effCur = {
+      fcr: (d.inputs.fcr && d.inputs.fcr > 0) ? d.inputs.fcr : (sp0 ? sp0.fcr : 1.3),
+      waterPrice: (d.inputs.waterPrice > 0) ? d.inputs.waterPrice : (op0.waterPrice != null ? op0.waterPrice : 5),
+      elecPrice: (d.inputs.elecPrice > 0) ? d.inputs.elecPrice : (op0.elecPrice != null ? op0.elecPrice : 0.7) * regPower0,
+      salePrice: (d.inputs.salePrice > 0) ? d.inputs.salePrice : (sp0 && sp0.marketPrice ? sp0.marketPrice : (K.economics.salePrice != null ? K.economics.salePrice : 22)),
+    };
     const drivers = [
       { label: "放养密度", effKey: "density", setKey: "targetDensity", pct: 0.2 },
       { label: "日循环次数", effKey: "turns", setKey: "recircTurns", pct: 0.2 },
       { label: "补水率", effKey: "makeup", setKey: "makeupRate", pct: 0.5 },
       { label: "饲料系数 FCR", effKey: "fcr", setKey: "fcr", pct: 0.2 },
       { label: "安全系数", effKey: "sf", setKey: "safety", pct: 0.2 },
+      { label: "生产水价", effKey: "waterPrice", setKey: "waterPrice", pct: 0.4 },
+      { label: "电价", effKey: "elecPrice", setKey: "elecPrice", pct: 0.3 },
     ];
     // 售价仅影响利润类指标；对成本/能耗指标纳入会产生恒为 0 的误导跨度，故仅 grossProfit 时列入
     if (metric === "grossProfit") {
       drivers.push({ label: "预估鱼价", effKey: "salePrice", setKey: "salePrice", pct: 0.2 });
     }
     const rows = drivers.map((dr) => {
-      const v0 = eff[dr.effKey];
+      const v0 = (effCur[dr.effKey] != null) ? effCur[dr.effKey] : eff[dr.effKey];
       if (v0 == null || isNaN(v0)) return { label: dr.label, low: baseVal, high: baseVal, span: 0 };
       const low = pickMetric(compute(Object.assign({}, base, { [dr.setKey]: v0 * (1 - dr.pct) })), metric);
       const high = pickMetric(compute(Object.assign({}, base, { [dr.setKey]: v0 * (1 + dr.pct) })), metric);
@@ -971,7 +984,9 @@ RAS.engine = (function () {
    * 对 knowledge.uncertainty.params 的模型系数做 Saltelli(2010) 方差分解：
    *   一阶  S_i  = (1/N·Σ Y_B·Y_ABi − f0²) / V          // 该系数单独贡献的方差占比
    *   总阶  ST_i = (1/(2N)·Σ (Y_A − Y_ABi)²) / V         // 含与其他系数交互的总贡献
-   * 仅扰动模型系数（不碰用户自定义输入），复用与 monteCarlo 相同的三角分布与 withOverrides 注入。
+   * 抽样覆盖"模型系数"(K.uncertainty.params) 与"用户可自定义输入"(饲料系数/生产水价/电价/鱼价，
+   * 围绕当前生效值 ±band 采样) 两组，复用与 monteCarlo 相同的三角分布；模型系数经 withOverrides
+   * 注入知识库、用户参数经 inputs 注入。分组见各 index 的 group 字段(model/user)。
    * 采样：A/B 独立矩阵 + 各 A_Bi（A 第 i 列替换为 B 的第 i 列）→ 总评估 N·(k+2)。
    * 内置可复现 PRNG(mulberry32)，同一 seed 结果固定，便于审计与复核。
    */
@@ -983,10 +998,38 @@ RAS.engine = (function () {
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
   }
+  // 用户可自定义输入的"敏感度扩展集"：围绕当前生效值做 ±band 三角采样，
+  // 与模型系数一起纳入 Sobol 全局方差分解。这些是用户自设的经营/经济参数，
+  // 对成本与利润影响显著（饲料系数/生产水价/电价/鱼价），敏感度分析必须覆盖。
+  // 注意：蒙特卡洛(monteCarlo)仍只扰动模型系数，保持"不改用户数据"原则；
+  // 此处仅把用户参数作为"敏感度输入"参与方差分解（只读、不改写用户值）。
+  function buildUserSensParams(inp) {
+    const sp = (inp && inp.speciesKey && K.species && K.species[inp.speciesKey]) || null;
+    const ec = K.economics || {};
+    const op = (ec && ec.opex) || {};
+    const reg = (inp && inp.region && K.regions && K.regions[inp.region]) || null;
+    const regPower = reg && reg.powerIndex != null ? reg.powerIndex : 1;
+    const defs = [
+      { key: "fcr", label: "饲料系数 FCR", band: 0.20,
+        cur: (inp && inp.fcr && inp.fcr > 0) ? inp.fcr : (sp ? sp.fcr : 1.3) },
+      { key: "waterPrice", label: "生产水价", band: 0.40,
+        cur: (inp && inp.waterPrice > 0) ? inp.waterPrice : (op.waterPrice != null ? op.waterPrice : 5) },
+      { key: "elecPrice", label: "电价", band: 0.30,
+        cur: (inp && inp.elecPrice > 0) ? inp.elecPrice : (op.elecPrice != null ? op.elecPrice : 0.7) * regPower },
+      { key: "salePrice", label: "预估鱼价", band: 0.20,
+        cur: (inp && inp.salePrice && inp.salePrice > 0) ? inp.salePrice : (sp && sp.marketPrice ? sp.marketPrice : (ec.salePrice != null ? ec.salePrice : 22)) },
+    ];
+    return defs.map((d) => ({
+      key: d.key, label: d.label, group: "user", inputKey: d.key,
+      low: round(d.cur * (1 - d.band), 4), exp: round(d.cur, 4), high: round(d.cur * (1 + d.band), 4),
+    }));
+  }
   function sobol(inputs, opts) {
     opts = opts || {};
     const N = opts.N && opts.N > 0 ? opts.N : 1024;
-    const params = (K.uncertainty && K.uncertainty.params) || [];
+    const modelParams = (K.uncertainty && K.uncertainty.params) || [];
+    const userSens = buildUserSensParams(inputs);
+    const params = modelParams.concat(userSens);
     const k = params.length;
     const metrics = ["costPerKg", "energyIntensity", "capexTotal", "grossProfit", "paybackYears", "marginRate"];
     const metricUnit = { costPerKg: "元/kg", energyIntensity: "kWh/kg", capexTotal: "元", grossProfit: "元", paybackYears: "年", marginRate: "%" };
@@ -1045,7 +1088,7 @@ RAS.engine = (function () {
       }
     }
     const clamp01 = (x) => (x > 1 ? 1 : x < 0 ? 0 : x);
-    const out = { N, seed: seed0, params: params.map((p) => ({ key: p.key, label: p.label })), metrics: {} };
+    const out = { N, seed: seed0, params: params.map((p) => ({ key: p.key, label: p.label, group: p.group || "model" })), metrics: {} };
     metrics.forEach((m) => {
       // 有限性预检（任一非有限则跳过该指标）
       let ok = true;
@@ -1054,7 +1097,7 @@ RAS.engine = (function () {
       if (!ok) { out.metrics[m] = { unit: metricUnit[m], valid: false, indices: [], dominant: null, note: "存在非有限输出，已跳过" }; return; }
       let mean = 0; for (let j = 0; j < N; j++) mean += yA[m][j]; mean /= N;
       let varr = 0; for (let j = 0; j < N; j++) { const dd = yA[m][j] - mean; varr += dd * dd; } varr /= N;
-      if (varr < 1e-15) { out.metrics[m] = { unit: metricUnit[m], mean: round(mean, 3), valid: true, indices: [], dominant: null, note: "输出方差≈0（结果对系数不敏感）" }; return; }
+      if (varr < 1e-15) { out.metrics[m] = { unit: metricUnit[m], mean: round(mean, 3), valid: true, indices: [], dominant: null, note: "输出方差≈0（结果对各因子均不敏感）" }; return; }
       const indices = [];
       for (let i = 0; i < k; i++) {
         let sumS = 0, sumST = 0;
@@ -1066,7 +1109,7 @@ RAS.engine = (function () {
         let S = (sumS / N - mean * mean) / varr;
         let ST = (sumST / (2 * N)) / varr;
         S = clamp01(S); ST = clamp01(ST);
-        indices.push({ key: params[i].key, label: params[i].label, S: round(S, 3), ST: round(ST, 3), interaction: round(Math.max(0, ST - S), 3) });
+        indices.push({ key: params[i].key, label: params[i].label, group: params[i].group || "model", S: round(S, 3), ST: round(ST, 3), interaction: round(Math.max(0, ST - S), 3) });
       }
       indices.sort((a, b) => b.ST - a.ST);
       out.metrics[m] = {

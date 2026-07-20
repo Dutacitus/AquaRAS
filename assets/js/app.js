@@ -696,7 +696,7 @@
     }
     const metricLabel = { costPerKg: "单位成本", energyIntensity: "比能耗", capexTotal: "总投资", grossProfit: "年毛利", paybackYears: "回收期", marginRate: "毛利率" };
     const METRIC_ORDER = ["costPerKg", "energyIntensity", "capexTotal", "grossProfit", "paybackYears", "marginRate"];
-    let html = `<div class="note" style="margin:6px 0 12px"><span class="ic">🧮</span><div>基于 Saltelli (2010) 方差分解，N=${res.N}（seed=${res.seed} 可复现）。<b>ST</b> 为总阶指数（含交互），ST−S 为该因子的交互贡献；各指标 ΣST≈1 表示分解闭合。仅扰动模型系数，用户自定义输入未参与抽样。</div></div>`;
+    let html = `<div class="note" style="margin:6px 0 12px"><span class="ic">🧮</span><div>基于 Saltelli (2010) 方差分解，N=${res.N}（seed=${res.seed} 可复现）。<b>ST</b> 为总阶指数（含交互），ST−S 为该因子的交互贡献；各指标 ΣST≈1 表示分解闭合。抽样同时覆盖 <b>模型系数</b>（知识库不确定性参数）与 <b>用户可自定义输入</b>（饲料系数/生产水价/电价/鱼价，围绕当前值 ±band 采样），故主导因子现已含用户经营假设。</div></div>`;
     METRIC_ORDER.forEach((mk) => {
       const m = res.metrics[mk];
       if (!m) return;
@@ -714,10 +714,11 @@
         html += `<div class="sobol-bars">`;
         m.indices.forEach((it) => {
           const w = Math.max(2, Math.round(it.ST * 100));
+          const badge = it.group === "user" ? `<span class="sobol-badge user">用户输入</span>` : `<span class="sobol-badge model">模型系数</span>`;
           const interact = it.interaction > 0.001 ? `<span class="sobol-inter" title="交互贡献 ST−S">交互 ${it.interaction}</span>` : "";
           html += `<div class="sobol-bar-row">
-            <span class="sobol-bar-label">${it.label}</span>
-            <span class="sobol-bar-track"><span class="sobol-bar-fill" style="width:${w}%"></span></span>
+            <span class="sobol-bar-label">${it.label} ${badge}</span>
+            <span class="sobol-bar-track"><span class="sobol-bar-fill ${it.group === "user" ? "user" : ""}" style="width:${w}%"></span></span>
             <span class="sobol-bar-val">S=${it.S} · ST=${it.ST} ${interact}</span>
           </div>`;
         });
