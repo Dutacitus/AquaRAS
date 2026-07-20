@@ -43,7 +43,7 @@ RAS.engine = (function () {
     const regCost = regionDef && regionDef.costIndex != null ? regionDef.costIndex : 1;
     const regPower = regionDef && regionDef.powerIndex != null ? regionDef.powerIndex : 1;
     const regLabor = regionDef && regionDef.laborIndex != null ? regionDef.laborIndex : 1;
-    const annual = inputs.annualTons * 1000;          // kg/年
+    const annual = (inputs.annualTons != null ? inputs.annualTons : 100) * 1000; // kg/年（annualTons 缺省按 100t 计，避免下游 NaN 级联）
     const density = inputs.targetDensity || sp.stockingDensity;   // kg/m³
     const cycles = inputs.cycles || sp.cyclesPerYear;
     const turns = inputs.recircTurns || K.defaults.recircTurns;       // 日循环次数
@@ -461,6 +461,10 @@ RAS.engine = (function () {
     const pKaNH3 = (K.process.pKaNH3_25 != null ? K.process.pKaNH3_25 : 9.25) - 0.03 * (temp - 25);
     const fNH3 = 1 / (1 + Math.pow(10, pKaNH3 - pH));
     const cNH3 = cTan * fNH3;   // mg/L as N
+    // NH₃ 毒性阈值随温度修正（EPA 1989 温度依赖：暖水更毒→限值更严；25℃ 时回到基准 0.02/0.01 mg/L(N)）
+    const nh3TempCoef = K.process.nh3TempCoef != null ? K.process.nh3TempCoef : 0.0283; // 每℃ 修正指数（≈Q10 1.9 / 10℃）
+    const nh3AcuteT = (K.process.nh3Acute != null ? K.process.nh3Acute : 0.02) * Math.pow(10, nh3TempCoef * (25 - temp));
+    const nh3ChronicT = (K.process.nh3Chronic != null ? K.process.nh3Chronic : 0.01) * Math.pow(10, nh3TempCoef * (25 - temp));
 
     const cTss = (tssDaily * 1000) / (df.tssRemoval * recircFlow + makeupFlow);
     // P0-1 DO 闭环：供氧覆盖鱼代谢+硝化时池内可达 DO；供氧不足按比例下降并计缺口
@@ -479,7 +483,7 @@ RAS.engine = (function () {
       { key: "co2", name: "二氧化碳 CO₂", value: round(cCo2, 1), unit: "mg/L", limit: wq.co2Max * 2, status: st(cCo2, wq.co2Max * 2, wq.co2Max, true), note: `脱气塔脱除 ${round(co2Stripped, 1)} kg/天 + 开放水面天然挥发 ~${round(co2Natural, 1)} kg/天 + 补水稀释` },
       { key: "alk", name: "碱度(以CaCO₃计)", value: round(cAlkSys, 0), unit: "mg/L", limit: alkMin, status: (nahco3PerKgFish > 1.5 || cAlkSys < alkMin) ? "fail" : (nahco3PerKgFish > 0.8 || (doseM === 0 && cAlkSys < alkTarget)) ? "warn" : "ok", note: doseM > 0 ? `需投加 NaHCO₃ ${round(nahco3Day, 1)} kg/天(≈${round(nahco3PerKgFish, 3)} kg/kg鱼)` : "源水碱度充足，无需投加" },
       { key: "ph", name: "pH", value: round(pH, 2), unit: "", limit: `${wq.phLow}–${wq.phHigh}`, status: (pH < wq.phLow || pH > wq.phHighHard) ? "fail" : (pH > wq.phHigh ? "warn" : "ok"), note: `CO₂ ${round(cCo2, 1)} mg/L + 碱度 ${round(cAlkSys, 0)} mg/L 碳酸平衡` },
-      { key: "nh3", name: "非离子氨 NH₃", value: round(cNH3, 4), unit: "mg/L(N)", limit: K.process.nh3Acute, status: cNH3 > K.process.nh3Acute ? "fail" : (cNH3 > K.process.nh3Chronic ? "warn" : "ok"), note: `TAN ${round(cTan, 2)} × 离解率 ${round(fNH3 * 100, 1)}% (pKa ${round(pKaNH3, 2)})` },
+      { key: "nh3", name: "非离子氨 NH₃", value: round(cNH3, 4), unit: "mg/L(N)", limit: round(nh3AcuteT, 4), status: cNH3 > nh3AcuteT ? "fail" : (cNH3 > nh3ChronicT ? "warn" : "ok"), note: `TAN ${round(cTan, 2)} × 离解率 ${round(fNH3 * 100, 1)}% (pKa ${round(pKaNH3, 2)})；温度修正限值 急${round(nh3AcuteT, 4)}/慢${round(nh3ChronicT, 4)} @${Math.round(temp)}℃` },
       { key: "tss", name: "悬浮固体 TSS", value: round(cTss, 1), unit: "mg/L", limit: wq.ssMax, status: st(cTss, wq.ssMax, wq.ssMax * 1.5, true), note: "微滤机去除" },
       { key: "do", name: "溶氧 DO", value: round(o2Achieved, 1), unit: "mg/L", limit: doMinV, status: o2Deficit > 0.1 ? "fail" : "ok", note: "供氧余量 " + round(o2Margin, 0) + "%，池内可达 " + round(o2Achieved, 1) + " mg/L" },
     ];
