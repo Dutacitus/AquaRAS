@@ -380,18 +380,8 @@ RAS.engine = (function () {
     const bgTan = bg.tan != null ? bg.tan : 0;
     const bgNo2 = bg.no2 != null ? bg.no2 : 0;
     const bgNo3 = bg.no3 != null ? bg.no3 : 0;
-    // P0-3 两段硝化：TAN 由 AOB(rNitrit) 去除；NO₂ 由 NOB(rNitrat,更快) 去除 → NO₂ 稳态更低
-    const denomBf = (k) => k * bfReactorVolSf + makeupFlow;
-    const cTan = (tanDaily * 1000 + makeupFlow * bgTan) / denomBf(rNitrit * 1000 / tanHard); // mg/L as N
-    const cNo2 = (tanDaily * 1000 + makeupFlow * bgNo2) / denomBf(rNitrat * 1000 / no2Hard); // mg/L as N
-    // P1-6 / P0-4：NO₃ 稳态 = 硝化生成×(1−反硝化去除) + 水源背景，随补水交换(以 N 计)
-    const denitRemoval = K.process.denitRemoval != null ? K.process.denitRemoval : 0;
-    const no3Nmg = makeupFlow > 0
-      ? (tanDaily * 1000 * (1 - denitRemoval) + makeupFlow * bgNo3) / makeupFlow
-      : 9999; // mg/L as N（无补水排换则累积）
-    const denitVol = (tanDaily * (1 - denitRemoval)) / (K.process.denitRate != null ? K.process.denitRate : 0.25);
-    // P0-2 CO₂ 闭环：脱气塔(主动) + 开放水面天然挥发(被动空气吹脱) + 补水稀释 → 稳态 CO₂
-    //   co2Kla×养殖池体积 = 等效天然挥发去除流量(m³/天)，双膜理论：敞口水体持续向大气逸出 CO₂(aq)
+    // —— 碳酸盐体系闭环（v1.12.0）：碱度守恒 + pH 子模型 + NH₃ 毒性 ——
+    // 先算 CO₂ 稳态（脱气塔主动 + 开放水面天然挥发被动 + 补水稀释），以驱动 pH
     const co2Kla = K.process.co2Kla != null ? K.process.co2Kla : 0;       // 开放水面 CO₂ 体积传质系数(/天)
     const co2Star = K.process.co2Star != null ? K.process.co2Star : 0.5; // 与大气(≈420ppm)平衡的水体 CO₂(aq) mg/L
     const co2StripFlow = co2Kla * totalTankVol;                          // m³/天 等效天然挥发去除流量
@@ -399,6 +389,63 @@ RAS.engine = (function () {
                / (deg.co2Removal * recircFlow + makeupFlow + co2StripFlow);
     const co2Stripped = deg.co2Removal * recircFlow * cCo2 / 1000;       // kg/天 脱气塔(主动)脱除量
     const co2Natural = co2StripFlow * Math.max(0, cCo2 - co2Star) / 1000; // kg/天 开放水面天然挥发(被动)脱除量
+
+    // 1) 碱度稳态：硝化每氧化 1g N 耗 7.14g 碱度(以CaCO₃计)；碱度仅随补水交换流失，不被滤池/脱气去除
+    const alkPerN = K.process.alkPerN != null ? K.process.alkPerN : 7.14;      // kg CaCO₃ / kg TAN-N
+    const alkTarget = K.process.alkTarget != null ? K.process.alkTarget : 120; // mg/L 目标操作碱度
+    const alkMin = K.process.alkMin != null ? K.process.alkMin : 80;          // mg/L 碱度下限
+    const bgAlk = bg.alk != null ? bg.alk : 150;                              // mg/L 源水碱度
+    const alkConsumeDay = tanDaily * alkPerN;                                 // kg CaCO₃/天
+    const consM = alkConsumeDay * 1e6;                                        // mg/天
+    const srcM = makeupFlow * bgAlk;                                          // mg/天 源水补入
+    const alkNat = makeupFlow > 0 ? bgAlk - consM / makeupFlow : -1e9;        // mg/L 无投加时稳态碱度
+    let cAlkSys, doseM;
+    if (alkNat >= alkTarget) { cAlkSys = alkNat; doseM = 0; }
+    else { cAlkSys = alkTarget; doseM = Math.max(0, consM - srcM + makeupFlow * alkTarget); }
+    const nahco3Day = doseM > 0 ? doseM / 1e6 / (K.process.nahco3Eff != null ? K.process.nahco3Eff : 0.5957) : 0; // kg NaHCO₃/天
+    const nahco3PerKgFish = nahco3Day * 365 / Math.max(1, annual);           // kg/kg 鱼
+
+    // 2) pH 子模型：CO₂(aq) + 总碱度 → 碳酸平衡数值求解 [H⁺]（温度/盐度修正 pK）
+    const pK1 = (K.process.pK1_25 != null ? K.process.pK1_25 : 6.35) - 0.012 * (temp - 25) - (matlFactor > 1 ? 0.5 : 0);
+    const pK2 = (K.process.pK2_25 != null ? K.process.pK2_25 : 10.33) - 0.013 * (temp - 25) - (matlFactor > 1 ? 0.2 : 0);
+    const K1 = Math.pow(10, -pK1), K2 = Math.pow(10, -pK2), Kw = 1e-14;
+    const Aeq = cAlkSys / 50000;                   // eq/L（50 g/eq CaCO₃）
+    const Cmol = Math.max(1e-6, cCo2) / 44000;     // mol/L（44 g/mol CO₂）
+    const fPH = (H) => Aeq - (K1 * Cmol / H + 2 * K1 * K2 * Cmol / (H * H) + Kw / H - H);
+    let Hlo = 1e-11, Hhi = 1e-4, flo = fPH(Hlo), fhi = fPH(Hhi);
+    let pH = 7.0;
+    if (flo * fhi <= 0) {
+      for (let i = 0; i < 60; i++) {
+        const Hm = Math.sqrt(Hlo * Hhi);
+        const fm = fPH(Hm);
+        if (flo * fm <= 0) { Hhi = Hm; fhi = fm; } else { Hlo = Hm; flo = fm; }
+      }
+      pH = -Math.log10(Math.sqrt(Hlo * Hhi));
+    }
+    pH = Math.min(14, Math.max(0, pH));
+
+    // 3) pH→硝化速率折减（第二限速步：低 pH 抑制 AOB/NOB，稳态 TAN 反弹）
+    const phNf = pH >= 7.0 ? 1.0 : Math.max(0.2, Math.pow(0.85, (7.0 - pH) / 0.1));
+    const rNitritEff = rNitrit * phNf;
+    const rNitratEff = rNitrat * phNf;
+
+    // P0-3 两段硝化（用 pH 折减后有效速率）：TAN 由 AOB 去除；NO₂ 由 NOB 去除
+    const denomBf = (k) => k * bfReactorVolSf + makeupFlow;
+    const cTan = (tanDaily * 1000 + makeupFlow * bgTan) / denomBf(rNitritEff * 1000 / tanHard); // mg/L as N
+    const cNo2 = (tanDaily * 1000 + makeupFlow * bgNo2) / denomBf(rNitratEff * 1000 / no2Hard); // mg/L as N
+
+    // P1-6 / P0-4：NO₃ 稳态 = 硝化生成×(1−反硝化去除) + 水源背景，随补水交换(以 N 计)
+    const denitRemoval = K.process.denitRemoval != null ? K.process.denitRemoval : 0;
+    const no3Nmg = makeupFlow > 0
+      ? (tanDaily * 1000 * (1 - denitRemoval) + makeupFlow * bgNo3) / makeupFlow
+      : 9999; // mg/L as N（无补水排换则累积）
+    const denitVol = (tanDaily * (1 - denitRemoval)) / (K.process.denitRate != null ? K.process.denitRate : 0.25);
+
+    // 4) 非离子氨 NH₃：pH + 温度决定离解比例（pKa 随温度下降）
+    const pKaNH3 = (K.process.pKaNH3_25 != null ? K.process.pKaNH3_25 : 9.25) - 0.03 * (temp - 25);
+    const fNH3 = 1 / (1 + Math.pow(10, pKaNH3 - pH));
+    const cNH3 = cTan * fNH3;   // mg/L as N
+
     const cTss = (tssDaily * 1000) / (df.tssRemoval * recircFlow + makeupFlow);
     // P0-1 DO 闭环：供氧覆盖鱼代谢+硝化时池内可达 DO；供氧不足按比例下降并计缺口
     const o2Margin = o2DemandH > 0 ? (o2Supply - o2DemandH) / o2DemandH * 100 : 999;
@@ -413,6 +460,9 @@ RAS.engine = (function () {
       { key: "no2", name: "亚硝态氮 NO₂", value: round(cNo2, 2), unit: "mg/L", limit: no2Hard, status: st(cNo2, no2Hard, no2Hard * 1.5, true), note: "NOB 硝化(NO₂→NO₃)，速率高于 AOB" },
       { key: "no3", name: "硝态氮 NO₃-N", value: round(no3Nmg, 1), unit: "mg/L（以 N 计）", limit: 300, status: st(no3Nmg, 300, wq.no3SoftCap, true), note: denitRemoval > 0 ? `反硝化脱除 ${Math.round(denitRemoval * 100)}%，剩余随补水交换` : "仅随补水交换，需排换水或反硝化" },
       { key: "co2", name: "二氧化碳 CO₂", value: round(cCo2, 1), unit: "mg/L", limit: wq.co2Max * 2, status: st(cCo2, wq.co2Max * 2, wq.co2Max, true), note: `脱气塔脱除 ${round(co2Stripped, 1)} kg/天 + 开放水面天然挥发 ~${round(co2Natural, 1)} kg/天 + 补水稀释` },
+      { key: "alk", name: "碱度(以CaCO₃计)", value: round(cAlkSys, 0), unit: "mg/L", limit: alkMin, status: nahco3PerKgFish > 1.5 ? "fail" : (doseM > 0 && nahco3PerKgFish > 0.8 ? "warn" : "ok"), note: doseM > 0 ? `需投加 NaHCO₃ ${round(nahco3Day, 1)} kg/天(≈${round(nahco3PerKgFish, 3)} kg/kg鱼)` : "源水碱度充足，无需投加" },
+      { key: "ph", name: "pH", value: round(pH, 2), unit: "", limit: `${wq.phLow}–${wq.phHigh}`, status: (pH < wq.phLow || pH > wq.phHighHard) ? "fail" : (pH > wq.phHigh ? "warn" : "ok"), note: `CO₂ ${round(cCo2, 1)} mg/L + 碱度 ${round(cAlkSys, 0)} mg/L 碳酸平衡` },
+      { key: "nh3", name: "非离子氨 NH₃", value: round(cNH3, 4), unit: "mg/L(N)", limit: K.process.nh3Acute, status: cNH3 > K.process.nh3Acute ? "fail" : (cNH3 > K.process.nh3Chronic ? "warn" : "ok"), note: `TAN ${round(cTan, 2)} × 离解率 ${round(fNH3 * 100, 1)}% (pKa ${round(pKaNH3, 2)})` },
       { key: "tss", name: "悬浮固体 TSS", value: round(cTss, 1), unit: "mg/L", limit: wq.ssMax, status: st(cTss, wq.ssMax, wq.ssMax * 1.5, true), note: "微滤机去除" },
       { key: "do", name: "溶氧 DO", value: round(o2Achieved, 1), unit: "mg/L", limit: doMinV, status: o2Deficit > 0.1 ? "fail" : "ok", note: "供氧余量 " + round(o2Margin, 0) + "%，池内可达 " + round(o2Achieved, 1) + " mg/L" },
     ];
@@ -424,6 +474,13 @@ RAS.engine = (function () {
       o2Achieved: round(o2Achieved, 2), o2Deficit: round(o2Deficit, 2),
       co2Stripped: round(co2Stripped, 1),
       co2Natural: round(co2Natural, 1),
+      ph: round(pH, 2),
+      cAlk: round(cAlkSys, 0),
+      alkConsumeDay: round(alkConsumeDay, 1),
+      nahco3Day: round(nahco3Day, 1),
+      nahco3PerKgFish: round(nahco3PerKgFish, 3),
+      nh3: round(cNH3, 4),
+      fNH3: round(fNH3, 4),
       no3N: round(no3Nmg, 1),
       denit: {
         removal: round(denitRemoval, 2),

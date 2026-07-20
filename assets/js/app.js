@@ -672,6 +672,8 @@
       ["二氧化碳 CO₂", "≤ " + wq.co2Max, "mg/L"],
       ["悬浮固体 TSS", "≤ " + wq.ssMax, "mg/L"],
       ["pH", wq.phLow + "–" + wq.phHigh, "—"],
+      ["碱度(以CaCO₃计)", K.process.alkMin + "–" + K.process.alkTarget, "mg/L（硝化耗碱度 " + K.process.alkPerN + " g/gN）"],
+      ["非离子氨 NH₃", "≤ " + K.process.nh3Acute, "mg/L(N) 急性毒性"],
     ].map(r => `<tr><td>${r[0]}</td><td class="num">${r[1]} ${r[2]}</td></tr>`).join("");
     const eqRows = [
       ["生物滤池", eq.biofilter.type + "，硝化负荷 " + eq.biofilter.rate + " kg TAN/m³·d，填料填充率 " + (eq.biofilter.mediaFill*100) + "%"],
