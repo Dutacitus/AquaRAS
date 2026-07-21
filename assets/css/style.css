@@ -270,6 +270,8 @@ body::before {
 .pfd-node.c7 .pfd-box { stroke: #fb923c; }
 .pfd-node.c8 .pfd-box { stroke: #60a5fa; }
 .pfd-node.c9 .pfd-box { stroke: #f472b6; }
+.pfd-node.c10 .pfd-box { stroke: #fbbf24; }
+.pfd-node.c11 .pfd-box { stroke: #fb923c; }
 .pfd-arrow.pfd-denit .pfd-line, .pfd-arrow.pfd-denit .pfd-head { stroke: #f472b6; fill: #f472b6; }
 .pfd-legend .pfd-sub { fill: var(--text-soft); text-anchor: start; }
 .pfd-arrow.pfd-makeup .pfd-line, .pfd-arrow.pfd-makeup .pfd-head { stroke: #2dd4bf; fill: #2dd4bf; }
@@ -830,6 +832,8 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
 .pid-node.c7 .pid-box { stroke: #fb923c; }
 .pid-node.c8 .pid-box { stroke: #60a5fa; }
 .pid-node.c9 .pid-box { stroke: #f472b6; }
+.pid-node.c10 .pid-box { stroke: #fbbf24; }
+.pid-node.c11 .pid-box { stroke: #fb923c; }
 .pid-denit .pid-line, .pid-denit .pid-head { stroke: #f472b6; fill: #f472b6; }
 .pid-flow-label.denit-txt { fill: #f472b6; }
 /* 仪表轨 */
