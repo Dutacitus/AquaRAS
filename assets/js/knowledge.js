@@ -180,7 +180,7 @@ window.RAS_KNOWLEDGE = {
     },
     oxygen: {
       type: "液氧/制氧机 + 氧气锥(LHO)",
-      o2PerFeed: 1.0,    // 兜底 kg O2 / kg 饲料（温水高值；品种可覆盖）
+      o2PerFeed: 1.0,    // 氧耗系数（非绝对值）：实际鱼代谢氧耗 = 本值 × process.o2FishCal(0.45)，bass≈0.45 kg O2/kg 饲料；品种可覆盖
       transferEff: 0.95, // 氧气锥传质效率（Speece cone / LHO 0.80–0.95）
       specificEnergy: 0.80, // kWh / kg O2（现场制氧+锥注入比能耗；商业实测 ~0.7，PSA/LOE 区间 0.4–1.2）
       loadFactor: 0.90,  // 部分负荷效率折扣（制氧机随负荷率下降效率降低，实际比能耗 = specificEnergy/loadFactor）
@@ -258,7 +258,7 @@ window.RAS_KNOWLEDGE = {
     o2FishCal: 0.45,     // 鱼呼吸氧耗标定因子：真实鱼代谢仅约 0.35–0.5 kg O2/kg 饲料，原 o2PerFeed 默认 0.9–1.0 偏高约 2×；乘此后与鱼实际代谢一致（供氧定容/能耗/CO₂ 同步修正）
     o2RefTemp: 25,       // ℃ 鱼代谢氧耗标定参考温度（o2PerFeed 在该温度下的标定值；P2-1 Q10 以此为基准）
     q10O2: 2.0,           // 鱼代谢 Q10：每升高 10℃ 耗氧约翻倍（文献 1.8–2.4；温水鱼常取 2.0），用于 P2-1 温度修正
-    co2DoeThresh: 16,    // mg/L CO₂ P2-2 有效溶氧折减起效阈值（低于此不折减；典型 RAS 控 CO₂<15）
+    co2DoeThresh: 15,    // mg/L CO₂ P2-2 有效溶氧折减起效阈值（低于此不折减；与 waterQuality.co2Max=15 软告警对齐，典型 RAS 控 CO₂<15）
     co2DoeScale: 40,     // mg/L P2-2 折减尺度（cCo2 超出阈值部分每 40 mg/L 折减 1.0，封顶 50%）
     co2Ratio: 0.9,       // CO2 产量 / 耗氧（呼吸商 RQ≈0.9，仅用于鱼呼吸 CO2）
     co2PerN: 4.57,       // kg CO2 / kg TAN（硝化产 CO2：NH4+→NO3- 释放 H+ 消耗碱度→CO2，化学计量≈4.57；RAS 主要 CO2 源，v1.10.0 起计入 CO2 预算）
@@ -292,7 +292,6 @@ window.RAS_KNOWLEDGE = {
     pCapture: 0.85,      // 磷系统去除率（微滤机+生物滤池+污泥排放综合一阶去除；RAS 典型 0.7–0.9）
     codPerFeed: 0.45,    // kg COD / kg 饲料（残饵+排泄+分泌物有机负荷；文献约 0.3–0.8）
     codCapture: 0.80,    // COD 系统去除率（生物氧化+微滤+硝化反硝化综合）
-    docPerFeed: 0.13,    // kg DOC / kg 饲料（溶解有机碳，泡沫分离/臭氧去除对象；占 COD 溶解部分，文献约 0.1–0.2）
     docBaseRemoval: 0.45,// 基础 DOC 去除率（生物滤池异养菌同化/硝化耦合去除；无专用泡沫分离/臭氧时也存在的本底去除，避免 DOC 虚高累积）
   },
 
@@ -652,6 +651,7 @@ window.RAS_KNOWLEDGE = {
 
   // 行业经验经济参数（人民币，2025–2026 校准；单价类数据用户可在表单覆盖）
   economics: {
+    salePrice: 22,      // 元/kg 兜底出厂参考价（用户可在表单覆盖；引擎 salePrice 缺省回退值）
     // —— 直接费基准（参考规模 refAnnualTons 下的 元/m³ 养殖水体 / 元/m² 土建）——
     // v1.3.0：补全 UV 消毒与 CO₂ 脱气塔（此前缺失）；引入规模经济 + 间接费模型（见 capexModel）
     capexPerM3: {

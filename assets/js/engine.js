@@ -193,7 +193,7 @@ RAS.engine = (function () {
     const pA = Math.PI * pD * pD / 4;                                       // m² 管截面积
     const pV = pumpQ / pA;                                                  // m/s 管内流速
     const pRe = pV * pD / nuW;                                              // 雷诺数
-    const pF = 0.25 / Math.pow(Math.log10(pEps / (3.74 * pD) + 5.74 / Math.pow(pRe, 0.9)), 2); // Swamee–Jain 摩阻系数
+    const pF = 0.25 / Math.pow(Math.log10(pEps / (3.7 * pD) + 5.74 / Math.pow(pRe, 0.9)), 2); // Swamee–Jain 摩阻系数
     const v2_2g = pV * pV / (2 * g9);
     const hf = pF * (pL / pD) * v2_2g;                                      // m 沿程损失
     const hm = pK * v2_2g;                                                  // m 局部损失
@@ -506,7 +506,7 @@ RAS.engine = (function () {
     const wq = K.waterQuality;
     const tanHard = Math.min(wq.tanMax, sp.tanMax || wq.tanMax);
     const no2Hard = wq.no2Max;
-    const doMinV = Math.min(wq.doMin, sp.doMin || wq.doMin);
+    const doMinV = Math.max(wq.doMin, sp.doMin || wq.doMin);
     const o2SatV = o2Sat(temp) * o2SatFactor;
     const doTarget = Math.min(doMinV + 1.5, o2SatV);
     // P0-4 补水背景浓度：水源 TAN/NO₂/NO₃ 计入稳态质量平衡（用户可经 inputs.makeupBackground 覆盖）
@@ -660,7 +660,7 @@ RAS.engine = (function () {
     const cCod = makeupFlow > 0
       ? (codDaily * 1000) / ((K.process.codCapture != null ? K.process.codCapture : 0.80) * recircFlow + makeupFlow)
       : 9999; // mg/L COD(Mn)（无补水排换则累积）
-    const waterType = (matlFactor > 1 || (sp.salinity != null && sp.salinity > 0.5)) ? "seawater" : "freshwater";
+    const waterType = (matlFactor > 1) ? "seawater" : "freshwater";
     const dischargeLevel = (inputs && inputs.dischargeLevel === 1) ? 1 : 2;
     // v1.13.9 末端处理二次削减：排放口经尾水单元处理后浓度
     const cTnPol = cTn * (1 - twTech.tn);
@@ -919,9 +919,9 @@ RAS.engine = (function () {
       for (const seg of curve) { if (annT <= seg.upto) { exp = seg.exp; break; } }
     }
     let sf = Math.pow(cm.refAnnualTons / annT, 1 - exp);
-    const floor = cm.scaleFloor != null ? cm.scaleFloor : 3;
-    const ceil = cm.scaleCeil != null ? cm.scaleCeil : 0.5;
-    return Math.min(Math.max(sf, ceil), floor);
+    const minSf = cm.scaleCeil != null ? cm.scaleCeil : 0.55;
+    const maxSf = cm.scaleFloor != null ? cm.scaleFloor : 3;
+    return Math.min(Math.max(sf, minSf), maxSf);
   }
 
   function optimize(opts) {
