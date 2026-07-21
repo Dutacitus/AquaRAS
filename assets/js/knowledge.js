@@ -82,7 +82,7 @@
  */
 window.RAS_KNOWLEDGE = {
   meta: {
-    version: "1.13.9",
+    version: "1.17.0",
     title: "RAS 工艺设计知识库",
     dataAsOf: "2026",
     confidence: "中",
@@ -109,6 +109,11 @@ window.RAS_KNOWLEDGE = {
     phLow: 6.8,
     phHigh: 7.5,
     phHighHard: 8.5,  // pH 硬上限（超过判超限：碳酸盐析出/NH₃剧增风险）
+    // 海水/半咸水品种（matlFactor>1）适用更宽的 pH 带：碳酸盐体系按海水标度(pK1 更低)，
+    // 同等 CO₂/碱度下稳态 pH 比淡水低 ~0.3–0.5；且海水养殖对象(虾/海水鱼)耐受更宽 pH。
+    // 与 DB44/2462-2024 海水排放限值(phLow=6.5)一致，避免把天然的海水碳酸平衡误判为超限。
+    phLowMarine: 6.5,
+    phHighMarine: 8.5,
     o2SatMax: 110,    // % 溶氧饱和度上限（防气泡病）
     ssMax: 10,        // mg/L 循环水悬浮固体上限
   },
@@ -149,7 +154,9 @@ window.RAS_KNOWLEDGE = {
       rate: 0.60,        // kg TAN / m³(反应器) / 天 — 设计硝化负荷(AOB 限速步,基准 25℃；温水 0.5–1.2，冷水×0.6–0.7，取中值偏保守)；用于生物滤池定容
       rateNitritation: 0.60, // kg TAN / m³·天 — AOB 亚硝化速率(TAN→NO₂)，与 rate 一致(限速步)；稳态 TAN 平衡用
       rateNitratation: 2.0,  // kg NO₂-N / m³·天 — NOB 硝化速率(NO₂→NO₃)，通常 1.5–3× AOB，稳态 NO₂ 更低更真实
-      nitrTheta: 1.08,   // 硝化速率温度系数 θ：有效速率 = rate × θ^(T−25)（冷水品种速率下降，反应器更大）
+      nitrTheta: 1.08,   // 硝化速率温度系数 θ（统用兜底：旧版单一系数）
+      nitrThetaAOB: 1.08,// AOB 亚硝化温度系数 θ：rNitrit 有效 = rateNitritation × θ_AOB^(T−25)；低温下 AOB 降速较慢
+      nitrThetaNOB: 1.10,// NOB 硝化温度系数 θ：rNitrat 有效 = rateNitratation × θ_NOB^(T−25)；NOB 比 AOB 对低温更敏感(θ 更高)→低温 NO₂ 积累（捕捉低温亚硝态氮失控）
       mediaFill: 0.60,   // 填料填充率（K1 60–70%）
       mediaSurface: 500, // m²/m³ 填料比表面积（Kaldnes K1 标准值）
     },
@@ -180,7 +187,8 @@ window.RAS_KNOWLEDGE = {
       eff: 0.70,         // 水泵效率
       loadFactor: 0.90,  // 部分负荷效率折扣（实际轴功率 = 设计功率/loadFactor）
       // P1-5 达西–魏斯巴赫阻力法参数（v1.7.0）
-      pipeDiameter: 0.35,   // m 主管径（按设计流量选，流速 ~1.5 m/s）
+      pipeDiameter: 0.35,   // m 基准主管径（小场适用；大场按流速上限自动放大，见 engine v1.16.0）
+      velocityMax: 2.5,     // m/s 主管设计最大流速（工业取水/回水主管典型上限；超此流速→管径自动放大，避免摩擦扬程∝Q² 暴涨）
       pipeLength: 150,      // m 等效管长（RAS 环路总长，含来回）
       pipeRoughness: 1.5e-6,// m 管壁当量粗糙度（HDPE/UPVC 光滑管）
       staticLift: 2.8,     // m 静提升高度（泵→池体落差）
@@ -189,6 +197,7 @@ window.RAS_KNOWLEDGE = {
     heat: {
       copHeat: 4.0,      // 热泵制热 COP（现代热泵 >4.0，aquaculture 制热目标）
       copCool: 3.5,      // 制冷机 EER（水产冷水机目标 COP 3.5–4.5，取 3.5 保守）
+      heatRecoveryEff: 0.6, // 补水/排污余热回收效率(0–1)：回收热用于预热补水，实际补水显热负荷×(1−heatRecoveryEff)（热泵/板换回收，典型 0.5–0.7）
       uEnvelope: 0.6,   // W/(m²·K) 车间围护传热系数（保温夹芯板，文献 0.31–0.9；取 0.6）
       internalLoadW: 4, // W/m³ 室内恒定得热（照明/控制/鱼代谢/轻微曝气，向制冷负荷叠加、抵消制热）
       pumpLossFrac: 0.12, // 水泵轴功率转化为室内得热的比例（电机/管路损失；抵消制热、叠加制冷）
@@ -208,6 +217,10 @@ window.RAS_KNOWLEDGE = {
     nExcretionRef: 0.85, // 参考蛋白消化率：消化率=本值时 nExcretionFraction 取基准值（消化率↑→实际排泄比例↓）
     solidsDisposalEnergy: 0.08, // kWh/kg 干固 — 污泥脱水+外运处置比能耗（脱水~0.05 + 运输~0.03，集约化 RAS 典型）
     tssPerFeed: 0.22,    // kg TSS / kg 饲料（固废产率；文献 20–35%，v1.10.0 由 0.28 下调至 0.22，配合高效微滤机使高密度品种 TSS 落入 ≤10 mg/L）
+    // v1.17.0：二级固液分离(沉淀/溶气/蛋白分离器)对微滤机剩余细颗粒的附加捕集率。
+    // 真实 RAS 为"微滤机 + 沉淀/气浮"两级，单级 drumFilter(0.93) 低估了稳态去除；
+    // 仅用于 TSS 稳态校核(水质可行性)，不改 CAPEX/OPEX/能耗口径(保证鲈@100 经济基线中性)。
+    secondarySolidsCapture: 0.5,
     o2FishCal: 0.45,     // 鱼呼吸氧耗标定因子：真实鱼代谢仅约 0.35–0.5 kg O2/kg 饲料，原 o2PerFeed 默认 0.9–1.0 偏高约 2×；乘此后与鱼实际代谢一致（供氧定容/能耗/CO₂ 同步修正）
     o2RefTemp: 25,       // ℃ 鱼代谢氧耗标定参考温度（o2PerFeed 在该温度下的标定值；P2-1 Q10 以此为基准）
     q10O2: 2.0,           // 鱼代谢 Q10：每升高 10℃ 耗氧约翻倍（文献 1.8–2.4；温水鱼常取 2.0），用于 P2-1 温度修正
@@ -220,10 +233,12 @@ window.RAS_KNOWLEDGE = {
     nitrifO2: 4.57,      // kg O2 / kg TAN（硝化耗氧化学计量 NH4+→NO3-）
     peakFeedFactor: 1.8, // 日投喂峰值 / 日均（摄食节律，用于氧气/氮负荷峰值）
     sysWaterFactor: 1.15,// 系统总水量 / 养殖池有效水量（回流管路+滤池保有量）
+    fcrDensityCoef: 0.008, // FCR–密度耦合系数(1/(kg/m³))：实际 FCR = sp.fcr × (1 + coef×(density−stockingDensity))；高密度→FCR 升高（拥挤应激/代谢效率↓）；默认密度处零效应
     denitRemoval: 0.85,  // 反硝化脱氮率（NO3-N 去除比例；现代 RAS 配生物脱氮典型 0.8–0.9）
     denitRate: 0.25,     // kg NO3-N / m³(反应器) / 天 — 异养反硝化容积负荷（设计值）
     // —— 碳酸盐体系 / pH / NH₃（v1.12.0）——
     alkPerN: 7.14,      // kg 碱度(以CaCO₃计) / kg TAN-N：硝化氧化 1g N 耗 7.14g 碱度（化学计量 2 mol 碱度/mol N）；碱度稳态用
+    alkProdDenit: 3.57, // kg 碱度(以CaCO₃计) / kg N：反硝化产碱 3.57 g/gN（以 CaCO₃ 计，每还原 1 mol NO₃-N 产生 1 mol 碱度）；M3 净耗碱 = 硝化耗 − 反硝化产
     alkTarget: 120,     // mg/L 目标操作碱度（RAS 常控 100–200，取中值 120；低于则硝化/鱼受抑）
     alkMin: 80,         // mg/L 碱度下限（<80 硝化明显受抑、pH 易崩）
     pK1_25: 6.35,       // 碳酸一级解离常数 pK1（25℃ 淡水；引擎内按 temp/salinity 修正）
@@ -586,6 +601,19 @@ window.RAS_KNOWLEDGE = {
     },
   },
 
+  // v1.16.0 PV 光伏投资模型系数（用户可在表单覆盖：pvKWp/pvFraction/batteryKWh）
+  // 均为行业经验模型系数（2026 中国工商业分布式光伏），非用户自定义经营数据
+  pv: {
+    capexPerW: 3.65,      // 元/W 工商业分布式光伏系统造价（含设计/施工/并网；2026 区间 3.5–3.8）
+    capacityHours: 1100,  // h/年 等效满发小时（中部/华东参考；西北>1300，川渝~1000）
+    exportPrice: 0.35,    // 元/kWh 余电上网电价（2026 市场化，区间 0.30–0.40）
+    omPerKwh: 0.06,       // 元/kWh 运维（清洗/保险/监测）
+    degradation: 0.005,   // 年衰减（组件~0.4–0.5%）
+    selfUseBase: 0.80,    // 基础自用率（RAS 24/7 平负载，白天匹配高；PV 发电被自发自用比例）
+    batteryCapexPerWh: 0.80, // 元/Wh 储能 EPC（2026，区间 0.5–0.8）
+    lifetimeYears: 25,    // 光伏系统经济寿命(年)
+  },
+
   // 行业经验经济参数（人民币，2025–2026 校准；单价类数据用户可在表单覆盖）
   economics: {
     // —— 直接费基准（参考规模 refAnnualTons 下的 元/m³ 养殖水体 / 元/m² 土建）——
@@ -650,6 +678,14 @@ window.RAS_KNOWLEDGE = {
       maintenanceRate: 0.04,// 维护占直接费比例/年（v1.3.0 基数由总投资改为直接费）
       elecPrice: 0.72,     // 元/kWh（2025 工商业均价,省际 0.63–0.77）
       solidsDisposalPrice: 0.35, // 元/kg 干固 — 污泥（脱水后）外运/堆肥/沼气的处置单价（v1.7.0 P1-4）
+    },
+    // 财务模型（v1.15.0 M11）：投资评估与融资假设（纯模型系数，用户可在表单覆盖 finance 输入）
+    finance: {
+      discountRate: 0.08,  // 折现率(年) — NPV/IRR/折现回收期计算用；典型项目基准收益率 8%
+      loanRatio: 0.6,      // 贷款比例（占总投资；自有资金 = 1−loanRatio）
+      loanRate: 0.045,     // 贷款利率(年)
+      loanYears: 10,       // 贷款期限(年)
+      depYears: 15,        // 折旧年限(直线法，年)；用于 EBITDA/权益现金流
     },
     // 价格数据治理（v1.5.0，P1-7）：标注数据时效与置信度，供 UI 展示与审计
     priceMeta: {

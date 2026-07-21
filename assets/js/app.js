@@ -187,6 +187,9 @@
       laborPerYear: document.getElementById("laborPerYear").value.trim() ? num("laborPerYear") : null,
       dischargeLevel: (() => { const el = document.getElementById("dischargeLevel"); return el ? parseInt(el.value, 10) : 2; })(),
       tailwaterTech: (() => { const el = document.getElementById("tailwaterTech"); return el ? el.value : "none"; })(),
+      pvKWp: document.getElementById("pvKWp").value.trim() ? num("pvKWp") : 0,
+      pvFraction: document.getElementById("pvFraction").value.trim() ? num("pvFraction") : 0,
+      batteryKWh: document.getElementById("batteryKWh").value.trim() ? num("batteryKWh") : 0,
     };
   }
   function renderAll(d) {
@@ -602,6 +605,36 @@
         <tbody>${rows.map(r => `<tr><td><b>${r[0]}</b></td><td class="num">${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join("")}</tbody>
       </table></div>`;
   }
+  /* 光伏投资明细面板（v1.16.0 接入）：展示 PV 模块输出，未启用时给引导提示 */
+  function renderPVPanel(d) {
+    const pv = d.economics && d.economics.pv;
+    if (!pv || !pv.enabled) {
+      return `<div class="note" style="padding:10px 26px 24px"><span class="ic">☀️</span>
+        <div>未启用光伏。在设计输入「光伏投资」中填写<b>光伏装机容量</b>或<b>光伏覆盖比例</b>即可接入光伏投资模块：自动计算年发电量、自发自用/余电上网、节省电费与回收期/IRR，并并入项目 CAPEX 与运营成本。模型系数（造价 3.65 元/W、等效小时 1100h、运维 0.06 元/kWh）来自 2026 中国工商业分布式光伏共识。</div></div>`;
+    }
+    const ec = E.rmb;
+    const rows = [
+      ["装机容量", pv.kWp, "kWp", "光伏阵列峰值"],
+      ["储能配置", pv.batteryKWh, "kWh", pv.batteryKWh > 0 ? "提升自用率" : "未配储"],
+      ["年发电量", (pv.annualGenKwh / 1000).toFixed(0), "MWh", "等效小时 1100h"],
+      ["自发自用", (pv.selfKwh / 1000).toFixed(0), "MWh", "自用率 " + (pv.selfUseRatio * 100).toFixed(1) + "%"],
+      ["余电上网", (pv.exportKwh / 1000).toFixed(0), "MWh", "上网电价 0.35 元/kWh"],
+    ];
+    return `
+      <div class="metrics" style="padding:14px 26px 8px">
+        ${metricCard("年节省电费", (pv.elecSaved / 10000).toFixed(1), "万元", "自发自用抵电网", "brand")}
+        ${metricCard("年上网收入", (pv.exportIncome / 10000).toFixed(1), "万元", "余电上网", "accent")}
+        ${metricCard("光伏投资 CAPEX", (pv.capex / 10000).toFixed(1), "万元", "已并入项目总投资", "brand")}
+        ${metricCard("光伏回收期", pv.paybackYears != null ? pv.paybackYears.toFixed(1) : "—", "年", "独立投资视角", pv.paybackYears != null && pv.paybackYears < 8 ? "accent" : "")}
+        ${metricCard("光伏 IRR", pv.irr != null ? pv.irr : "—", "%", "25 年寿命·年衰减 0.5%", pv.irr != null && pv.irr > 10 ? "accent" : "")}
+      </div>
+      <div class="table-wrap" style="padding:0 26px 8px"><table class="data">
+        <thead><tr><th>光伏指标</th><th class="num">数值</th><th>说明</th></tr></thead>
+        <tbody>${rows.map(r => `<tr><td>${r[0]}</td><td class="num">${r[1]} ${r[2]}</td><td class="muted" style="font-size:12.5px">${r[3]}</td></tr>`).join("")}</tbody>
+      </table></div>
+      <div class="note" style="padding:6px 26px 24px"><span class="ic">☀️</span>
+        <div>光伏为<b>独立投资视角</b>：回收期/IRR 仅衡量光伏+储能自身（25 年寿命、年衰减 0.5%），不依赖项目融资口径。其 capex 已并入项目总投资、节省电费已冲减运营成本、上网收入已计入营收，故项目级盈利能力指标已自动包含光伏贡献。屋顶可用面积需另行勘测。</div></div>`;
+  }
   function renderEcon(d) {
     const host = document.getElementById("panel-econ");
     host.className = "panel active glass";
@@ -669,6 +702,8 @@
         ${metricCard("年化 ROI", e.roi!=null?e.roi:"—", "%", "毛利/CAPEX")}
         ${metricCard("毛利率", e.marginRate!=null?e.marginRate:"—", "%", "毛利/营收")}
       </div>
+      <div class="section-title" style="padding:18px 26px 0">光伏投资分析 (PV)</div>
+      ${renderPVPanel(d)}
       <div class="section-title" style="padding:8px 26px 0">敏感度分析 (What-if · ±20%)</div>
       <div class="sn-wrap" style="padding:14px 26px 8px">
         <div class="sn-ctrl">
@@ -821,6 +856,17 @@
       ["电价", ec.opex.elecPrice, "元/kWh"],
       ["固废处置", ec.opex.solidsDisposalPrice, "元/kg 干固"],
     ].map(r => `<tr><td>${r[0]}</td><td class="num">${r[1]}</td><td>${r[2]}</td></tr>`).join("");
+    const pvK = K.pv || {};
+    const pvRows = [
+      ["系统造价", pvK.capexPerW, "元/W（含设计/施工/并网；2026 工商业分布式区间 3.5–3.8）"],
+      ["等效满发小时", pvK.capacityHours, "h/年（中部/华东参考；西北>1300，川渝~1000）"],
+      ["余电上网电价", pvK.exportPrice, "元/kWh（2026 市场化，区间 0.30–0.40）"],
+      ["运维单价", pvK.omPerKwh, "元/kWh（清洗/保险/监测）"],
+      ["组件年衰减", (pvK.degradation * 100).toFixed(1) + "%", "年（组件~0.4–0.5%）"],
+      ["基础自用率", (pvK.selfUseBase * 100).toFixed(0) + "%", "RAS 24/7 平负载，白天匹配高"],
+      ["储能造价", pvK.batteryCapexPerWh, "元/Wh（2026 EPC，区间 0.5–0.8）"],
+      ["经济寿命", pvK.lifetimeYears, "年（光伏系统）"],
+    ].map(r => `<tr><td>${r[0]}</td><td class="num">${r[1]}</td><td>${r[2]}</td></tr>`).join("");
     const steps = [
       ["养殖池系统", "按产能目标与放养密度、养殖茬次反推所需养殖水体，确定池数、池径与有效容积。"],
       ["投喂与氮负荷", "由产量与饲料系数(FCR)估算年投喂量，推导总氨氮(TAN)等氮素日产量，作为生物滤池设计依据。"],
@@ -831,7 +877,8 @@
       ["固废处理", "按循环流量配置微滤机台数与单台处理量，并配置污泥浓缩/脱水单元。"],
       ["能耗估算", "按水泵、增氧、脱气、控温、辅助、固废处置等系统功率需求估算总装机与单位鱼比能耗。水泵扬程用<strong>达西–魏斯巴赫</strong>阻力法（沿程摩阻 Swamee-Jain + 局部损失 + 静扬程）计算。控温采用<strong>bin method 季节性双工况</strong>：取地区全年月均温序列，逐月判定制热/制冷并用对应 COP 折算，累加得年控温电耗，比单点估算更准；无地区时退化为单点。控温负荷随<strong>地区全年平均气温</strong>变化：净热需求 = 围护传热(围护表面积[屋面+外墙]×U值×温差) + 补水升温(补水流量×比热×温差) + 水面蒸发潜热(池面蒸发×汽化潜热) − 内部得热(泵损+照明/代谢)；若环境低于设定温则加热、高于则制冷，分别按热泵 COP 与冷水机组 COP 折算电耗。固废处置电耗按干固体量 × 单位处置能耗计入。能耗分项在「能耗」面板以饼图展示泵/氧/脱气/控温/杂项的功率占比，便于定位主要耗能单元与节电重点。"],
       ["建筑规模", "按养殖区与设备区占地估算车间总面积与体积（含通道与辅助用房）。"],
-      ["经济与校核", "汇总 CAPEX/OPEX（含水费）得出单位成本、盈利与回收期，并以稳态质量平衡校核水质可行性。"],
+      ["光伏与储能（可选）", "若用户启用光伏，按年用电量(或指定 kWp)定容光伏装机，发电量 = kWp × 等效满发小时；自发自用部分按零售电价抵扣电网电费，余电按上网价售电。配储能可提升自用率（封顶 95%）。光伏 CAPEX 并入项目总投资、运维与上网收入并入运营账，并独立给出 25 年寿命(年衰减)视角下的回收期与 IRR。"],
+      ["经济与校核", "汇总 CAPEX/OPEX（含水费、光伏节电/上网收入）得出单位成本、盈利与回收期，并以稳态质量平衡校核水质可行性。"],
     ].map((s, i) => `<li><span class="doc-step-n">${i+1}</span><div><b>${s[0]}</b>　${s[1]}</div></li>`).join("");
     // 蒙特卡洛示例数值：实时调用引擎生成，确保与设计书/当前引擎版本一致（避免写死漂移）
     let mcRows = "", mcNote = "", mcWq = "";
@@ -855,6 +902,31 @@
       mcRows = `<tr><td colspan="5" class="num">蒙特卡洛示例生成失败</td></tr>`;
       mcNote = "示例数值由引擎实时生成。"; mcWq = "";
     }
+
+    // 当前方案光伏实时测算（renderDoc 可访问同作用域 currentDesign）
+    let pvLive = "";
+    try {
+      const pd = currentDesign;
+      if (pd && pd.economics && pd.economics.pv && pd.economics.pv.enabled) {
+        const p = pd.economics.pv;
+        const f = (v, d) => Number(v).toFixed(d == null ? 0 : d);
+        pvLive = `
+      <div class="doc-card" style="margin-top:10px">
+        <h4>当前方案光伏测算（实时）</h4>
+        <table class="data doc-table"><tbody>
+          <tr><td>装机容量</td><td class="num">${f(p.kWp, 1)} kWp${p.batteryKWh > 0 ? (" + 储能 " + f(p.batteryKWh, 0) + " kWh") : ""}</td></tr>
+          <tr><td>年发电量</td><td class="num">${f(p.annualGenKwh / 1000, 0)} MWh</td></tr>
+          <tr><td>自用率</td><td class="num">${(p.selfUseRatio * 100).toFixed(1)}%</td></tr>
+          <tr><td>年省电费</td><td class="num">${f(p.elecSaved / 10000, 1)} 万元</td></tr>
+          <tr><td>年上网收入</td><td class="num">${f(p.exportIncome / 10000, 1)} 万元</td></tr>
+          <tr><td>光伏 CAPEX</td><td class="num">${f(p.capex / 10000, 1)} 万元</td></tr>
+          <tr><td>光伏回收期</td><td class="num">${f(p.paybackYears, 2)} 年</td></tr>
+          <tr><td>光伏 IRR</td><td class="num">${f(p.irr, 1)}%</td></tr>
+        </tbody></table>
+        <p class="doc-cap">以上为当前设计输入下光伏模块实时输出；光伏 CAPEX 已并入项目总投资、节电/上网收入已并入运营账（见「经济估算」面板与盈利能力指标）。</p>
+      </div>`;
+      }
+    } catch (e) { pvLive = ""; }
 
     host.innerHTML = `
       <div class="doc-hero">
@@ -904,6 +976,14 @@
         </div>
       </div>
 
+      <div class="doc-grid">
+        <div class="doc-card">
+          <h4>⑤ 光伏投资基准 (PV, 可选)</h4>
+          <table class="data doc-table"><thead><tr><th>参数</th><th class="num">基准值</th><th>说明</th></tr></thead><tbody>${pvRows}</tbody></table>
+          <p class="doc-cap">光伏/储能为<strong>可选模块</strong>：用户可指定装机容量 <code>pvKWp</code>(kWp)、或按年用电比例 <code>pvFraction</code>(0–1) 自动定容、并可选 <code>batteryKWh</code> 储能。未启用时光伏 CAPEX/收入/节电均为 0，对经济基线<strong>完全中性</strong>。模型系数来自 2026 中国工商业分布式光伏共识（造价/等效小时/上网价/运维/衰减），不依赖国家 FIT 补贴。</p>
+        </div>
+      </div>
+
       <div class="doc-section">
         <h3>二、计算流程（工程方法论）</h3>
         <p class="doc-p">引擎按下列顺序逐级推导，每一步的输出作为下一步的输入，形成从产能需求到工艺参数、设备尺寸、能耗与经济的完整链路：</p>
@@ -924,6 +1004,19 @@
           <p class="doc-cap">${mcNote}</p>
           <p class="doc-cap">${mcWq}</p>
           <p class="doc-cap"><b>与敏感度（龙卷风图）互补：</b>龙卷风图单参数逐一 ±20% 扰动，回答「哪些参数最关键」；蒙特卡洛多参数同时随机，回答「综合不确定下结果区间多宽、工艺失效概率多大」。配合：先找关键源，再看联合分布。</p>
+      </div>
+
+      <div class="doc-section">
+        <h3>五、光伏投资分析方法</h3>
+        <p class="doc-p">光伏为可选模块，用于评估"自发自用 + 余电上网"对运营电费与项目经济性的改善。核心计算链路：</p>
+        <ol class="doc-steps">
+          <li><b>装机定容</b>：用户指定 <code>pvKWp</code>(kWp)，或按 <code>pvFraction × 年用电量</code> 自动定容（年用电量来自第七节能耗估算）。</li>
+          <li><b>发电与自用</b>：年发电量 = kWp × 等效满发小时；基础自用率默认 80%（RAS 24/7 平负载、白天匹配高），配储能可提升自用率（封顶 95%）；余电上网。</li>
+          <li><b>经济并入</b>：净电网电费 = (总电量 − 光伏自用) × 电价；上网收入 = 余电 × 上网价；光伏 CAPEX(含储能) 并入项目总投资、光伏运维并入运营账——故项目 CAPEX / OPEX / 营收 / NPV / IRR 已自动含光伏贡献。</li>
+          <li><b>独立视角</b>：另以 25 年寿命、组件年衰减(0.5%) 给出光伏自身的回收期与 IRR（二分法求解 NPV=0 的折现率），便于单独评估光伏投资吸引力，不依赖项目融资口径。</li>
+        </ol>
+        <p class="doc-cap">模型系数来自 2026 中国工商业分布式光伏共识（系统造价 3.5–3.8 元/W、等效小时 1100h、上网价 0.30–0.40 元/kWh、运维 0.06 元/kWh），无国家 FIT 补贴依赖；未启用时对所有经济指标完全中性。决策建议：优先利用厂房屋顶平铺（不占土地、就近消纳），先勘测屋顶可用面积与遮挡，再据年用电量定容；储能仅在峰谷价差大或自用率偏低时经济。</p>
+        ${pvLive}
       </div>
 
       <div class="doc-confidential">

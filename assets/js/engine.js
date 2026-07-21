@@ -70,7 +70,10 @@ RAS.engine = (function () {
 
     // —— 2. 投喂与氮负荷 ——
     // 饲料系数可由使用者自定义（不同养殖水平差异大），留空/非法时回退品种默认
-    const fcr = (inputs.fcr && inputs.fcr > 0) ? inputs.fcr : sp.fcr;
+    // v1.15.0 M5：FCR–密度耦合（仅当用户未自定义 FCR 时生效；用户自定义优先，绝不覆盖）
+    const fcrDensityCoef = K.process.fcrDensityCoef != null ? K.process.fcrDensityCoef : 0;
+    const fcrEffBase = sp.fcr * (1 + fcrDensityCoef * (density - sp.stockingDensity)); // 高密度→FCR 升高（拥挤应激/代谢效率↓）
+    const fcr = (inputs.fcr && inputs.fcr > 0) ? inputs.fcr : fcrEffBase;
     const annualFeed = annual * fcr;
     const dailyFeedAvg = annualFeed / 365;
     const dailyFeedPeak = dailyFeedAvg * K.process.peakFeedFactor;
@@ -105,15 +108,13 @@ RAS.engine = (function () {
     // —— 4. 生物滤池 (MBBR) ——
     const bf = K.equipment.biofilter;
     // P0-3 两段硝化（v1.6.0）：温度修正速率。AOB(亚硝化)为限速步用于定容；NOB(硝化)更快用于 NO₂ 稳态
-    const nitrTheta = bf.nitrTheta != null ? bf.nitrTheta : 1.08;
+    const nitrTheta = bf.nitrTheta != null ? bf.nitrTheta : 1.08;        // 统用兜底 θ（旧版单一系数）
+    const nitrThetaAOB = bf.nitrThetaAOB != null ? bf.nitrThetaAOB : nitrTheta; // AOB 亚硝化温度系数 θ（v1.15.0 M2）
+    const nitrThetaNOB = bf.nitrThetaNOB != null ? bf.nitrThetaNOB : nitrTheta; // NOB 硝化温度系数 θ（v1.15.0 M2：低温更敏感，捕捉 NO₂ 积累）
     const nitrRate = bf.rate * Math.pow(nitrTheta, temp - 25);                  // AOB 限速步：生物滤池定容
-    const rNitrit = (bf.rateNitritation != null ? bf.rateNitritation : bf.rate) * Math.pow(nitrTheta, temp - 25); // TAN→NO₂
-    const rNitrat = (bf.rateNitratation != null ? bf.rateNitratation : bf.rate) * Math.pow(nitrTheta, temp - 25); // NO₂→NO₃
-    const bfReactorVol = tanDaily / nitrRate;
-    const bfReactorVolSf = bfReactorVol * sf;
-    const bfTotalVol = bfReactorVolSf / bf.mediaFill;
-    const bfUnits = Math.max(2, Math.ceil(bfTotalVol / 40));
-    const bfUnitVol = bfTotalVol / bfUnits;
+    const rNitrit = (bf.rateNitritation != null ? bf.rateNitritation : bf.rate) * Math.pow(nitrThetaAOB, temp - 25); // TAN→NO₂（AOB 温度敏感）
+    const rNitrat = (bf.rateNitratation != null ? bf.rateNitratation : bf.rate) * Math.pow(nitrThetaNOB, temp - 25); // NO₂→NO₃（NOB 温度敏感，低温失活更快→NO₂ 积累）
+    // （生物滤池定容已移至碳酸盐/pH 求解之后：用 pH 折减后的有效速率 rNitritEff 定容，与稳态校核口径统一；见 §水质 前 M1 v1.14.0）
 
     // —— 5. 增氧与 CO2 脱除 ——
     const ox = K.equipment.oxygen;
@@ -172,7 +173,13 @@ RAS.engine = (function () {
     const pumpQ = recircFlowH / 3600;                                       // m³/s
     // P1-5 泵实际扬程/管路阻力法（达西–魏斯巴赫，v1.7.0）：H = 提升高度 + 沿程(hf) + 局部(hm)
     const g9 = 9.81, nuW = 1.0e-6;                                          // g, 水运动粘度
-    const pD = pu.pipeDiameter != null ? pu.pipeDiameter : 0.35;           // m 管径
+    // v1.16.0 修复：管径随流量选取，使主管流速封顶 velocityMax，避免固定管径下大流量时
+    // v∝Q、摩擦扬程 hf∝v²∝Q² 导致泵功随规模超线性暴涨（非物理，1000t 曾达 v=16.9m/s/head=133m）。
+    // 小场 pDneeded<基准管径→沿用基准（golden@100t 完全不变）；大场自动放大管径→流速封顶、泵功随流量近线性。
+    const pDNom = pu.pipeDiameter != null ? pu.pipeDiameter : 0.35;      // m 基准管径（小场）
+    const vMax = pu.velocityMax != null ? pu.velocityMax : 2.5;         // m/s 设计最大流速
+    const pDneeded = Math.sqrt(4 * pumpQ / (Math.PI * vMax));           // 维持 v<=vMax 所需最小管径
+    const pD = Math.max(pDNom, pDneeded);                               // m 实际管径（大场自动放大）
     const pL = pu.pipeLength != null ? pu.pipeLength : 150;                // m 等效管长
     const pEps = pu.pipeRoughness != null ? pu.pipeRoughness : 1.5e-6;    // m 管壁粗糙度
     const pK = pu.minorLossK != null ? pu.minorLossK : 5;                  // 局部阻力系数和
@@ -202,12 +209,13 @@ RAS.engine = (function () {
     const envArea = bldArea + bldWallArea;                                  // m² 实际围护表面积（屋顶+外墙）
     const UA = envArea * heat.uEnvelope;                                    // W/℃ 围护传热系数
     const makeupKgH = makeupFlowH * swDensity;                              // kg/h 补水质量流量（按实际水体密度，淡水1000/海水~1025）
+    const heatRecoveryEff = heat.heatRecoveryEff != null ? heat.heatRecoveryEff : 0; // v1.15.0 M6：补水/排污余热回收效率
     const internalW = pumpPower * 1000 * (heat.pumpLossFrac != null ? heat.pumpLossFrac : 0.12) + totalTankVol * heat.internalLoadW; // 室内得热(泵损+照明/代谢)
     const evapW = evapKgH * (heat.evapLatent || 2.44e6) / 3600;             // W 蒸发潜热负荷（复用第3节水足迹的 evapKgH）
     // 单点设计工况（年均气温 amb）：用于参考显示
     const liftSp = temp - amb;
     const envWsp = UA * liftSp;
-    const makeupWsp = makeupKgH * cl.cpWater * liftSp / 3600;
+    const makeupWsp = makeupKgH * cl.cpWater * liftSp / 3600 * (1 - heatRecoveryEff); // M6：补水显热×余热回收
     const rawSp = envWsp + makeupWsp;
     let hvacPowerDesign, thermalLoadW;
     if (rawSp >= 0) {
@@ -226,7 +234,7 @@ RAS.engine = (function () {
       const Tm = amb + amp * Math.cos(2 * Math.PI * (m - 6) / 12);          // m=6 即 7 月(最暖)
       const liftM = temp - Tm;
       const envWm = UA * liftM;
-      const makeupWm = makeupKgH * cl.cpWater * liftM / 3600;
+      const makeupWm = makeupKgH * cl.cpWater * liftM / 3600 * (1 - heatRecoveryEff); // M6：补水显热×余热回收
       const rawM = envWm + makeupWm;
       let pM, modeM;
       if (rawM >= 0) {
@@ -295,6 +303,45 @@ RAS.engine = (function () {
     const fingerPrice = inputs.fingerlingPrice > 0 ? inputs.fingerlingPrice : (sp.fingerlingPrice || op.fingerlingPrice);
     const elecPrice = elec;   // elec 已含地区电价指数 regPower（仅默认价生效）
     const waterPrice = inputs.waterPrice > 0 ? inputs.waterPrice : (op.waterPrice || 5.0);
+
+    // v1.16.0 PV 光伏投资模块：用户可选输入 pvKWp(容量 kWp) / pvFraction(按年负载比例自动定容) / batteryKWh(储能 kWh)
+    // 模型系数来自 K.pv（造价/等效小时/上网价/运维/衰减/自用率/储能），不碰用户可自定义经营数据；
+    // 未启用 PV 时全部为 0，对基线完全中性。
+    const PV = K.pv || {};
+    const pvUserKWp = inputs.pvKWp > 0 ? inputs.pvKWp : 0;
+    const pvFraction = inputs.pvFraction > 0 ? inputs.pvFraction : 0;
+    const batteryKWh = inputs.batteryKWh > 0 ? inputs.batteryKWh : 0;
+    const pvAutoKWp = pvFraction > 0 ? (annualEnergy * 1000 * pvFraction) / (PV.capacityHours != null ? PV.capacityHours : 1100) : 0;
+    const pvKWp = pvUserKWp > 0 ? pvUserKWp : pvAutoKWp;
+    const pvGenKwh = pvKWp * (PV.capacityHours != null ? PV.capacityHours : 1100);          // kWh/年 发电量
+    let pvSelfUse = PV.selfUseBase != null ? PV.selfUseBase : 0.80;                          // 自用率(发电量被自发自用比例)
+    if (batteryKWh > 0) {                                                                   // 配储能提升自用率(上限 0.95)
+      const dailyAvgLoadKwh = annualEnergy * 1000 / 365;
+      const boost = Math.min(0.13, (batteryKWh / Math.max(1, dailyAvgLoadKwh)) * 0.13);
+      pvSelfUse = Math.min(0.95, pvSelfUse + boost);
+    }
+    const pvSelfKwh = pvGenKwh * pvSelfUse;                                                 // 自用电量(抵电网)
+    const pvExportKwh = pvGenKwh * (1 - pvSelfUse);                                         // 上网电量
+    const pvElecSaved = pvSelfKwh * elecPrice;                                              // 节省电网电费(元/年)
+    const pvExportIncome = pvExportKwh * (PV.exportPrice != null ? PV.exportPrice : 0.35);  // 上网收入(元/年)
+    const pvOpex = pvGenKwh * (PV.omPerKwh != null ? PV.omPerKwh : 0.06);                   // 运维(元/年)
+    const pvCapex = pvKWp * 1000 * (PV.capexPerW != null ? PV.capexPerW : 3.65)
+                  + batteryKWh * 1000 * (PV.batteryCapexPerWh != null ? PV.batteryCapexPerWh : 0.80); // 元(光伏+储能)
+    // PV 独立视角回收期/IRR（25 年寿命、年衰减；不依赖项目融资口径）
+    let pvPayback = null, pvIrr = null;
+    if (pvCapex > 0) {
+      const pvNetY1 = pvElecSaved + pvExportIncome - pvOpex;                                // 元/年 净现金流(首年)
+      const lifeY = PV.lifetimeYears != null ? PV.lifetimeYears : 25;
+      const deg = PV.degradation != null ? PV.degradation : 0.005;
+      if (pvNetY1 > 0) {
+        pvPayback = pvCapex / pvNetY1;
+        const npvPv = (r) => -pvCapex + Array.from({ length: lifeY }, (_, t) =>
+          pvNetY1 * Math.pow(1 - deg, t) / Math.pow(1 + r, t + 1)).reduce((a, b) => a + b, 0);
+        let lo = -0.9, hi = 0.5, f = null;
+        if (npvPv(hi) <= 0) { for (let i = 0; i < 200; i++) { const mid = (lo + hi) / 2; if (npvPv(mid) > 0) lo = mid; else hi = mid; } f = (lo + hi) / 2; }
+        pvIrr = f;
+      }
+    }
     const laborPrice = inputs.laborPerYear > 0 ? inputs.laborPerYear : (op.laborPerYear * regLabor);
 
     // 9.3 直接费分解（含规模因子）：子项金额由工程量×子单价(缩放)得出，分类额=子项之和（保证对账一致）
@@ -339,10 +386,10 @@ RAS.engine = (function () {
     const opexFeed = annualFeed * feedPrice;
     const harvestNum = annual / (sp.harvestSize / 1000);
     const opexFinger = harvestNum * fingerPrice;
-    const opexElec = annualEnergy * 1000 * elecPrice;
+    const opexElec = (annualEnergy * 1000 - pvSelfKwh) * elecPrice;     // 净电网电费 = (总电量 − 光伏自用) × 电价
     const opexLabor = laborPrice * laborCount;
     const opexWater = makeupFlow * 365 * waterPrice;   // 生产补水费（补水流量 × 年 × 水价）
-    const opexTotal = opexFeed + opexFinger + opexElec + opexLabor + opexMaint + opexWater + opexSolids + opexTailYr;
+    const opexTotal = opexFeed + opexFinger + opexElec + opexLabor + opexMaint + opexWater + opexSolids + opexTailYr + pvOpex;
     const costPerKg = opexTotal / annual;
 
     // 9.5 间接费（按直接费比例，合计上限 = 直接费 × indirectCap）
@@ -382,17 +429,57 @@ RAS.engine = (function () {
       key: "indirect_subtotal", label: "间接费子项合计", unit: "", qty: "—", indirect: true, subtotal: true, subKind: "indirect",
       subs: [], total: round(capexIndirect),
     }];
-    const capexCostRows = [...directRows, ...directSubtotalRow, ...indirectRows, ...indirectSubtotalRow, ...landRow];
+    const pvRow = pvCapex > 0 ? [{
+      key: "pv", label: "光伏/储能系统(可选)", unit: "", qty: "—", indirect: false,
+      subs: [{ label: `光伏 ${round(pvKWp, 0)} kWp${batteryKWh > 0 ? " + 储能 " + round(batteryKWh, 0) + " kWh" : ""}`, rate: 0, amount: round(pvCapex) }],
+      total: round(pvCapex),
+    }] : [];
+    const capexCostRows = [...directRows, ...directSubtotalRow, ...indirectRows, ...indirectSubtotalRow, ...landRow, ...pvRow];
     const capexBreakdown = capexCostRows;          // 小计行仅供阅读，不计入总额
     const capexTotal = capexCostRows.filter((c) => !c.subtotal).reduce((a, c) => a + c.total, 0) + capexTail;
 
     /* —— 盈利 / 投资回报 —— */
-    const revenue = annual * salePrice;                                  // 元/年
+    const revenue = annual * salePrice + pvExportIncome;                 // 元/年（含光伏余电上网收入）
     const grossProfit = revenue - opexTotal;                             // 元/年（未计折旧/财务）
     const profitPerKg = annual > 0 ? grossProfit / annual : 0;          // 元/kg
     const paybackYears = grossProfit > 0 ? capexTotal / grossProfit : null;   // 简单回收期(年)
     const roi = capexTotal > 0 ? (grossProfit / capexTotal) * 100 : null;      // 年化 ROI(%)
     const marginRate = revenue > 0 ? (grossProfit / revenue) * 100 : null;     // 毛利率(%)
+
+    // v1.15.0 M11：投资评估 + 融资模型（NPV / IRR / 折现回收期 / EBITDA / 权益投资），纯新增输出不改动基线
+    const fin = K.economics.finance || { discountRate: 0.08, loanRatio: 0.6, loanRate: 0.045, loanYears: 10, depYears: 15 };
+    const discountRate = fin.discountRate != null ? fin.discountRate : 0.08;
+    const loanRatio = fin.loanRatio != null ? fin.loanRatio : 0.6;
+    const loanRate = fin.loanRate != null ? fin.loanRate : 0.045;
+    const loanYears = fin.loanYears != null ? fin.loanYears : 10;
+    const depYears = fin.depYears != null ? fin.depYears : 15;
+    const projectLife = 15;                                  // 项目评价期(年)
+    const ebitda = grossProfit;                              // 息税折旧摊销前利润 ≈ 毛利（opexTotal 不含折旧/利息）
+    const depreciation = capexTotal / Math.max(1, depYears);// 直线法年折旧(非现金)
+    const loanPrincipal = capexTotal * loanRatio;            // 贷款本金
+    const equityInvest = capexTotal * (1 - loanRatio);       // 权益投资(初始自有资金)
+    const annualInterest = loanPrincipal * loanRate;         // 年利息
+    const annualPrincipal = loanYears > 0 ? loanPrincipal / loanYears : 0; // 年等额还本
+    const cf = [-equityInvest];                              // 权益口径现金流：t=0 权益投入；还债期 ebitda−利息−还本；还债后 ebitda（忽略所得税，折旧非现金已不含于 ebitda）
+    for (let t = 1; t <= projectLife; t++) {
+      const debtSvc = t <= loanYears ? (annualInterest + annualPrincipal) : 0;
+      cf.push(Math.max(0, ebitda) - debtSvc);
+    }
+    const npvOf = (rate) => cf.reduce((a, c, t) => a + c / Math.pow(1 + rate, t), 0);
+    const npv = npvOf(discountRate);
+    let cum = 0, discountedPayback = null;                   // 折现回收期：累计折现现金流首次非负之年
+    for (let t = 0; t <= projectLife; t++) {
+      cum += cf[t] / Math.pow(1 + discountRate, t);
+      if (cum >= 0 && discountedPayback == null) { discountedPayback = t; break; }
+    }
+    let irr = null;                                          // IRR（二分法，NPV 关于 rate 单调）；无解返回 null
+    if (cf[0] < 0 && ebitda > 0) {
+      let lo = -0.9, hi = 3.0;
+      if (npvOf(hi) <= 0) {
+        for (let i = 0; i < 200; i++) { const mid = (lo + hi) / 2; if (npvOf(mid) > 0) lo = mid; else hi = mid; }
+        irr = (lo + hi) / 2;
+      }
+    }
 
     /* —— 水质可行性闭环校核（稳态质量平衡：两段硝化 + 一阶去除 + 补水稀释 + 水源背景） —— */
     const wq = K.waterQuality;
@@ -422,7 +509,10 @@ RAS.engine = (function () {
     const alkTarget = K.process.alkTarget != null ? K.process.alkTarget : 120; // mg/L 目标操作碱度
     const alkMin = K.process.alkMin != null ? K.process.alkMin : 80;          // mg/L 碱度下限
     const bgAlk = bg.alk != null ? bg.alk : 150;                              // mg/L 源水碱度
-    const alkConsumeDay = tanDaily * alkPerN;                                 // kg CaCO₃/天
+    // v1.15.0 M3：碱度净核算 = 硝化耗碱 − 反硝化产碱（反硝化每还原 1 mol NO₃-N 产 1 mol 碱度）
+    const alkProdDenit = K.process.alkProdDenit != null ? K.process.alkProdDenit : 3.57; // kg CaCO₃ / kg N 反硝化产碱
+    const denitR = K.process.denitRemoval != null ? K.process.denitRemoval : 0.85;        // 反硝化脱氮率（仅碱度净核算用；L469 另有 const 声明，此处不复用避免重复）
+    const alkConsumeDay = Math.max(0, tanDaily * alkPerN - tanDaily * denitR * alkProdDenit); // kg CaCO₃/天 净耗碱
     const consM = alkConsumeDay * 1e6;                                        // mg/天
     const srcM = makeupFlow * bgAlk * 1000;                                  // mg/天 源水补入（makeupFlow[m³/天]×bgAlk[mg/L]×1000 = mg/天，与 consM 同量纲）
     const alkNat = makeupFlow > 0 ? bgAlk - consM / (makeupFlow * 1000) : -1e9; // mg/L 无投加时稳态碱度（consM/makeupFlow 单位 mg/m³ → ÷1000 转 mg/L）
@@ -456,6 +546,14 @@ RAS.engine = (function () {
     const rNitritEff = rNitrit * phNf;
     const rNitratEff = rNitrat * phNf;
 
+    // M1(v1.14.0)：生物滤池定容改用 pH 折减后的有效硝化速率 rNitritEff，与稳态校核口径统一
+    // （pH<7 时有效速率下降，滤池自动增大，避免"按最优pH定容、运行pH下买小了"的口径分裂）
+    const bfReactorVol = tanDaily / rNitritEff;
+    const bfReactorVolSf = bfReactorVol * sf;
+    const bfTotalVol = bfReactorVolSf / bf.mediaFill;
+    const bfUnits = Math.max(2, Math.ceil(bfTotalVol / 40));
+    const bfUnitVol = bfTotalVol / bfUnits;
+
     // P0-3 两段硝化（用 pH 折减后有效速率）：TAN 由 AOB 去除；NO₂ 由 NOB 去除
     const denomBf = (k) => k * bfReactorVolSf + makeupFlow;
     const cTan = (tanDaily * 1000 + makeupFlow * bgTan) / denomBf(rNitritEff * 1000 / tanHard); // mg/L as N
@@ -477,7 +575,14 @@ RAS.engine = (function () {
     const nh3AcuteT = (K.process.nh3Acute != null ? K.process.nh3Acute : 0.02) * Math.pow(10, nh3TempCoef * (25 - temp));
     const nh3ChronicT = (K.process.nh3Chronic != null ? K.process.nh3Chronic : 0.01) * Math.pow(10, nh3TempCoef * (25 - temp));
 
-    const cTss = (tssDaily * 1000) / (df.tssRemoval * recircFlow + makeupFlow);
+    // v1.17.0：微滤机(单级 df.tssRemoval) + 二级固液分离(secondarySolidsCapture)串联，
+    // 有效去除率 = 1 − (1−drum)(1−secondary)；仅用于 TSS 稳态校核，不改经济/能耗口径。
+    const tssRemovalEff = 1 - (1 - df.tssRemoval) * (1 - (K.process.secondarySolidsCapture != null ? K.process.secondarySolidsCapture : 0));
+    const cTss = (tssDaily * 1000) / (tssRemovalEff * recircFlow + makeupFlow);
+    // v1.17.0：pH 限值按水型区分——海水/半咸水(matlFactor>1)用更宽的海水带(phLowMarine/phHighMarine)，
+    // 避免把海水碳酸平衡(pK1 更低→稳态 pH 偏低)误判为超限。
+    const phLo = matlFactor > 1 ? (wq.phLowMarine != null ? wq.phLowMarine : wq.phLow) : wq.phLow;
+    const phHi = matlFactor > 1 ? (wq.phHighMarine != null ? wq.phHighMarine : wq.phHigh) : wq.phHigh;
     // P0-1 DO 闭环：供氧覆盖鱼代谢+硝化时池内可达 DO；供氧不足按比例下降并计缺口
     const o2Delivered = o2Supply * ox.transferEff;                    // kg/h 实际注入水体的氧（扣除传质损失）
     const o2Margin = o2DemandH > 0 ? (o2Delivered - o2DemandH) / o2DemandH * 100 : 999;
@@ -499,7 +604,7 @@ RAS.engine = (function () {
       { key: "no3", name: "硝态氮 NO₃-N", value: round(no3Nmg, 1), unit: "mg/L（以 N 计）", limit: 300, status: st(no3Nmg, 300, wq.no3SoftCap, true), note: denitRemoval > 0 ? `反硝化脱除 ${Math.round(denitRemoval * 100)}%，剩余随补水交换` : "仅随补水交换，需排换水或反硝化" },
       { key: "co2", name: "二氧化碳 CO₂", value: round(cCo2, 1), unit: "mg/L", limit: wq.co2Max * 2, status: st(cCo2, wq.co2Max * 2, wq.co2Max, true), note: `脱气塔脱除 ${round(co2Stripped, 1)} kg/天 + 开放水面天然挥发 ~${round(co2Natural, 1)} kg/天 + 补水稀释` },
       { key: "alk", name: "碱度(以CaCO₃计)", value: round(cAlkSys, 0), unit: "mg/L", limit: alkMin, status: (nahco3PerKgFish > 1.5 || cAlkSys < alkMin) ? "fail" : (nahco3PerKgFish > 0.8 || (doseM === 0 && cAlkSys < alkTarget)) ? "warn" : "ok", note: doseM > 0 ? `需投加 NaHCO₃ ${round(nahco3Day, 1)} kg/天(≈${round(nahco3PerKgFish, 3)} kg/kg鱼)` : "源水碱度充足，无需投加" },
-      { key: "ph", name: "pH", value: round(pH, 2), unit: "", limit: `${wq.phLow}–${wq.phHigh}`, status: (pH < wq.phLow || pH > wq.phHighHard) ? "fail" : (pH > wq.phHigh ? "warn" : "ok"), note: `CO₂ ${round(cCo2, 1)} mg/L + 碱度 ${round(cAlkSys, 0)} mg/L 碳酸平衡` },
+      { key: "ph", name: "pH", value: round(pH, 2), unit: "", limit: `${phLo}–${phHi}${matlFactor > 1 ? "（海水带）" : ""}`, status: (pH < phLo || pH > wq.phHighHard) ? "fail" : (pH > phHi ? "warn" : "ok"), note: `CO₂ ${round(cCo2, 1)} mg/L + 碱度 ${round(cAlkSys, 0)} mg/L 碳酸平衡${matlFactor > 1 ? "（海水碳酸标度）" : ""}` },
       { key: "nh3", name: "非离子氨 NH₃", value: round(cNH3, 4), unit: "mg/L(N)", limit: round(nh3AcuteT, 4), status: cNH3 > nh3AcuteT ? "fail" : (cNH3 > nh3ChronicT ? "warn" : "ok"), note: `TAN ${round(cTan, 2)} × 离解率 ${round(fNH3 * 100, 1)}% (pKa ${round(pKaNH3, 2)})；温度修正限值 急${round(nh3AcuteT, 4)}/慢${round(nh3ChronicT, 4)} @${Math.round(temp)}℃` },
       { key: "tss", name: "悬浮固体 TSS", value: round(cTss, 1), unit: "mg/L", limit: wq.ssMax, status: st(cTss, wq.ssMax, wq.ssMax * 1.5, true), note: "微滤机去除" },
       { key: "do", name: "有效溶氧 DO", value: round(effectiveDo, 1), unit: "mg/L", limit: doMinV, status: effDoDeficit > 0.1 ? "fail" : "ok", note: "池内实测 " + round(o2Achieved, 1) + " mg/L" + (co2DoePenalty > 0 ? "；高 CO₂(" + round(cCo2, 1) + " mg/L)经 Bohr 效应折减 " + Math.round(co2DoePenalty * 100) + "%→有效 " + round(effectiveDo, 1) : "") + "；供氧余量 " + round(o2Margin, 0) + "%" },
@@ -556,6 +661,7 @@ RAS.engine = (function () {
       inputs: { annual, density, cycles, turns, makeup, sf, temp, elec, fcr, salePrice,
         feedPrice: inputs.feedPrice || null, fingerlingPrice: inputs.fingerlingPrice || null,
         elecPrice: inputs.elecPrice || null, waterPrice: inputs.waterPrice || null,
+        pvKWp: inputs.pvKWp || null, pvFraction: inputs.pvFraction || null, batteryKWh: inputs.batteryKWh || null,
         laborPerYear: inputs.laborPerYear || null,
         ambientTemp: amb, region: regionKey || null, laborCount },
       culture: {
@@ -604,7 +710,7 @@ RAS.engine = (function () {
         carbonPerKg: round(carbonPerKg, 4),
       },
       biofilter: {
-        type: bf.type, rate: round(nitrRate, 3),
+        type: bf.type, rate: round(nitrRate, 3), rateEff: round(rNitritEff, 3),
         rateNitritation: round(rNitrit, 3),
         rateNitratation: round(rNitrat, 3),
         reactorVol: round(bfReactorVol, 1),
@@ -699,6 +805,29 @@ RAS.engine = (function () {
         profitPerKg: round(profitPerKg, 1),
         paybackYears, roi: roi != null ? round(roi, 1) : null,
         marginRate: marginRate != null ? round(marginRate, 1) : null,
+        finance: {
+          discountRate, loanRatio, loanRate, loanYears, depYears,
+          npv: round(npv), irr: irr != null ? round(irr * 100, 1) : null,
+          discountedPayback: discountedPayback != null ? round(discountedPayback, 1) : null,
+          ebitda: round(ebitda), equityInvest: round(equityInvest),
+          loanPrincipal: round(loanPrincipal), annualInterest: round(annualInterest), annualPrincipal: round(annualPrincipal),
+        },
+        // v1.16.0 PV 光伏模块输出（接入项目 NPV/IRR：pvCapex 已并入 capexTotal，pvOpex/上网收入已并入 opex/revenue）
+        pv: {
+          enabled: pvKWp > 0,
+          kWp: round(pvKWp, 1),
+          batteryKWh: round(batteryKWh, 0),
+          selfUseRatio: pvKWp > 0 ? round(pvSelfUse, 3) : null,
+          annualGenKwh: round(pvGenKwh),
+          selfKwh: round(pvSelfKwh),
+          exportKwh: round(pvExportKwh),
+          elecSaved: round(pvElecSaved),
+          exportIncome: round(pvExportIncome),
+          opex: round(pvOpex),
+          capex: round(pvCapex),
+          paybackYears: pvPayback != null ? round(pvPayback, 2) : null,
+          irr: pvIrr != null ? round(pvIrr * 100, 1) : null,
+        },
       },
       waterQuality,
       compliance: tailwater,
@@ -756,6 +885,8 @@ RAS.engine = (function () {
       if (c.maxArea && d.building.buildingArea > c.maxArea) return false;
       if (c.maxEnergy && d.energy.energyIntensity > c.maxEnergy) return false;
       if (c.maxDiameter && d.culture.tankD > c.maxDiameter) return false;
+      // M13(v1.14.0)：硬约束水质可行性——拒绝 WQ=fail 的"最优解"（除非显式 opts.requireWqOk=false 关闭）
+      if (opts.requireWqOk !== false && d.waterQuality && d.waterQuality.feasible === false) return false;
       return true;
     };
 
@@ -772,14 +903,13 @@ RAS.engine = (function () {
           area: d.building.buildingArea, vars: { annualTons: p, density: dens, turns } });
       }
     } else {
-      // 固定产量，搜索密度/循环/池径/补水/FCR/安全系数/温度/地区，按目标最小化
+      // 固定产量，搜索密度/循环/池径/补水/安全系数/温度/地区，按目标最小化
+      // v1.15.0 M15：FCR 不再作为独立决策变量，改由密度经 M5 耦合推导（compute() 不传 fcr 即生效）
       const energyObj = (obj === "minEnergy" || obj === "pareto");
       const densList = range(sp.stockingDensity * 0.7, sp.stockingDensity * 1.25, energyObj ? 10 : 5);
       const turnsList = energyObj ? [8, 10, 12, 14] : [6, 8, 10, 12, 14, 16, 18, 20];
       const diamList = [6, 8, 10, 12];
       const makeList = [0.005, 0.01, 0.02, 0.03];
-      const fcrBase = sp.fcr;
-      const fcrList = range(fcrBase * 0.85, fcrBase * 1.15, 0.15); // FCR 纳入决策变量
       const sfList = [1.1, 1.2, 1.3];                              // 安全系数纳入决策变量
       // P1-4：温度/气候纳入决策（仅能耗相关目标展开，控制组合数）
       const baseTemp = opts.designTemp != null ? opts.designTemp : sp.designTemp;
@@ -790,22 +920,21 @@ RAS.engine = (function () {
         for (const turns of turnsList)
           for (const D of diamList)
             for (const mk of makeList)
-              for (const fcr of fcrList)
-                for (const sf of sfList)
-                  for (const dt of tempList)
-                    for (const [rkey, rdef] of ambEntries) {
-                      const d = compute({
-                        speciesKey: opts.speciesKey, annualTons: opts.annualTons,
-                        targetDensity: density, recircTurns: turns, makeupRate: mk,
-                        fcr, safety: sf, designTemp: dt, ambientTemp: rdef.ambient, region: rkey,
-                      });
-                      if (!feasible(d)) continue;
-                      candidates.push({
-                        d, cost: d.economics.capexTotal, energy: d.energy.energyIntensity,
-                        area: d.building.buildingArea,
-                        vars: { density, turns, tankD: D, makeup: mk, fcr, sf, designTemp: dt, ambientTemp: rdef.ambient, region: rkey },
-                      });
-                    }
+              for (const sf of sfList)
+                for (const dt of tempList)
+                  for (const [rkey, rdef] of ambEntries) {
+                    const d = compute({
+                      speciesKey: opts.speciesKey, annualTons: opts.annualTons,
+                      targetDensity: density, recircTurns: turns, makeupRate: mk,
+                      safety: sf, designTemp: dt, ambientTemp: rdef.ambient, region: rkey,
+                    });
+                    if (!feasible(d)) continue;
+                    candidates.push({
+                      d, cost: d.economics.capexTotal, energy: d.energy.energyIntensity,
+                      area: d.building.buildingArea,
+                      vars: { density, turns, tankD: D, makeup: mk, fcr: d.inputs.fcr, sf, designTemp: dt, ambientTemp: rdef.ambient, region: rkey },
+                    });
+                  }
     }
 
     if (!candidates.length) {
@@ -829,6 +958,17 @@ RAS.engine = (function () {
     if (obj === "minEnergy") chosen = candidates.slice().sort((a, b) => a.energy - b.energy)[0];
     else if (obj === "maxCapacity") chosen = candidates.slice().sort((a, b) => b.d._raw.annual - a.d._raw.annual)[0];
     else if (obj === "pareto") chosen = pareto.length ? pareto[0] : candidates[0];
+    // v1.15.0 M14：maxMargin 最大化毛利率；minRisk 最小化"能耗+资本"归一化暴露（越稳越优）
+    else if (obj === "maxMargin") chosen = candidates.slice().sort((a, b) => (b.d.economics.marginRate || -1e9) - (a.d.economics.marginRate || -1e9))[0];
+    else if (obj === "minRisk") {
+      const eMin = candidates.reduce((m, c) => Math.min(m, c.energy), Infinity);
+      const eMax = candidates.reduce((m, c) => Math.max(m, c.energy), -Infinity);
+      const cMin = candidates.reduce((m, c) => Math.min(m, c.cost), Infinity);
+      const cMax = candidates.reduce((m, c) => Math.max(m, c.cost), -Infinity);
+      const norm = (v, lo, hi) => hi > lo ? (v - lo) / (hi - lo) : 0;
+      const riskOf = (c) => norm(c.energy, eMin, eMax) + norm(c.cost, cMin, cMax);
+      chosen = candidates.slice().sort((a, b) => riskOf(a) - riskOf(b))[0];
+    }
     else chosen = candidates.slice().sort((a, b) => a.cost - b.cost)[0];
     const best = chosen.d;
     const vars = chosen.vars;
