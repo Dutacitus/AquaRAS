@@ -833,6 +833,29 @@
       ["建筑规模", "按养殖区与设备区占地估算车间总面积与体积（含通道与辅助用房）。"],
       ["经济与校核", "汇总 CAPEX/OPEX（含水费）得出单位成本、盈利与回收期，并以稳态质量平衡校核水质可行性。"],
     ].map((s, i) => `<li><span class="doc-step-n">${i+1}</span><div><b>${s[0]}</b>　${s[1]}</div></li>`).join("");
+    // 蒙特卡洛示例数值：实时调用引擎生成，确保与设计书/当前引擎版本一致（避免写死漂移）
+    let mcRows = "", mcNote = "", mcWq = "";
+    try {
+      const mcDemo = E.monteCarlo({ speciesKey: "bass", annualTons: 100, designTemp: 18, salePrice: 45 });
+      const f1 = (v) => v.toFixed(1);
+      const gProfit = { p10: mcDemo.grossProfit.p10 / 1e4, p50: mcDemo.grossProfit.p50 / 1e4, p90: mcDemo.grossProfit.p90 / 1e4 };
+      const mcDef = [
+        ["单位成本 (元/kg)", mcDemo.costPerKg, "越低越好"],
+        ["比能耗 (kWh/kg)", mcDemo.energyIntensity, "越低越好"],
+        ["年毛利 (万元)", gProfit, "越高越好"],
+        ["回收期 (年)", mcDemo.paybackYears, "越低越好"],
+        ["毛利率 (%)", mcDemo.marginRate, "越高越好"],
+      ];
+      mcRows = mcDef.map((r) => `<tr><td>${r[0]}</td><td class="num">${f1(r[1].p10)}</td><td class="num">${f1(r[1].p50)}</td><td class="num">${f1(r[1].p90)}</td><td>${r[2]}</td></tr>`).join("");
+      const span = ((mcDemo.costPerKg.p90 - mcDemo.costPerKg.p10) / mcDemo.costPerKg.p50 * 100).toFixed(0);
+      mcNote = `<b>示例（加州鲈 100 t/年、售价 45 元/kg、N=2000 实时运行）：</b>成本区间 ${mcDemo.costPerKg.p10.toFixed(1)}–${mcDemo.costPerKg.p90.toFixed(1)}（跨度约 ${span}%），因成本主驱动是饲料/电价/售价，均不在本抽样内；总投资在该运行下近似恒定——CAPEX 由规模与设备定容决定，被扰动的运行系数不改变定容逻辑。`;
+      const wq = mcDemo.waterQuality;
+      mcWq = `<b>水质可行率：</b>每次重算统计水质「达标/预警/超限」占比，即工艺失效概率。本例 ok ${wq.okPct}% / warn ${wq.warnPct}% / fail ${wq.failPct}%${wq.failPct > 0 ? `——仍有约 ${wq.failPct.toFixed(0)}% 场景水质超限，提示应加大余量或调整设计` : `——工艺风险已显著下降`}。直方图展示单位成本与回收期的分布形态（单峰/拖尾/偏态）。`;
+    } catch (e) {
+      mcRows = `<tr><td colspan="5" class="num">蒙特卡洛示例生成失败</td></tr>`;
+      mcNote = "示例数值由引擎实时生成。"; mcWq = "";
+    }
+
     host.innerHTML = `
       <div class="doc-hero">
         <h2 class="doc-title">设计计算书 · 计算标准与方法</h2>
@@ -877,7 +900,7 @@
       <div class="doc-card">
           <h4>④ 运营成本基准 (OPEX)</h4>
           <table class="data doc-table"><thead><tr><th>成本项</th><th class="num">单价</th><th>单位</th></tr></thead><tbody>${opRows}</tbody></table>
-          <p class="doc-cap">水费按生产补水量 × 水价估算；饲料通常占 OPEX 的 70–80%。维护费改按各设备自身年维护率与寿命分摊并计提重置准备，比单一总率更贴近实际（高价易耗件费率高、寿命短）。</p>
+          <p class="doc-cap">水费按生产补水量 × 水价估算；饲料通常占 OPEX 的 70–80%。维护费改按各设备自身年维护率与寿命分摊并计提重置准备，比单一总率更贴近实际（高价易耗件费率高、寿命短）。本表为<strong>计算基准（标准值，对应默认地区武汉）</strong>；实际计算时人工按地区 laborIndex、电价按地区 powerIndex 调整，且各项均可被用户设计输入覆盖——本表所示即"未选地区/未覆盖"时的生效基准。</p>
         </div>
       </div>
 
@@ -897,15 +920,9 @@
         <p class="doc-p">工程模型系数（MBBR 硝化速率、热泵 COP、补水率、反硝化负荷、水面蒸发率、硝化温度系数等）本身存在取值不确定度。引擎内置 <b>uncertainty 参数集</b>（每项含 low / exp / high 三角分布），在「经济估算」面板点击「运行蒙特卡洛」后，对 N=2000 次抽样重算整条链路，输出 <b>单位成本 / 比能耗 / 总投资 / 年毛利 / 回收期 / 毛利率</b> 的 <b>P10–P90 区间</b>与直方图，并统计水质「达标/预警/超限」的通过率。结果从单点升级为区间，帮助识别方案风险敞口——P50 为最可能值，区间越宽代表对系数不确定越敏感。采样仅扰动<b>模型系数与可校准输入</b>，用户自定义售价 / 密度等不纳入抽样。</p>
           <p class="doc-cap"><b>P10 / P50 / P90 读法：</b>P50 为中位数（一半模拟比它好、一半比它差，代表典型结果）；P10 为第 10 百分位（90% 的模拟比它差），对「越低越好」的指标（成本、比能耗、回收期）是乐观下限，对「越高越好」的指标（毛利、年利润）是悲观下限；P90 为第 90 百分位（90% 的模拟比它好），方向相反。[P10, P90] 覆盖中间 80% 的情形（80% 置信带）。</p>
           <p class="doc-cap"><b>采样对象：</b>仅扰动 uncertainty 参数集中的 7 个模型系数（三角分布 low / exp / high），不抽样用户自定义的售价、密度、电价、土地费等市场输入——模型系数的不确定由本分析量化，市场波动由用户自行调参评估。</p>
-          <table class="data doc-table"><thead><tr><th>指标</th><th class="num">P10</th><th class="num">P50</th><th class="num">P90</th><th>方向</th></tr></thead><tbody>
-            <tr><td>单位成本 (元/kg)</td><td class="num">33.2</td><td class="num">34.1</td><td class="num">35.3</td><td>越低越好</td></tr>
-            <tr><td>比能耗 (kWh/kg)</td><td class="num">6.69</td><td class="num">7.24</td><td class="num">7.94</td><td>越低越好</td></tr>
-            <tr><td>年毛利 (万元)</td><td class="num">97.4</td><td class="num">108.9</td><td class="num">117.7</td><td>越高越好</td></tr>
-            <tr><td>回收期 (年)</td><td class="num">9.06</td><td class="num">9.79</td><td class="num">10.94</td><td>越低越好</td></tr>
-            <tr><td>毛利率 (%)</td><td class="num">21.6</td><td class="num">24.2</td><td class="num">26.2</td><td>越高越好</td></tr>
-          </tbody></table>
-          <p class="doc-cap"><b>示例（加州鲈 100 t/年、售价 45 元/kg、N=2000 一次运行）：</b>成本区间仅 33.2–35.3（跨度约 6%），因成本主驱动是饲料/电价/售价，均不在本抽样内；总投资在该运行下近似恒定——CAPEX 由规模与设备定容决定，被扰动的运行系数不改变定容逻辑。</p>
-          <p class="doc-cap"><b>水质可行率：</b>每次重算统计水质「达标/预警/超限」占比，即工艺失效概率。本例 ok 0% / warn 69% / fail 31%——即便经济指标尚可，仍有约 1/3 场景水质超限，提示当前安全系数下工艺风险偏高，应加大余量或调整设计。直方图展示单位成本与回收期的分布形态（单峰/拖尾/偏态）。</p>
+          <table class="data doc-table"><thead><tr><th>指标</th><th class="num">P10</th><th class="num">P50</th><th class="num">P90</th><th>方向</th></tr></thead><tbody>${mcRows}</tbody></table>
+          <p class="doc-cap">${mcNote}</p>
+          <p class="doc-cap">${mcWq}</p>
           <p class="doc-cap"><b>与敏感度（龙卷风图）互补：</b>龙卷风图单参数逐一 ±20% 扰动，回答「哪些参数最关键」；蒙特卡洛多参数同时随机，回答「综合不确定下结果区间多宽、工艺失效概率多大」。配合：先找关键源，再看联合分布。</p>
       </div>
 
