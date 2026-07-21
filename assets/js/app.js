@@ -190,6 +190,10 @@
       pvKWp: document.getElementById("pvKWp").value.trim() ? num("pvKWp") : 0,
       pvFraction: document.getElementById("pvFraction").value.trim() ? num("pvFraction") : 0,
       batteryKWh: document.getElementById("batteryKWh").value.trim() ? num("batteryKWh") : 0,
+      // v1.18.0 消毒/水质精制单元开关：UV 默认开，泡沫分离/臭氧默认关
+      uv: document.getElementById("uv") ? document.getElementById("uv").checked : true,
+      foamFrac: document.getElementById("foamFrac") ? document.getElementById("foamFrac").checked : false,
+      ozone: document.getElementById("ozone") ? document.getElementById("ozone").checked : false,
     };
   }
   function renderAll(d) {
@@ -365,7 +369,10 @@
       { label: "脱气", v: en.energySplit.degas, c: "#a78bfa" },
       { label: "温控", v: en.energySplit.hvac, c: "#f59e0b" },
       { label: "杂项(含固废)", v: en.energySplit.misc, c: "#94a3b8" },
-    ];
+      { label: "UV 消毒", v: en.energySplit.uv, c: "#22d3ee" },
+      { label: "泡沫分离", v: en.energySplit.skimmer, c: "#f472b6" },
+      { label: "臭氧", v: en.energySplit.ozone, c: "#facc15" },
+    ].filter((x) => x.v > 0);
     const total = sp.reduce((a, x) => a + x.v, 0) || 1;
     const W = 150, H = 150, cx = 75, cy = 75, r = 60, rin = 38;
     let a0 = -Math.PI / 2;
@@ -875,6 +882,7 @@
       ["生物脱氮（反硝化）", "MBBR 完成硝化后，NO₃ 经侧流反硝化反应器在缺氧 + 碳源条件下由异养菌还原为 N₂ 逸出；按 NO₃-N 负荷与反硝化容积负荷(denitRate)确定反应器容积，脱氮率 denitRemoval 计入稳态 NO₃ 质量平衡。"],
       ["增氧与脱碳", "按饲料氧耗 + 硝化耗氧配置供氧能力（覆盖鱼代谢与硝化峰值，含安全系数），按 CO₂ 产生量配置脱气塔；稳态 CO₂ 由<strong>脱气塔(主动) + 养殖池敞口水面天然挥发(被动空气吹脱) + 补水稀释</strong>三者共同决定（双膜理论，等效去除流量=co2Kla×养殖池体积），并非仅依赖脱气塔。"],
       ["固废处理", "按循环流量配置微滤机台数与单台处理量，并配置污泥浓缩/脱水单元。"],
+      ["水质精制与消毒（可选）", "在基础单元之上可叠加三套水质精制与生物安保单元：① <strong>泡沫分离（蛋白分离器）</strong>——约 25% 循环量经侧流射流曝气产生泡沫，去除溶解有机碳 DOC（约 45%）与微滤机残留细颗粒，并产出浓缩有机污泥；② <strong>臭氧氧化+消毒</strong>——强氧化剂将 NO₂ 氧化为 NO₃、协同氧化 DOC，并提供对数灭活(LOG)主动消毒，独立运行需追加接触柱+尾气破坏；③ <strong>UV 紫外消毒</strong>——按 30 mJ/cm² 设计剂量进行对数灭活，作为基础生物安保（默认开启）。三单元的 capex / 能耗 / 维护费均并入投资与运营账，仅启用时计入，未启用时对全部指标完全中性。"],
       ["能耗估算", "按水泵、增氧、脱气、控温、辅助、固废处置等系统功率需求估算总装机与单位鱼比能耗。水泵扬程用<strong>达西–魏斯巴赫</strong>阻力法（沿程摩阻 Swamee-Jain + 局部损失 + 静扬程）计算。控温采用<strong>bin method 季节性双工况</strong>：取地区全年月均温序列，逐月判定制热/制冷并用对应 COP 折算，累加得年控温电耗，比单点估算更准；无地区时退化为单点。控温负荷随<strong>地区全年平均气温</strong>变化：净热需求 = 围护传热(围护表面积[屋面+外墙]×U值×温差) + 补水升温(补水流量×比热×温差) + 水面蒸发潜热(池面蒸发×汽化潜热) − 内部得热(泵损+照明/代谢)；若环境低于设定温则加热、高于则制冷，分别按热泵 COP 与冷水机组 COP 折算电耗。固废处置电耗按干固体量 × 单位处置能耗计入。能耗分项在「能耗」面板以饼图展示泵/氧/脱气/控温/杂项的功率占比，便于定位主要耗能单元与节电重点。"],
       ["建筑规模", "按养殖区与设备区占地估算车间总面积与体积（含通道与辅助用房）。"],
       ["光伏与储能（可选）", "若用户启用光伏，按年用电量(或指定 kWp)定容光伏装机，发电量 = kWp × 等效满发小时；自发自用部分按零售电价抵扣电网电费，余电按上网价售电。配储能可提升自用率（封顶 95%）。光伏 CAPEX 并入项目总投资、运维与上网收入并入运营账，并独立给出 25 年寿命(年衰减)视角下的回收期与 IRR。"],
@@ -927,6 +935,32 @@
       </div>`;
       }
     } catch (e) { pvLive = ""; }
+
+    // 当前方案水质精制单元实时测算（renderDoc 可访问同作用域 currentDesign）
+    let refineLive = "";
+    try {
+      const pd = currentDesign;
+      if (pd && pd.economics && pd.energy) {
+        const es = pd.energy.energySplit;
+        const cb = pd.economics.capexBreakdown;
+        const uv = cb.find((r) => r.key === "uv");
+        const sk = cb.find((r) => r.key === "skimmer");
+        const oz = cb.find((r) => r.key === "ozone");
+        const dis = pd.waterQuality.disinfection;
+        const f = (v, d) => Number(v).toFixed(d == null ? 0 : d);
+        refineLive = `
+      <div class="doc-card" style="margin-top:10px">
+        <h4>当前方案水质精制单元（实时）</h4>
+        <table class="data doc-table"><tbody>
+          <tr><td>紫外消毒 UV</td><td class="num">${uv ? f(uv.total / 10000, 1) + " 万元" : "未启用"}（${f(es.uv, 2)} kW）</td></tr>
+          <tr><td>泡沫分离</td><td class="num">${sk ? f(sk.total / 10000, 1) + " 万元" : "未启用"}（${f(es.skimmer, 2)} kW）</td></tr>
+          <tr><td>臭氧</td><td class="num">${oz ? f(oz.total / 10000, 1) + " 万元" : "未启用"}（${f(es.ozone, 2)} kW）</td></tr>
+          <tr><td>主动消毒对数灭活</td><td class="num">${dis ? f(dis.log, 1) + " LOG（目标 " + f(dis.target, 1) + "，" + dis.status + "）" : "—"}</td></tr>
+        </tbody></table>
+        <p class="doc-cap">以上为当前设计输入下三单元的实时 capex 与能耗；未启用单元对全部经济与水质指标中性。溶解有机碳 DOC 与消毒状态见「水质可行性校核」面板。</p>
+      </div>`;
+      }
+    } catch (e) { refineLive = ""; }
 
     host.innerHTML = `
       <div class="doc-hero">
@@ -1017,6 +1051,19 @@
         </ol>
         <p class="doc-cap">模型系数来自 2026 中国工商业分布式光伏共识（系统造价 3.5–3.8 元/W、等效小时 1100h、上网价 0.30–0.40 元/kWh、运维 0.06 元/kWh），无国家 FIT 补贴依赖；未启用时对所有经济指标完全中性。决策建议：优先利用厂房屋顶平铺（不占土地、就近消纳），先勘测屋顶可用面积与遮挡，再据年用电量定容；储能仅在峰谷价差大或自用率偏低时经济。</p>
         ${pvLive}
+      </div>
+
+      <div class="doc-section">
+        <h3>六、可选水质精制与消毒单元（泡沫分离 / 臭氧 / UV）</h3>
+        <p class="doc-p">三套单元均为<strong>可选叠加项</strong>，用于提升水质透明度（降低 DOC）、强化生物安保（病原灭活）与氧化副产物（NO₂→NO₃）。其计算模型：</p>
+        <ol class="doc-steps">
+          <li><b>泡沫分离（蛋白分离器）</b>：侧流约 25% 循环量经射流曝气/文丘里产生上升泡沫，吸附去除溶解有机碳 DOC（设计去除率约 45%）与微滤机残留细颗粒/胶体；浓缩液为附加有机污泥，计入固废处置。capex 按养殖水体计（含机组/侧流泵/射流器），能耗为侧流泵+气比能耗。</li>
+          <li><b>臭氧氧化+消毒</b>：臭氧发生器（配氧气源）投加 0.01–0.05 g O₃/m³，将 NO₂ 氧化为 NO₃（降低 NOB 负荷与 NO₂ 累积风险）、协同氧化 DOC，并提供对数灭活(LOG)主动消毒；未配泡沫分离时需独立接触柱+尾气破坏单元（作接触/破坏）。capex 与能耗均并入投资与运营账。</li>
+          <li><b>UV 紫外消毒</b>：按 30 mJ/cm² 设计剂量对循环水进行对数灭活，作为基础生物安保（<strong>默认开启</strong>）；能耗按循环流量比能耗计入总能耗（此前仅计 capex、本版补齐能耗口径）。</li>
+          <li><b>稳态联动</b>：DOC 稳态 = 日 DOC 产生量 ÷（生物滤池本底去除 + 泡沫分离 + 臭氧 串联去除后的有效流量 + 补水稀释）；消毒 LOG 取 UV 与臭氧较强者；任一单元开启即计入对应 capex / 能耗 / 维护费，未开启则完全中性。</li>
+        </ol>
+        <p class="doc-cap">模型系数来自 RAS 单元过程文献（泡沫分离 DOC 去除 0.3–0.6、臭氧剂量与 LOG 灭活区间、UV 剂量–LOG 关系）与工程经验；未启用时不改变任何默认水质/经济结论。决策建议：常规淡水 RAS 以 UV 为基础生物安保即可；对苗种、冷水高值品种或病害压力大的系统，叠加泡沫分离（降 DOC、稳水色）与臭氧（强消毒、氧化 NO₂）可显著降低生物安保风险。</p>
+        ${refineLive}
       </div>
 
       <div class="doc-confidential">

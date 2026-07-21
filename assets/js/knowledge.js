@@ -52,6 +52,15 @@
  *   - 饲料蛋白消化率联动排泄：species.proteinDigestibility + process.nExcretionRef，
  *     nExcretionFraction = 基准×(ref/dig)，消化率↑→可排泄氮比例↓（高蛋白低消化率不再被低估）
  *
+ * v1.18.0 (2026 消毒/水质精制单元 + UV 能耗闭环)：
+ *   - 新增三套可选单元（默认仅 UV 开，泡沫分离/臭氧默认关）：
+ *       ① 泡沫分离(蛋白分离器)：去 DOC(docRemoval 0.45) + 细颗粒(fineTssCapture 0.35) + 附加有机污泥(sludgeFactor 0.15)；侧流 25%
+ *       ② 臭氧氧化+消毒：氧化 DOC(docBoost 0.30) + 将 NO₂ 氧化为 NO₃(no2Oxidize 0.50) + 对数灭活(disinfectLog 3.0)；独立运行时追加接触柱+尾气破坏(ozoneContact)
+ *       ③ UV 紫外消毒：剂量 30 mJ/cm²，对数灭活按剂量比折算；此前仅计 capex，本版 uvPower(0.001 kWh/m³) 正式并入总能耗
+ *   - 工艺模型同步：DOC 稳态(含生物滤池本底 docBaseRemoval 0.45 串联去除)、NO₂ 臭氧氧化削减、主动消毒 LOG 指标；TSS 稳态补泡沫分离细颗粒
+ *   - 经济模型同步：三单元 capexPerM3 + capexDetail(skimmer/ozone/ozoneContact，subs 求和==perM3) + 维护费(maintRate/lifeYears) + 能耗分项(uv/skimmer/ozone)
+ *   - 仅改模型系数/公式，不碰用户可自定义数据；UV 默认开使 golden 能耗 4.97→5.02 kWh/kg（已重基线，非回归）
+ *
  * v1.5.2 (2026 热负荷与显示修正)：
  *   - 围护热负荷几何修正：旧实现误用「建筑面积(地板)」作围护表面积，低估约 1.35×；
  *     改为 envArea = 建筑面积 + 4×√建筑面积×层高(屋面+外墙)，围护传热量更真实
@@ -82,7 +91,7 @@
  */
 window.RAS_KNOWLEDGE = {
   meta: {
-    version: "1.17.0",
+    version: "1.18.0",
     title: "RAS 工艺设计知识库",
     dataAsOf: "2026",
     confidence: "中",
@@ -116,6 +125,9 @@ window.RAS_KNOWLEDGE = {
     phHighMarine: 8.5,
     o2SatMax: 110,    // % 溶氧饱和度上限（防气泡病）
     ssMax: 10,        // mg/L 循环水悬浮固体上限
+    docMax: 12,       // mg/L 溶解有机碳(DOC)上限（硬）
+    docSoftCap: 8,    // mg/L DOC 软上限（需泡沫分离/臭氧处理）
+    disinfectionTargetLog: 3.0, // 生物安保目标对数灭活(LOG)，UV/臭氧达到即视为有效主动消毒
   },
 
   // 排放标准（尾水合规判定，v1.13.8）
@@ -180,7 +192,27 @@ window.RAS_KNOWLEDGE = {
     },
     uv: {
       type: "紫外消毒",
-      dose: 30,          // mJ/cm²
+      dose: 30,          // mJ/cm² 设计剂量（中压/低压汞灯典型 20–40 mJ/cm²，对细菌/病毒 LOG 灭活）
+      specificEnergy: 0.001, // kWh/m³ UV 反应器比能耗（灯管+镇流器+清洗，按循环流量折算；鲈@100 约 0.6–0.8 kW）
+    },
+    // 泡沫分离 / 蛋白分离器（foam fractionation / protein skimmer）：RAS 去除溶解有机碳(DOC)与细胶体颗粒的主力单元
+    // 与微滤机互补——微滤机去颗粒(>60µm)，skimmer 去溶解/胶体有机负荷与残余细颗粒；常与臭氧联用(臭氧注入 skimmer 作接触器)
+    skimmer: {
+      type: "泡沫分离(蛋白分离器)",
+      docRemoval: 0.45,    // 溶解有机碳 DOC 去除率（泡沫分离对 DOC 的去除，文献 0.3–0.6；与微滤机不重叠）
+      fineTssCapture: 0.35,// 对微滤机+二级固液分离仍残余的细颗粒/胶体的附加捕集率(0–1)，进一步降低循环水 TSS
+      sideFrac: 0.25,      // 侧流比：skimmer 循环处理循环量的比例(25%，非全流量)，决定其泵/气能耗规模
+      specificEnergy: 0.006,// kWh/m³(侧流) skimmer 比能耗（侧流循环泵+射流曝气/文丘里+空气泵）
+      sludgeFactor: 0.15,  // 泡沫浓缩液附加干固产率(kg 有机污泥/kg 饲料)，较微滤机细颗粒更"浓"，计入固废处置
+    },
+    // 臭氧氧化+消毒（ozone）：强氧化剂，氧化 DOC(与 skimmer 协同)、灭活病原、将 NO₂ 氧化为 NO₃；需接触/尾气破坏
+    ozone: {
+      type: "臭氧氧化+消毒",
+      dose: 0.02,          // g O₃/m³(接触流量) 设计投加剂量（典型 0.01–0.05 g/m³；残留 0.01–0.1 mg/L）
+      specificEnergy: 0.003,// kWh/m³(接触流量) 臭氧系统比能耗（发生器+氧气源+接触/破坏，按接触流量折算）
+      docBoost: 0.30,      // 叠加于 skimmer 的 DOC 额外去除(当 skimmer 已开)；独立时自身 DOC 去除≈docBoost（1−(1−0)(1−0.30)=0.30）
+      no2Oxidize: 0.50,    // 臭氧将 NO₂ 氧化为 NO₃ 的比例(直接削减部分 NO₂，降低 NOB 负荷与 NO₂ 累积风险)
+      disinfectLog: 3.0,   // 对细菌/病毒的对数灭活(LOG)，提供主动消毒能力
     },
     pump: {
       head: 4.0,         // m 扬程（传统设定值；v1.7.0 起优先由达西–魏斯巴赫阻力法计算，此值仅作兜底）
@@ -221,6 +253,8 @@ window.RAS_KNOWLEDGE = {
     // 真实 RAS 为"微滤机 + 沉淀/气浮"两级，单级 drumFilter(0.93) 低估了稳态去除；
     // 仅用于 TSS 稳态校核(水质可行性)，不改 CAPEX/OPEX/能耗口径(保证鲈@100 经济基线中性)。
     secondarySolidsCapture: 0.5,
+    // v1.18.0：溶解有机碳 DOC 生成系数（kg DOC / kg 饲料）；DOC 为泡沫分离/臭氧去除对象，稳态随补水稀释
+    docPerFeed: 0.15,     // kg DOC / kg 饲料（约 40% COD 以溶解有机态存在；COD 来自 codPerFeed 0.45）
     o2FishCal: 0.45,     // 鱼呼吸氧耗标定因子：真实鱼代谢仅约 0.35–0.5 kg O2/kg 饲料，原 o2PerFeed 默认 0.9–1.0 偏高约 2×；乘此后与鱼实际代谢一致（供氧定容/能耗/CO₂ 同步修正）
     o2RefTemp: 25,       // ℃ 鱼代谢氧耗标定参考温度（o2PerFeed 在该温度下的标定值；P2-1 Q10 以此为基准）
     q10O2: 2.0,           // 鱼代谢 Q10：每升高 10℃ 耗氧约翻倍（文献 1.8–2.4；温水鱼常取 2.0），用于 P2-1 温度修正
@@ -258,6 +292,8 @@ window.RAS_KNOWLEDGE = {
     pCapture: 0.85,      // 磷系统去除率（微滤机+生物滤池+污泥排放综合一阶去除；RAS 典型 0.7–0.9）
     codPerFeed: 0.45,    // kg COD / kg 饲料（残饵+排泄+分泌物有机负荷；文献约 0.3–0.8）
     codCapture: 0.80,    // COD 系统去除率（生物氧化+微滤+硝化反硝化综合）
+    docPerFeed: 0.13,    // kg DOC / kg 饲料（溶解有机碳，泡沫分离/臭氧去除对象；占 COD 溶解部分，文献约 0.1–0.2）
+    docBaseRemoval: 0.45,// 基础 DOC 去除率（生物滤池异养菌同化/硝化耦合去除；无专用泡沫分离/臭氧时也存在的本底去除，避免 DOC 虚高累积）
   },
 
   // 参数不确定性区间（v1.8.0 P2-1）：供蒙特卡洛采样，结果从单点升级为区间
@@ -625,6 +661,9 @@ window.RAS_KNOWLEDGE = {
       oxygen: 320,       // 制氧/液氧+氧气锥
       degasser: 120,     // CO₂ 脱气塔（NEW：原仅在设备库定义、未计入投资）
       uv: 90,            // 紫外消毒 UV（NEW：原缺失）
+      skimmer: 110,      // 泡沫分离(蛋白分离器)（v1.18.0 新增可选单元）
+      ozone: 140,        // 臭氧系统：发生器+氧气源（v1.18.0 新增可选单元；含 skimmer 时 skimmer 兼作接触器）
+      ozoneContact: 60,  // 臭氧独立接触柱+尾气破坏（v1.18.0：仅当未配泡沫分离时追加，作接触/破坏单元）
       pumps: 170,        // 水泵+管路
       controls: 240,     // 自控+监测(IoT)
       building: 1200,    // 车间土建(含保温/防腐/防渗)，元/m²（2025 真实：轻钢保温厂房 1200–1500 元/m²，RAS 需防腐防渗取低中值；golden 回收期约束取 1200）
@@ -663,6 +702,9 @@ window.RAS_KNOWLEDGE = {
       oxygen:   { qty: "m3", split: 0.85, maintRate: 0.060, lifeYears: 12, subs: [["制氧/液氧站", 190], ["氧气锥(LHO)", 90], ["管路与监测", 40]] },
       degasser: { qty: "m3", split: 0.70, maintRate: 0.030, lifeYears: 15, subs: [["脱气填料塔体", 70], ["低压脱气风机", 30], ["管路与监测", 20]] },
       uv:       { qty: "m3", split: 0.60, maintRate: 0.025, lifeYears: 10, subs: [["UV 杀菌机组(30mJ/cm²)", 60], ["石英套管/模块", 20], ["管路与监测", 10]] },
+      skimmer:  { qty: "m3", split: 0.65, maintRate: 0.040, lifeYears: 12, subs: [["蛋白分离器机组", 70], ["侧流循环泵", 25], ["射流曝气/空气泵", 15]] },
+      ozone:    { qty: "m3", split: 0.60, maintRate: 0.050, lifeYears: 12, subs: [["臭氧发生器", 80], ["氧气源(制氧/PSA)", 35], ["尾气破坏单元", 25]] },
+      ozoneContact: { qty: "m3", split: 0.60, maintRate: 0.030, lifeYears: 15, subs: [["独立接触柱壳体", 35], ["尾气破坏单元(接触式)", 25]] }, // v1.18.0：仅臭氧独立运行(未配泡沫分离)时追加，作接触/破坏单元
       pumps:    { qty: "m3", split: 0.90, maintRate: 0.070, lifeYears: 12, subs: [["循环水泵(一用一备)", 105], ["管路阀门管件", 45], ["流量计控制阀", 20]] },
       controls: { qty: "m3", split: 0.40, maintRate: 0.020, lifeYears: 12, subs: [["PLC/SCADA 自控", 90], ["在线监测(DO/pH/TAN)", 110], ["电气布线", 40]] },
       building: { qty: "m2", split: 0.97, maintRate: 0.010, lifeYears: 30, subs: [["主体结构", 600], ["围护保温屋顶", 390], ["地坪防渗排水", 150], ["照明消防辅助", 60]] },

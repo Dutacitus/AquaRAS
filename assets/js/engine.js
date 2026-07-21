@@ -37,6 +37,13 @@ RAS.engine = (function () {
     const swDensity = sp.waterDensity || 1000;
     const o2SatFactor = sp.o2SatFactor || 1;
     const matlFactor = sp.matlFactor || 1;
+    // v1.18.0 消毒/水质精制单元开关：UV 默认开，泡沫分离/臭氧默认关（均为可选；仅模型系数/计算逻辑，不碰用户可自定义数据）
+    const uvOn = inputs.uv !== false;
+    const foamFrac = !!(inputs.foamFrac);
+    const ozoneOn = !!(inputs.ozone);
+    const uvEq = K.equipment.uv || {};
+    const skEq = K.equipment.skimmer || {};
+    const ozEq = K.equipment.ozone || {};
     // 地区索引（P2-9）：region 决定 CAPEX/电价/人工地区系数；ambient 优先 inputs，否则回退 region 气温
     const regionKey = inputs.region && K.climate.regions[inputs.region] ? inputs.region : null;
     const regionDef = regionKey ? K.climate.regions[regionKey] : null;
@@ -142,7 +149,7 @@ RAS.engine = (function () {
 
     // P1-3 水足迹真水平衡（v1.13.0）：取水 = 蒸发 + 排污(bleed) + 污泥带水 + 脱气塔雾损（此前仅 evap+bleed 两项，未闭合）
     const sludgeCakeWc = K.process.sludgeCakeWc != null ? K.process.sludgeCakeWc : 0.80; // 脱水饼含水率
-    const sludgeDryYr = tssDaily * 365;                                                     // kg/年 干固形物
+    const sludgeDryYr = (tssDaily + (foamFrac ? tssDaily * (skEq.sludgeFactor != null ? skEq.sludgeFactor : 0.15) : 0)) * 365; // kg/年 干固形物（含泡沫分离附加有机污泥）
     const sludgeWaterVolYr = sludgeDryYr * sludgeCakeWc / (1 - sludgeCakeWc) / 1000;        // m³/年 脱水饼带水(不返还)
     const drumBackwashVolYr = makeupVolYr * (K.process.drumBackwashFrac != null ? K.process.drumBackwashFrac : 0.08); // m³/年 微滤机反冲洗(占取水,不返还)
     const degasserMistVolYr = makeupVolYr * (K.process.degasserMistFrac != null ? K.process.degasserMistFrac : 0.005); // m³/年 脱气塔雾损(占取水,不返还)
@@ -163,10 +170,10 @@ RAS.engine = (function () {
     // P1-4 固废处置能耗与成本（v1.7.0）：脱水/外运/堆肥比能耗计入总能耗，处置单价计入 OPEX
     const solidsDisposalEnergy = K.process.solidsDisposalEnergy != null ? K.process.solidsDisposalEnergy : 0; // kWh/kg 干固
     const solidsDisposalPrice = K.economics.opex.solidsDisposalPrice != null ? K.economics.opex.solidsDisposalPrice : 0; // 元/kg 干固
-    const solidsDailyKwh = tssDaily * solidsDisposalEnergy;   // kWh/天
+    const solidsDailyKwh = sludgeDryYr / 365 * solidsDisposalEnergy;   // kWh/天（含泡沫分离附加有机污泥）
     const solidsPower = solidsDailyKwh / 24;                 // kW（平均）
     const solidsAnnualKwh = solidsDailyKwh * 365;            // kWh/年
-    const opexSolids = tssDaily * 365 * solidsDisposalPrice; // 元/年
+    const opexSolids = sludgeDryYr * solidsDisposalPrice;    // 元/年（干固外运处置费，含泡沫分离附加污泥）
 
     // —— 7. 能耗估算（比能耗系数法，物理可解释；HVAC 随地区气温变化）——
     const pu = K.equipment.pump;
@@ -253,7 +260,11 @@ RAS.engine = (function () {
     const hvacAnnualKwh = hvacHeatingKwh + hvacCoolingKwh;
     const hvacPower = hvacAnnualKwh / (24 * 365);                           // 年均值 kW（驱动总能耗）
     const hvacMode = hvacHeatingKwh >= hvacCoolingKwh ? "heat" : "cool";    // 主导工况
-    const totalPower = pumpPower + oxyPower + fanPower + hvacPower + miscPower + solidsPower;
+    // v1.18.0 消毒/水质精制单元能耗（可选；默认仅 UV 开）
+    const uvPower = uvOn ? recircFlowH * (uvEq.specificEnergy != null ? uvEq.specificEnergy : 0.001) : 0;            // kW UV 反应器(灯+镇流器+清洗)
+    const skimmerPower = foamFrac ? recircFlowH * (skEq.sideFrac != null ? skEq.sideFrac : 0.25) * (skEq.specificEnergy != null ? skEq.specificEnergy : 0.006) : 0; // kW 侧流循环泵+气
+    const ozonePower = ozoneOn ? recircFlowH * (ozEq.specificEnergy != null ? ozEq.specificEnergy : 0.003) : 0;       // kW 臭氧发生器+氧气源+接触/破坏
+    const totalPower = pumpPower + oxyPower + fanPower + hvacPower + miscPower + solidsPower + uvPower + skimmerPower + ozonePower;
     const energyIntensity = (totalPower * 24 * 365) / annual;
     const annualEnergy = totalPower * 24 * 365 / 1000;
 
@@ -282,7 +293,9 @@ RAS.engine = (function () {
     const capexSolids   = totalTankVol * cpx.solids;
     const capexOxy      = totalTankVol * cpx.oxygen;
     const capexDegasser = totalTankVol * cpx.degasser;
-    const capexUv       = totalTankVol * cpx.uv;
+    const capexUv       = uvOn ? totalTankVol * cpx.uv : 0;
+    const capexSkimmer  = foamFrac ? totalTankVol * (cpx.skimmer != null ? cpx.skimmer : 110) : 0;
+    const capexOzone    = ozoneOn ? totalTankVol * ((cpx.ozone != null ? cpx.ozone : 140) + (foamFrac ? 0 : (cpx.ozoneContact != null ? cpx.ozoneContact : 60))) : 0;
     const capexPumps    = totalTankVol * cpx.pumps * matlFactor;
     const capexCtl      = totalTankVol * cpx.controls * matlFactor;
     const capexHvac     = totalTankVol * cpx.hvac;
@@ -352,18 +365,26 @@ RAS.engine = (function () {
       { key: "solids", label: "固废处理(微滤机)", unit: "m³", qty: totalTankVol, val: capexSolids },
       { key: "oxygen", label: "增氧系统", unit: "m³", qty: totalTankVol, val: capexOxy },
       { key: "degasser", label: "CO₂ 脱气塔", unit: "m³", qty: totalTankVol, val: capexDegasser },
-      { key: "uv", label: "紫外消毒(UV)", unit: "m³", qty: totalTankVol, val: capexUv },
       { key: "pumps", label: "水泵与管路", unit: "m³", qty: totalTankVol, val: capexPumps },
       { key: "controls", label: "自控与监测", unit: "m³", qty: totalTankVol, val: capexCtl },
       { key: "hvac", label: "控温系统(热泵)", unit: "m³", qty: totalTankVol, val: capexHvac },
       { key: "building", label: "车间土建", unit: "m²", qty: buildingArea, val: capexBuilding },
     ];
+    // v1.18.0：消毒/水质精制单元作为可选直接费项（仅启用时入行，禁用则整行省略，对账仍自洽）
+    if (uvOn) directDefs.push({ key: "uv", label: "紫外消毒(UV)", unit: "m³", qty: totalTankVol, val: capexUv });
+    if (foamFrac) directDefs.push({ key: "skimmer", label: "泡沫分离(蛋白分离器)", unit: "m³", qty: totalTankVol, val: capexSkimmer });
+    if (ozoneOn) directDefs.push({ key: "ozone", label: "臭氧氧化消毒", unit: "m³", qty: totalTankVol, val: capexOzone, contact: !foamFrac });
     const matlKeys = { tanks: 1, pumps: 1, controls: 1 };                     // 仅腐蚀敏感设备受材质溢价
     const directRows = directDefs.map((c) => {
       const split = cdet[c.key].split != null ? cdet[c.key].split : 1;        // P2-8 可变比例
       const effScale = (1 - split) + split * scaleFactor;                     // 固定段不随规模变化
       const matl = matlKeys[c.key] ? matlFactor : 1;                         // 海水品种(>1)对池体/水泵/自控加材质溢价，与 cpx 口径一致
-      const subs = cdet[c.key].subs.map((s) => ({
+      // v1.18.0：臭氧独立运行时追加接触柱+尾气破坏子项（与 skimmer 联用时 skimmer 兼作接触器，不重复计）
+      let subsSrc = cdet[c.key].subs;
+      if (c.key === "ozone" && c.contact) {
+        subsSrc = subsSrc.concat([["独立接触柱+尾气破坏", K.economics.capexPerM3.ozoneContact != null ? K.economics.capexPerM3.ozoneContact : 60]]);
+      }
+      const subs = subsSrc.map((s) => ({
         label: s[0], rate: round(s[1] * effScale * regCost * matl), amount: round(c.qty * s[1] * effScale * regCost * matl),
       }));
       const total = subs.reduce((a, x) => a + x.amount, 0);
@@ -577,7 +598,7 @@ RAS.engine = (function () {
 
     // v1.17.0：微滤机(单级 df.tssRemoval) + 二级固液分离(secondarySolidsCapture)串联，
     // 有效去除率 = 1 − (1−drum)(1−secondary)；仅用于 TSS 稳态校核，不改经济/能耗口径。
-    const tssRemovalEff = 1 - (1 - df.tssRemoval) * (1 - (K.process.secondarySolidsCapture != null ? K.process.secondarySolidsCapture : 0));
+    const tssRemovalEff = 1 - (1 - df.tssRemoval) * (1 - (K.process.secondarySolidsCapture != null ? K.process.secondarySolidsCapture : 0)) * (1 - (foamFrac ? (skEq.fineTssCapture != null ? skEq.fineTssCapture : 0.35) : 0));
     const cTss = (tssDaily * 1000) / (tssRemovalEff * recircFlow + makeupFlow);
     // v1.17.0：pH 限值按水型区分——海水/半咸水(matlFactor>1)用更宽的海水带(phLowMarine/phHighMarine)，
     // 避免把海水碳酸平衡(pK1 更低→稳态 pH 偏低)误判为超限。
@@ -598,15 +619,34 @@ RAS.engine = (function () {
     const st = (v, hard, soft, lowerBetter) => lowerBetter
       ? (v > hard ? "fail" : v > soft ? "warn" : "ok")
       : (v < hard ? "fail" : v < soft ? "warn" : "ok");
+    // v1.18.0 臭氧氧化 NO₂→NO₃：直接削减部分 NO₂（降低 NOB 负荷与 NO₂ 累积风险），仅臭氧开启时生效
+    const no2OxidizeFrac = ozoneOn ? (ozEq.no2Oxidize != null ? ozEq.no2Oxidize : 0.50) : 0;
+    const cNo2eff = cNo2 * (1 - no2OxidizeFrac);
+    // v1.18.0 DOC 溶解有机碳稳态：泡沫分离(docRemoval) + 臭氧(docBoost) 串联去除；二者皆关则仅随补水稀释
+    const docDaily = dailyFeedAvg * (K.process.docPerFeed != null ? K.process.docPerFeed : 0.13); // kg DOC/天
+    const docFoam = foamFrac ? (skEq.docRemoval != null ? skEq.docRemoval : 0.45) : 0;
+    const docOz   = ozoneOn ? (ozEq.docBoost != null ? ozEq.docBoost : 0.30) : 0;
+    const docBase = K.process.docBaseRemoval != null ? K.process.docBaseRemoval : 0.45; // 生物滤池异养菌本底 DOC 去除
+    const docRemovalEff = 1 - (1 - docBase) * (1 - docFoam) * (1 - docOz);
+    const cDoc = makeupFlow > 0 ? (docDaily * 1000) / (docRemovalEff * recircFlow + makeupFlow) : 9999;
+    // v1.18.0 主动消毒对数灭活(LOG)：UV(剂量比) 与 臭氧(固定 disinfectLog)，取较强代表值；二者皆关则无主动消毒
+    const dLogTarget = K.process.disinfectionTargetLog != null ? K.process.disinfectionTargetLog : 3.0;
+    const uvReq = 15; // mJ/cm² 对应目标 LOG 的基准剂量
+    const uvLog = uvOn ? ((uvEq.dose != null ? uvEq.dose : 30) / uvReq) * dLogTarget : 0;
+    const ozLog = ozoneOn ? (ozEq.disinfectLog != null ? ozEq.disinfectLog : 3.0) : 0;
+    const disinfectLog = Math.max(uvLog, ozLog);
+    const disinfectStatus = disinfectLog >= dLogTarget ? "ok" : "warn";
     const checks = [
       { key: "tan", name: "总氨氮 TAN", value: round(cTan, 2), unit: "mg/L", limit: tanHard, status: st(cTan, tanHard, tanHard * 1.5, true), note: "AOB 亚硝化 + 补水稀释" },
-      { key: "no2", name: "亚硝态氮 NO₂", value: round(cNo2, 2), unit: "mg/L", limit: no2Hard, status: st(cNo2, no2Hard, no2Hard * 1.5, true), note: "NOB 硝化(NO₂→NO₃)，速率高于 AOB" },
+      { key: "no2", name: "亚硝态氮 NO₂", value: round(cNo2eff, 2), unit: "mg/L", limit: no2Hard, status: st(cNo2eff, no2Hard, no2Hard * 1.5, true), note: no2OxidizeFrac > 0 ? `NOB 硝化(NO₂→NO₃)${ozoneOn ? ` + 臭氧氧化削减 ${Math.round(no2OxidizeFrac * 100)}%` : ""}` : "NOB 硝化(NO₂→NO₃)，速率高于 AOB" },
       { key: "no3", name: "硝态氮 NO₃-N", value: round(no3Nmg, 1), unit: "mg/L（以 N 计）", limit: 300, status: st(no3Nmg, 300, wq.no3SoftCap, true), note: denitRemoval > 0 ? `反硝化脱除 ${Math.round(denitRemoval * 100)}%，剩余随补水交换` : "仅随补水交换，需排换水或反硝化" },
       { key: "co2", name: "二氧化碳 CO₂", value: round(cCo2, 1), unit: "mg/L", limit: wq.co2Max * 2, status: st(cCo2, wq.co2Max * 2, wq.co2Max, true), note: `脱气塔脱除 ${round(co2Stripped, 1)} kg/天 + 开放水面天然挥发 ~${round(co2Natural, 1)} kg/天 + 补水稀释` },
       { key: "alk", name: "碱度(以CaCO₃计)", value: round(cAlkSys, 0), unit: "mg/L", limit: alkMin, status: (nahco3PerKgFish > 1.5 || cAlkSys < alkMin) ? "fail" : (nahco3PerKgFish > 0.8 || (doseM === 0 && cAlkSys < alkTarget)) ? "warn" : "ok", note: doseM > 0 ? `需投加 NaHCO₃ ${round(nahco3Day, 1)} kg/天(≈${round(nahco3PerKgFish, 3)} kg/kg鱼)` : "源水碱度充足，无需投加" },
       { key: "ph", name: "pH", value: round(pH, 2), unit: "", limit: `${phLo}–${phHi}${matlFactor > 1 ? "（海水带）" : ""}`, status: (pH < phLo || pH > wq.phHighHard) ? "fail" : (pH > phHi ? "warn" : "ok"), note: `CO₂ ${round(cCo2, 1)} mg/L + 碱度 ${round(cAlkSys, 0)} mg/L 碳酸平衡${matlFactor > 1 ? "（海水碳酸标度）" : ""}` },
       { key: "nh3", name: "非离子氨 NH₃", value: round(cNH3, 4), unit: "mg/L(N)", limit: round(nh3AcuteT, 4), status: cNH3 > nh3AcuteT ? "fail" : (cNH3 > nh3ChronicT ? "warn" : "ok"), note: `TAN ${round(cTan, 2)} × 离解率 ${round(fNH3 * 100, 1)}% (pKa ${round(pKaNH3, 2)})；温度修正限值 急${round(nh3AcuteT, 4)}/慢${round(nh3ChronicT, 4)} @${Math.round(temp)}℃` },
-      { key: "tss", name: "悬浮固体 TSS", value: round(cTss, 1), unit: "mg/L", limit: wq.ssMax, status: st(cTss, wq.ssMax, wq.ssMax * 1.5, true), note: "微滤机去除" },
+      { key: "tss", name: "悬浮固体 TSS", value: round(cTss, 1), unit: "mg/L", limit: wq.ssMax, status: st(cTss, wq.ssMax, wq.ssMax * 1.5, true), note: foamFrac ? "微滤机 + 二级固液分离 + 泡沫分离细颗粒" : "微滤机去除" },
+      { key: "doc", name: "溶解有机碳 DOC", value: round(cDoc, 1), unit: "mg/L", limit: wq.docSoftCap, status: cDoc > wq.docMax ? "fail" : (cDoc > wq.docSoftCap ? "warn" : "ok"), note: `泡沫分离 ${docFoam > 0 ? Math.round(docFoam * 100) + "%" : "(未配)"} + 臭氧 ${docOz > 0 ? Math.round(docOz * 100) + "%" : "(未配)"} 串联去除` },
+      { key: "disinfection", name: "主动消毒(生物安保)", value: round(disinfectLog, 1), unit: "LOG", limit: dLogTarget, status: disinfectStatus, note: `UV ${uvOn ? (uvEq.dose != null ? uvEq.dose : 30) + "mJ/cm²" : "关"} / 臭氧 ${ozoneOn ? (ozEq.dose != null ? ozEq.dose : 0.02) + "g/m³" : "关"} 对数灭活` },
       { key: "do", name: "有效溶氧 DO", value: round(effectiveDo, 1), unit: "mg/L", limit: doMinV, status: effDoDeficit > 0.1 ? "fail" : "ok", note: "池内实测 " + round(o2Achieved, 1) + " mg/L" + (co2DoePenalty > 0 ? "；高 CO₂(" + round(cCo2, 1) + " mg/L)经 Bohr 效应折减 " + Math.round(co2DoePenalty * 100) + "%→有效 " + round(effectiveDo, 1) : "") + "；供氧余量 " + round(o2Margin, 0) + "%" },
     ];
     // P1-2 尾水排放污染物浓度（v1.13.8，对照 DB44/2462-2024 合规）：稳态质量平衡推算排放口浓度（与循环水同浓度）
@@ -653,6 +693,17 @@ RAS.engine = (function () {
       cTn: round(cTn, 2),
       cTp: round(cTp, 3),
       cCod: round(cCod, 1),
+      cDoc: round(cDoc, 1),
+      cNo2eff: round(cNo2eff, 2),
+      no2OxidizeFrac: round(no2OxidizeFrac, 2),
+      disinfection: {
+        log: round(disinfectLog, 1),
+        target: round(dLogTarget, 1),
+        uvOn, ozoneOn,
+        uvLog: round(uvLog, 1),
+        ozLog: round(ozLog, 1),
+        status: disinfectStatus,
+      },
       tailwater,
     };
 
@@ -768,6 +819,7 @@ RAS.engine = (function () {
         energySplit: {
           pump: round(pumpPower, 1), oxy: round(oxyPower, 1), degas: round(fanPower, 1),
           hvac: round(hvacPower, 1), misc: round(miscPower + solidsPower, 1),
+          uv: round(uvPower, 1), skimmer: round(skimmerPower, 1), ozone: round(ozonePower, 1),
         },
       },
       building: {
