@@ -513,7 +513,7 @@
         metricCard("年蒸发损失", hy.evapVolYr, "m³/年", `占取水 ${hy.makeupVolYr > 0 ? (hy.evapVolYr / hy.makeupVolYr * 100).toFixed(1) : "0"}%`, "brand"),
         metricCard("年排污量(bleed)", hy.bleedVolYr, "m³/年", "可排放废水"),
         metricCard("年污泥带水", hy.sludgeWaterVolYr, "m³/年", "脱水饼含水", "brand"),
-        metricCard("年反冲洗/雾损", (hy.drumBackwashVolYr + hy.degasserMistVolYr), "m³/年", "不返还损耗"),
+        metricCard("年反冲洗/雾损", Math.round((hy.drumBackwashVolYr + hy.degasserMistVolYr) * 10) / 10, "m³/年", "不返还损耗"),
         metricCard("消耗性水足迹", hy.waterConsumption, "m³/kg", "蒸发+污泥+雾损", "accent"),
       ])}
       <div style="padding:0 26px 6px"><div class="note ${hy.waterCovered ? "" : "note-warn"}">
