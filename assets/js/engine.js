@@ -370,6 +370,11 @@ RAS.engine = (function () {
       { key: "hvac", label: "控温系统(热泵)", unit: "m³", qty: totalTankVol, val: capexHvac },
       { key: "building", label: "车间土建", unit: "m²", qty: buildingArea, val: capexBuilding },
     ];
+    // v1.19.0：反硝化反应器 CAPEX（此前仅计算层存在、未计入投资；仅 denitRemoval>0 时显示）
+    if ((K.process.denitRemoval || 0) > 0) {
+      const dVol = (tanDaily * (1 - (K.process.denitRemoval || 0))) / (K.process.denitRate != null ? K.process.denitRate : 0.25);
+      directDefs.push({ key: "denit", label: "反硝化反应器", unit: "m³", qty: dVol, val: dVol * (cpx.denit != null ? cpx.denit : 200) });
+    }
     // v1.18.0：消毒/水质精制单元作为可选直接费项（仅启用时入行，禁用则整行省略，对账仍自洽）
     if (uvOn) directDefs.push({ key: "uv", label: "紫外消毒(UV)", unit: "m³", qty: totalTankVol, val: capexUv });
     if (foamFrac) directDefs.push({ key: "skimmer", label: "泡沫分离(蛋白分离器)", unit: "m³", qty: totalTankVol, val: capexSkimmer });
@@ -714,7 +719,8 @@ RAS.engine = (function () {
         elecPrice: inputs.elecPrice || null, waterPrice: inputs.waterPrice || null,
         pvKWp: inputs.pvKWp || null, pvFraction: inputs.pvFraction || null, batteryKWh: inputs.batteryKWh || null,
         laborPerYear: inputs.laborPerYear || null,
-        ambientTemp: amb, region: regionKey || null, laborCount },
+        ambientTemp: amb, region: regionKey || null, laborCount,
+        foamFrac, ozone: ozoneOn, uv: uvOn },
       culture: {
         tankVolumeNeed: round(tankVolumeNeed),
         tankD, tankH,
@@ -815,6 +821,9 @@ RAS.engine = (function () {
         totalPower: round(totalPower, 1),
         energyIntensity: round(energyIntensity, 2),
         annualEnergy: round(annualEnergy, 1),
+        skimmerPower: round(skimmerPower, 3),
+        ozonePower: round(ozonePower, 3),
+        uvPower: round(uvPower, 3),
         // P2-6 能耗分项（五类占比）：泵/氧/脱气/温控/杂项(含固废处置)
         energySplit: {
           pump: round(pumpPower, 1), oxy: round(oxyPower, 1), degas: round(fanPower, 1),
