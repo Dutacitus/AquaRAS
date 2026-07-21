@@ -371,7 +371,7 @@
       { label: "杂项(含固废)", v: en.energySplit.misc, c: "#94a3b8" },
       { label: "UV 消毒", v: en.energySplit.uv, c: "#22d3ee" },
       { label: "泡沫分离", v: en.energySplit.skimmer, c: "#f472b6" },
-      { label: "臭氧", v: en.energySplit.ozone, c: "#facc15" },
+      { label: "臭氧", v: en.energySplit.ozone, c: "#fb923c" },
     ].filter((x) => x.v > 0);
     const total = sp.reduce((a, x) => a + x.v, 0) || 1;
     const W = 150, H = 150, cx = 75, cy = 75, r = 60, rin = 38;
@@ -595,16 +595,27 @@
       ["圆形养殖池", c.tankCount + " 个", `Ø${c.tankD} m × ${c.tankH} m，有效 ${c.singleTankVol} m³`, "PP/玻璃钢/混凝土"],
       ["转鼓微滤机", so.units + " 台", `${so.screen} µm 筛网，单台 ${so.eachFlow} m³/h`, "不锈钢"],
       ["MBBR 生物滤池", bf.units + " 座", `总 ${bf.totalVol} m³，填料 ${bf.mediaFill*100}%`, "曝气+悬浮填料"],
-      ["反硝化反应器", "1 座", `容积 ${d.waterQuality.denit.volume} m³，脱氮率 ${Math.round(d.waterQuality.denit.removal*100)}%（侧流脱氮）`, "缺氧+碳源投加"],
       ["增氧系统", "1 套", `供氧 ${ox.o2Supply} kg/h（${ox.type}）`, "氧气锥+LHO"],
       ["CO₂ 脱除塔", "1 座", `${ox.degasserType}`, "填料式"],
       ["循环水泵", "≥2 台", `${hy.recircFlowH} m³/h，一用一备`, "变频"],
-      ["紫外消毒", "1 套", "30 mJ/cm²", "在线"],
       ["换热/控温", "1 套", `${d.inputs.temp}℃ 恒温 · ${d.energy.hvacMode === "cool" ? "制冷" : "加热"}主导（环境温度 ${d.energy.ambientTemp}℃）`, "热泵/冷水机组"],
       ["自控与监测", "1 套", "DO/pH/温度/TAN/流量 IoT", "PLC+SCADA"],
       ["污泥处理", "1 套", "浓缩+脱水", "固液分离"],
       ["备用系统", "1 套", "柴油发电机+备用纯氧", "安全保障"],
     ];
+    // —— 选配设备（仅在对应开关启用时显示）——
+    if (d.waterQuality.denit.removal > 0) {
+      rows.splice(3, 0, ["反硝化反应器", "1 座", `容积 ${d.waterQuality.denit.volume} m³，脱氮率 ${Math.round(d.waterQuality.denit.removal*100)}%（侧流脱氮）`, "缺氧+碳源投加"]);
+    }
+    if (d.inputs.uv !== false) {
+      rows.splice(rows.findIndex(r => r[0] === "污泥处理"), 0, ["紫外消毒", "1 套", "30 mJ/cm²", "在线"]);
+    }
+    if (d.inputs.foamFrac) {
+      rows.push(["泡沫分离(蛋白分离器)", "1 套", `处理流量 ~${Math.round(hy.recircFlowH * 0.25)} m³/h，去除溶解有机碳(DOC) ~45%`, "不锈钢/FRP"]);
+    }
+    if (d.inputs.ozone) {
+      rows.push(["臭氧氧化系统", "1 套", `投加量 0.02 g O₃/m³，接触消毒+NO₂氧化，含尾气破坏`, "不锈钢/耐臭氧"]);
+    }
     host.innerHTML = `
       <div class="section-title" style="padding:24px 26px 0">设备清单 (BOM)</div>
       <div class="table-wrap" style="padding:14px 26px 26px"><table class="data">
@@ -1078,7 +1089,9 @@
   }
   function capexLabel(k) {
     return ({ tanks: "养殖池系统", biofilter: "生物滤池", solids: "固废处理", oxygen: "增氧系统",
-      pumps: "水泵与管路", controls: "自控与监测", building: "车间土建", hvac: "控温系统" })[k] || k;
+      degasser: "CO₂ 脱除塔", denit: "反硝化反应器", uv: "紫外消毒(UV)", skimmer: "泡沫分离",
+      ozone: "臭氧氧化", ozoneContact: "臭氧接触柱", pumps: "水泵与管路", controls: "自控与监测",
+      building: "车间土建", hvac: "控温系统" })[k] || k;
   }
 
   /* ---------------- 3D ---------------- */
