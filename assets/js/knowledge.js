@@ -91,7 +91,7 @@
  */
 window.RAS_KNOWLEDGE = {
   meta: {
-    version: "1.18.0",
+    version: "1.18.1",
     title: "RAS 工艺设计知识库",
     dataAsOf: "2026",
     confidence: "中",
@@ -660,6 +660,7 @@ window.RAS_KNOWLEDGE = {
       solids: 140,       // 微滤机+固废
       oxygen: 320,       // 制氧/液氧+氧气锥
       degasser: 120,     // CO₂ 脱气塔（NEW：原仅在设备库定义、未计入投资）
+      denit: 200,        // 反硝化反应器（v1.19.0 补 CAPEX：此前仅计算层存在，补入直接费）
       uv: 90,            // 紫外消毒 UV（NEW：原缺失）
       skimmer: 110,      // 泡沫分离(蛋白分离器)（v1.18.0 新增可选单元）
       ozone: 140,        // 臭氧系统：发生器+氧气源（v1.18.0 新增可选单元；含 skimmer 时 skimmer 兼作接触器）
@@ -698,6 +699,7 @@ window.RAS_KNOWLEDGE = {
     capexDetail: {
       tanks:    { qty: "m3", split: 0.95, maintRate: 0.015, lifeYears: 25, subs: [["池体(PP/FRP/混凝土)", 240], ["支架与基础", 60], ["进出水与集排污", 60], ["池内曝气推流", 40]] },
       biofilter:{ qty: "m3", split: 0.90, maintRate: 0.025, lifeYears: 15, subs: [["反应器壳体", 140], ["悬浮填料(K1)", 100], ["曝气系统", 60], ["进出水与回流", 20]] },
+      denit:    { qty: "m3", split: 0.85, maintRate: 0.025, lifeYears: 20, subs: [["反应器壳体", 100], ["碳源投加系统", 50], ["搅拌/循环", 30], ["管路与监测", 20]] },
       solids:   { qty: "m3", split: 0.85, maintRate: 0.040, lifeYears: 12, subs: [["转鼓微滤机(60µm)", 85], ["污泥浓缩脱水", 35], ["反洗水回收", 20]] },
       oxygen:   { qty: "m3", split: 0.85, maintRate: 0.060, lifeYears: 12, subs: [["制氧/液氧站", 190], ["氧气锥(LHO)", 90], ["管路与监测", 40]] },
       degasser: { qty: "m3", split: 0.70, maintRate: 0.030, lifeYears: 15, subs: [["脱气填料塔体", 70], ["低压脱气风机", 30], ["管路与监测", 20]] },
