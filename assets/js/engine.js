@@ -78,8 +78,15 @@ RAS.engine = (function () {
     // —— 2. 投喂与氮负荷 ——
     // 饲料系数可由使用者自定义（不同养殖水平差异大），留空/非法时回退品种默认
     // v1.15.0 M5：FCR–密度耦合（仅当用户未自定义 FCR 时生效；用户自定义优先，绝不覆盖）
-    const fcrDensityCoef = K.process.fcrDensityCoef != null ? K.process.fcrDensityCoef : 0;
-    const fcrEffBase = sp.fcr * (1 + fcrDensityCoef * (density - sp.stockingDensity)); // 高密度→FCR 升高（拥挤应激/代谢效率↓）
+    // v1.18.2 饱和型 FCR–密度耦合：FCR = sp.fcr × (1 + coef×Δ)/(1 + sat×Δ)，Δ=density−stockingDensity。
+    // 默认密度处零效应；>stockingDensity 时 FCR 升高，但边际效应随密度递增而递减并渐近饱和（Δ→∞ 时 FCR→sp.fcr×coef/sat），
+    // 避免原线性模型在高密度无界暴涨（如 60→120 kg/m³ 时原线性 +48%，饱和型更贴近文献“边际效应递减”）。
+    const fcrDensityCoef = K.process.fcrDensityCoef != null ? K.process.fcrDensityCoef : 0.008;
+    const fcrDensitySat = K.process.fcrDensitySat != null ? K.process.fcrDensitySat : 0.003;
+    const dDens = density - sp.stockingDensity;
+    const fcrEffBase = dDens <= 0
+      ? sp.fcr
+      : sp.fcr * (1 + fcrDensityCoef * dDens) / (1 + fcrDensitySat * dDens);
     const fcr = (inputs.fcr && inputs.fcr > 0) ? inputs.fcr : fcrEffBase;
     const annualFeed = annual * fcr;
     const dailyFeedAvg = annualFeed / 365;
@@ -187,7 +194,11 @@ RAS.engine = (function () {
     const vMax = pu.velocityMax != null ? pu.velocityMax : 2.5;         // m/s 设计最大流速
     const pDneeded = Math.sqrt(4 * pumpQ / (Math.PI * vMax));           // 维持 v<=vMax 所需最小管径
     const pD = Math.max(pDNom, pDneeded);                               // m 实际管径（大场自动放大）
-    const pL = pu.pipeLength != null ? pu.pipeLength : 150;                // m 等效管长
+    // v1.18.2 等效管长随养殖水体立方根缩放：小规环路更短(pL↓)、大规环路更长(pL↑)，泵功更准。
+    // 参考规模 pipeLengthRefVol（≈300t/年对应水体）下 pL=pipeLength；用户显式指定 pipeLength 时优先（不动）。
+    const pLref = pu.pipeLength != null ? pu.pipeLength
+      : K.equipment.pump.pipeLength * Math.pow(Math.max(totalTankVol, 1) / (K.equipment.pump.pipeLengthRefVol || 300), 1 / 3);
+    const pL = pLref;                                                          // m 等效管长（规模缩放后）
     const pEps = pu.pipeRoughness != null ? pu.pipeRoughness : 1.5e-6;    // m 管壁粗糙度
     const pK = pu.minorLossK != null ? pu.minorLossK : 5;                  // 局部阻力系数和
     const pA = Math.PI * pD * pD / 4;                                       // m² 管截面积
@@ -631,8 +642,12 @@ RAS.engine = (function () {
     const docDaily = dailyFeedAvg * (K.process.docPerFeed != null ? K.process.docPerFeed : 0.13); // kg DOC/天
     const docFoam = foamFrac ? (skEq.docRemoval != null ? skEq.docRemoval : 0.45) : 0;
     const docOz   = ozoneOn ? (ozEq.docBoost != null ? ozEq.docBoost : 0.30) : 0;
+    // v1.18.3 优化7 臭氧–泡沫分离协同：臭氧注入 skimmer 作接触器，将疏水 DOC 氧化为更易被泡沫捕获的形态，
+    // 泡沫分离有效 DOC 去除≈docRemoval×ζ（ζ=ozone.docSynergy>1，封顶 0.99），串联去除率高于二者独立叠加（仅 skimmer 与 ozone 同时启用时生效）
+    const docSynergy = (docFoam > 0 && docOz > 0) ? (ozEq.docSynergy != null ? ozEq.docSynergy : 1.0) : 1.0;
+    const docFoamEff = Math.min(0.99, docFoam * docSynergy);
     const docBase = K.process.docBaseRemoval != null ? K.process.docBaseRemoval : 0.45; // 生物滤池异养菌本底 DOC 去除
-    const docRemovalEff = 1 - (1 - docBase) * (1 - docFoam) * (1 - docOz);
+    const docRemovalEff = 1 - (1 - docBase) * (1 - docFoamEff) * (1 - docOz);
     const cDoc = makeupFlow > 0 ? (docDaily * 1000) / (docRemovalEff * recircFlow + makeupFlow) : 9999;
     // v1.18.0 主动消毒对数灭活(LOG)：UV(剂量比) 与 臭氧(固定 disinfectLog)，取较强代表值；二者皆关则无主动消毒
     const dLogTarget = K.process.disinfectionTargetLog != null ? K.process.disinfectionTargetLog : 3.0;
@@ -650,7 +665,7 @@ RAS.engine = (function () {
       { key: "ph", name: "pH", value: round(pH, 2), unit: "", limit: `${phLo}–${phHi}${matlFactor > 1 ? "（海水带）" : ""}`, status: (pH < phLo || pH > wq.phHighHard) ? "fail" : (pH > phHi ? "warn" : "ok"), note: `CO₂ ${round(cCo2, 1)} mg/L + 碱度 ${round(cAlkSys, 0)} mg/L 碳酸平衡${matlFactor > 1 ? "（海水碳酸标度）" : ""}` },
       { key: "nh3", name: "非离子氨 NH₃", value: round(cNH3, 4), unit: "mg/L(N)", limit: round(nh3AcuteT, 4), status: cNH3 > nh3AcuteT ? "fail" : (cNH3 > nh3ChronicT ? "warn" : "ok"), note: `TAN ${round(cTan, 2)} × 离解率 ${round(fNH3 * 100, 1)}% (pKa ${round(pKaNH3, 2)})；温度修正限值 急${round(nh3AcuteT, 4)}/慢${round(nh3ChronicT, 4)} @${Math.round(temp)}℃` },
       { key: "tss", name: "悬浮固体 TSS", value: round(cTss, 1), unit: "mg/L", limit: wq.ssMax, status: st(cTss, wq.ssMax, wq.ssMax * 1.5, true), note: foamFrac ? "微滤机 + 二级固液分离 + 泡沫分离细颗粒" : "微滤机去除" },
-      { key: "doc", name: "溶解有机碳 DOC", value: round(cDoc, 1), unit: "mg/L", limit: wq.docSoftCap, status: cDoc > wq.docMax ? "fail" : (cDoc > wq.docSoftCap ? "warn" : "ok"), note: `泡沫分离 ${docFoam > 0 ? Math.round(docFoam * 100) + "%" : "(未配)"} + 臭氧 ${docOz > 0 ? Math.round(docOz * 100) + "%" : "(未配)"} 串联去除` },
+      { key: "doc", name: "溶解有机碳 DOC", value: round(cDoc, 1), unit: "mg/L", limit: wq.docSoftCap, status: cDoc > wq.docMax ? "fail" : (cDoc > wq.docSoftCap ? "warn" : "ok"), note: `泡沫分离 ${docFoam > 0 ? Math.round(docFoam * 100) + "%" : "(未配)"} + 臭氧 ${docOz > 0 ? Math.round(docOz * 100) + "%" : "(未配)"} 串联去除${docSynergy > 1 ? `（臭氧协同 ζ=${docSynergy.toFixed(2)}，skimmer 有效 DOC 去除提至 ${Math.round(docFoamEff * 100)}%）` : ""}` },
       { key: "disinfection", name: "主动消毒(生物安保)", value: round(disinfectLog, 1), unit: "LOG", limit: dLogTarget, status: disinfectStatus, note: `UV ${uvOn ? (uvEq.dose != null ? uvEq.dose : 30) + "mJ/cm²" : "关"} / 臭氧 ${ozoneOn ? (ozEq.dose != null ? ozEq.dose : 0.02) + "g/m³" : "关"} 对数灭活` },
       { key: "do", name: "有效溶氧 DO", value: round(effectiveDo, 1), unit: "mg/L", limit: doMinV, status: effDoDeficit > 0.1 ? "fail" : "ok", note: "池内实测 " + round(o2Achieved, 1) + " mg/L" + (co2DoePenalty > 0 ? "；高 CO₂(" + round(cCo2, 1) + " mg/L)经 Bohr 效应折减 " + Math.round(co2DoePenalty * 100) + "%→有效 " + round(effectiveDo, 1) : "") + "；供氧余量 " + round(o2Margin, 0) + "%" },
     ];
@@ -699,6 +714,8 @@ RAS.engine = (function () {
       cTp: round(cTp, 3),
       cCod: round(cCod, 1),
       cDoc: round(cDoc, 1),
+      docRemovalEff: round(docRemovalEff, 3),
+      docSynergy: round(docSynergy, 2),
       cNo2eff: round(cNo2eff, 2),
       no2OxidizeFrac: round(no2OxidizeFrac, 2),
       disinfection: {
@@ -798,6 +815,7 @@ RAS.engine = (function () {
       energy: {
         pumpPower: round(pumpPower, 1),
         pumpHead: round(pumpHead, 2),
+        pumpPipeLength: round(pL, 1),   // m 等效管长（v1.18.2 规模缩放后，供校核/透明展示）
         pumpVelocity: round(pV, 2),
         pumpReynolds: round(pRe),
         pumpFriction: round(pF, 4),
@@ -921,11 +939,28 @@ RAS.engine = (function () {
   }
 
   // P2-4 分段规模经济：按产量所在区间取对应指数，factor 再夹在 [scaleCeil, scaleFloor]
+  // P2-4 分段规模经济（v1.8.0 引入）；v1.18.2 档位边界平滑：在 30/300/1000t 边界 ±scaleSmoothWidth 内
+  // 对规模指数 exp 线性过渡，消除原分段幂律在这些产量点处的投资跳变（实际工程不会因差 0.1t 而投资结构突变）
   function scaleFactorFor(annT, cm) {
     const curve = cm.scaleCurve && cm.scaleCurve.length ? cm.scaleCurve : null;
+    const w = cm.scaleSmoothWidth != null ? cm.scaleSmoothWidth : 0; // 边界平滑半宽(t)；=0 时退化为原分段跳变
     let exp = cm.scaleExponent != null ? cm.scaleExponent : 0.72;
     if (curve) {
-      for (const seg of curve) { if (annT <= seg.upto) { exp = seg.exp; break; } }
+      // 初始：按 annT 所在区间取指数
+      let idx = 0;
+      for (let i = 0; i < curve.length; i++) { if (annT <= curve[i].upto) { idx = i; break; } idx = i; }
+      exp = curve[idx].exp;
+      // 边界平滑：若 annT 落在相邻档位边界 b 的 ±w 过渡带内，在两档指数间线性插值
+      if (w > 0) {
+        for (let i = 0; i < curve.length - 1; i++) {
+          const b = curve[i].upto;                 // 第 i 档上界 = 第 i+1 档下界
+          if (annT >= b - w && annT <= b + w) {
+            const t = (annT - (b - w)) / (2 * w);  // 0→1 跨过边界
+            exp = curve[i].exp + Math.min(1, Math.max(0, t)) * (curve[i + 1].exp - curve[i].exp);
+            break;
+          }
+        }
+      }
     }
     let sf = Math.pow(cm.refAnnualTons / annT, 1 - exp);
     const minSf = cm.scaleCeil != null ? cm.scaleCeil : 0.55;

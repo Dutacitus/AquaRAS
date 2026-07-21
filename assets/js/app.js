@@ -400,12 +400,27 @@
         </div>
       </div>`;
   }
-  /* 规模经济曲线（P2-4）：本地复算分段幂律（数据源 knowledge.capexModel），标注当前规模点 */
+  // 规模经济曲线（P2-4，v1.18.2 边界平滑）：本地复算分段幂律（数据源 knowledge.capexModel），标注当前规模点
   function sfFor(t) {
     const cm = K.economics.capexModel;
     const curve = cm.scaleCurve && cm.scaleCurve.length ? cm.scaleCurve : null;
+    const w = cm.scaleSmoothWidth != null ? cm.scaleSmoothWidth : 0;
     let exp = cm.scaleExponent != null ? cm.scaleExponent : 0.72;
-    if (curve) { for (const seg of curve) { if (t <= seg.upto) { exp = seg.exp; break; } } }
+    if (curve) {
+      let idx = 0;
+      for (let i = 0; i < curve.length; i++) { if (t <= curve[i].upto) { idx = i; break; } idx = i; }
+      exp = curve[idx].exp;
+      if (w > 0) {
+        for (let i = 0; i < curve.length - 1; i++) {
+          const b = curve[i].upto;
+          if (t >= b - w && t <= b + w) {
+            const tt = (t - (b - w)) / (2 * w);
+            exp = curve[i].exp + Math.min(1, Math.max(0, tt)) * (curve[i + 1].exp - curve[i].exp);
+            break;
+          }
+        }
+      }
+    }
     let sf = Math.pow(cm.refAnnualTons / t, 1 - exp);
     sf = Math.min(Math.max(sf, cm.scaleCeil != null ? cm.scaleCeil : 0.5), cm.scaleFloor != null ? cm.scaleFloor : 3);
     return sf;
@@ -863,8 +878,13 @@
       ["循环水泵", "扬程按达西–魏斯巴赫阻力法计算（沿程+局部+静扬程，见能耗卡），效率 " + (eq.pump.eff*100) + "%"],
       ["控温", "热泵 COP≈" + eq.heat.cop],
     ].map(r => `<tr><td><b>${r[0]}</b></td><td>${r[1]}</td></tr>`).join("");
+    const capCal = ec.capexCalibration || {};
     const capRows = Object.keys(ec.capexPerM3).filter(k => k !== "salePrice")
-      .map(k => `<tr><td>${capexLabel(k)}</td><td class="num">${ec.capexPerM3[k]}</td><td>${k === "building" ? "元/m²" : "元/m³"}</td></tr>`).join("");
+      .map(k => {
+        const c = capCal[k] || {};
+        const src = (c.year ? c.year + "：" : "") + (c.source || "—") + (c.confidence ? `（置信度 ${c.confidence}）` : "");
+        return `<tr><td>${capexLabel(k)}</td><td class="num">${ec.capexPerM3[k]}</td><td>${k === "building" ? "元/m²" : "元/m³"}</td><td class="src">${src}</td></tr>`;
+      }).join("");
     const opRows = [
       ["饲料(" + (sp ? sp.name : "基准") + ")", sp && sp.feedPrice ? sp.feedPrice : ec.opex.feedPrice, "元/kg"],
       ["苗种", ec.opex.fingerlingPrice, "元/尾"],
@@ -1000,8 +1020,9 @@
       <div class="doc-grid">
         <div class="doc-card">
           <h4>③ 投资估算基准 (CAPEX)</h4>
-          <table class="data doc-table"><thead><tr><th>投资项</th><th class="num">单价</th><th>单位</th></tr></thead><tbody>${capRows}</tbody></table>
-          <p class="doc-cap">直接费按养殖水体（土建按面积）估算，详见「经济估算」中各投资项的一级分解。总投资另含 <b>间接费</b>（EPCM 12% + 调试 4% + 不可预见 6% + 其他 3% = 直接费 25%，封顶上限）与可选 <b>土地费</b>；并应用 <b>规模经济（分段曲线）</b>：单位投资随年产量呈亚线性变化，但按产能档位采用不同规模指数（&lt;30t 更陡、&gt;1000t 趋缓，下限 0.55×、上限 2.5×），比单一 0.6 次幂常数更贴合工程实际（参考规模 ${K.economics.capexModel.refAnnualTons} t/年）。本表为参考规模下的基准单价。</p>
+          <table class="data doc-table"><thead><tr><th>投资项</th><th class="num">单价</th><th>单位</th><th class="src">来源/年份（校准时效）</th></tr></thead><tbody>${capRows}</tbody></table>
+          <p class="doc-cap">直接费按养殖水体（土建按面积）估算，详见「经济估算」中各投资项的一级分解。总投资另含 <b>间接费</b>（EPCM 12% + 调试 4% + 不可预见 6% + 其他 3% = 直接费 25%，封顶上限）与可选 <b>土地费</b>；并应用 <b>规模经济（分段曲线）</b>：单位投资随年产量呈亚线性变化，但按产能档位采用不同规模指数（&lt;30t 更陡、&gt;1000t 趋缓，下限 0.55×、上限 2.5×），并在 30/300/1000t 档位边界做 ±scaleSmoothWidth 平滑过渡（v1.18.2，消除投资跳变），比单一 0.6 次幂常数更贴合工程实际（参考规模 ${K.economics.capexModel.refAnnualTons} t/年）。本表为参考规模下的基准单价。</p>
+          <p class="doc-cap">⏱️ <b>校准时效（v1.18.3 优化9）</b>：各单价数据来源与校准年份见右侧「来源/年份」列；设备/土建价格随通胀与供应链波动，建议<b>年度重校准</b>，并在 knowledge.economics.capexCalibration 中更新来源与置信度，便于审计溯源。</p>
           <p class="doc-cap"><b>规模因子解读：</b>规模因子 = 当前规模单位产能投资 ÷ 参考规模（${K.economics.capexModel.refAnnualTons} t/年）单位投资的倍数。&gt;1 表示小规不经济（单位投资更高），&lt;1 表示大规有规模经济（单位投资更低），=1 即为参考规模。</p>
           <p class="doc-cap">公式：<code>规模因子 = (参考规模 ÷ 年产量) ^ (1 − 指数)</code>，按产量档位取指数——&lt;30t 用 0.55（最陡）、30–300t 用 0.72、300–1000t 用 0.82、&gt;1000t 用 0.88（趋缓）。结果夹在 [0.55, 2.5]：单位投资最多比基准低 45% 或高 2.5×，防极端规模失真。</p>
           <table class="data doc-table"><thead><tr><th>年产量</th><th class="num">规模因子</th><th>单位投资为基准</th></tr></thead><tbody>
