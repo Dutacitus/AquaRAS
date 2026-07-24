@@ -578,10 +578,18 @@ RAS.engine = (function () {
     }
     pH = Math.min(14, Math.max(0, pH));
 
-    // 3) pH→硝化速率折减（第二限速步：低 pH 抑制 AOB/NOB，稳态 TAN 反弹）
-    const phNf = pH >= 7.0 ? 1.0 : Math.max(0.2, Math.pow(0.85, (7.0 - pH) / 0.1));
-    const rNitritEff = rNitrit * phNf;
-    const rNitratEff = rNitrat * phNf;
+    // 3) pH→硝化速率折减（O3：对称 pH 响应——低 pH(<7) 与高 pH(>pHopt≈8) 双向抑制 AOB/NOB）
+    const phLow = pH >= 7.0 ? 1.0 : Math.max(0.2, Math.pow(0.85, (7.0 - pH) / 0.1));
+    const pHopt = bf.pHopt != null ? bf.pHopt : 8.0;
+    const pHhighDecay = bf.pHhighDecay != null ? bf.pHhighDecay : 0.7;
+    const pHhighWidth = bf.pHhighWidth != null ? bf.pHhighWidth : 0.1;
+    const phHigh = pH <= pHopt ? 1.0 : Math.max(0.3, Math.pow(pHhighDecay, (pH - pHopt) / pHhighWidth));
+    const phNf = phLow * phHigh;
+    // O2：硝化速率与溶解氧耦合（DO 半饱和 Monod 项；doTarget 为生物滤池进水设计 DO）
+    const nitrDoKs = bf.doKs != null ? bf.doKs : 1.5;
+    const fDo = doTarget / (doTarget + nitrDoKs);
+    let rNitritEff = rNitrit * phNf * fDo;
+    let rNitratEff = rNitrat * phNf * fDo;
 
     // M1(v1.14.0)：生物滤池定容改用 pH 折减后的有效硝化速率 rNitritEff，与稳态校核口径统一
     // （pH<7 时有效速率下降，滤池自动增大，避免"按最优pH定容、运行pH下买小了"的口径分裂）
@@ -590,11 +598,18 @@ RAS.engine = (function () {
     const bfTotalVol = bfReactorVolSf / bf.mediaFill;
     const bfUnits = Math.max(2, Math.ceil(bfTotalVol / 40));
     const bfUnitVol = bfTotalVol / bfUnits;
+    // O1：比表面积负荷 SALR 校验 = TAN日负荷 / (填料体积 × 载体比表面积)
+    const salrRef = bf.salrRef != null ? bf.salrRef : 5;        // g TAN/m²·天 经济设计负荷
+    const salrMax = bf.salrMax != null ? bf.salrMax : 10;       // g TAN/m²·天 安全上限
+    const carrierSA = bf.mediaSurface != null ? bf.mediaSurface : 500; // m²/m³ 载体比表面积
+    const mediaVol = bfTotalVol * bf.mediaFill;                  // m³ 填料体积
+    const salr = (tanDaily * 1000) / (mediaVol * carrierSA);   // g TAN/m²·天
+    const salrStatus = salr > salrMax ? "fail" : salr > salrRef * 1.4 ? "warn" : "ok";
 
-    // P0-3 两段硝化（用 pH 折减后有效速率）：TAN 由 AOB 去除；NO₂ 由 NOB 去除
+    // P0-3 两段硝化（用 pH+DO 折减后有效速率）：TAN 由 AOB 去除；NO₂ 由 NOB 去除
     const denomBf = (k) => k * bfReactorVolSf + makeupFlow;
-    const cTan = (tanDaily * 1000 + makeupFlow * bgTan) / denomBf(rNitritEff * 1000 / tanHard); // mg/L as N
-    const cNo2 = (tanDaily * 1000 + makeupFlow * bgNo2) / denomBf(rNitratEff * 1000 / no2Hard); // mg/L as N
+    let cTan = (tanDaily * 1000 + makeupFlow * bgTan) / denomBf(rNitritEff * 1000 / tanHard); // mg/L as N
+    let cNo2 = (tanDaily * 1000 + makeupFlow * bgNo2) / denomBf(rNitratEff * 1000 / no2Hard); // mg/L as N
 
     // P1-6 / P0-4：NO₃ 稳态 = 硝化生成×(1−反硝化去除) + 水源背景，随补水交换(以 N 计)
     const denitRemoval = K.process.denitRemoval != null ? K.process.denitRemoval : 0;
@@ -607,6 +622,17 @@ RAS.engine = (function () {
     const pKaNH3 = (K.process.pKaNH3_25 != null ? K.process.pKaNH3_25 : 9.25) - 0.03 * (temp - 25);
     const fNH3 = 1 / (1 + Math.pow(10, pKaNH3 - pH));
     const cNH3 = cTan * fNH3;   // mg/L as N
+    // O3：可选 FA/FNA 抑制（短程硝化）—— 默认关闭，启用后据游离氨/游离亚硝酸重算稳态
+    if (bf.faInhibit) {
+      const faN = cNH3;                                                  // mg/L(N) 游离氨
+      const fnaPka = K.process.fnaPka != null ? K.process.fnaPka : 3.15; // FNA 酸解离 pKa（25℃ 温度粗略）
+      const fnaN = (Math.pow(10, -pH) * cNo2) / (Math.pow(10, -fnaPka) * 1000); // mg/L 游离亚硝酸
+      const fFaAOB = bf.faAOB / (bf.faAOB + faN);
+      const fFaNOB = bf.faNOB / (bf.faNOB + faN);
+      const fFna = bf.fnaHalf / (bf.fnaHalf + fnaN);
+      cTan = (tanDaily * 1000 + makeupFlow * bgTan) / denomBf(rNitritEff * fFaAOB * fFna * 1000 / tanHard);
+      cNo2 = (tanDaily * 1000 + makeupFlow * bgNo2) / denomBf(rNitratEff * fFaNOB * fFna * 1000 / no2Hard);
+    }
     // NH₃ 毒性阈值随温度修正（EPA 1989 温度依赖：暖水更毒→限值更严；25℃ 时回到基准 0.02/0.01 mg/L(N)）
     const nh3TempCoef = K.process.nh3TempCoef != null ? K.process.nh3TempCoef : 0.0283; // 每℃ 修正指数（≈Q10 1.9 / 10℃）
     const nh3AcuteT = (K.process.nh3Acute != null ? K.process.nh3Acute : 0.02) * Math.pow(10, nh3TempCoef * (25 - temp));
@@ -659,6 +685,7 @@ RAS.engine = (function () {
     const checks = [
       { key: "tan", name: "总氨氮 TAN", value: round(cTan, 2), unit: "mg/L", limit: tanHard, status: st(cTan, tanHard, tanHard * 1.5, true), note: "AOB 亚硝化 + 补水稀释" },
       { key: "no2", name: "亚硝态氮 NO₂", value: round(cNo2eff, 2), unit: "mg/L", limit: no2Hard, status: st(cNo2eff, no2Hard, no2Hard * 1.5, true), note: no2OxidizeFrac > 0 ? `NOB 硝化(NO₂→NO₃)${ozoneOn ? ` + 臭氧氧化削减 ${Math.round(no2OxidizeFrac * 100)}%` : ""}` : "NOB 硝化(NO₂→NO₃)，速率高于 AOB" },
+      { key: "salr", name: "生物滤池面积负荷 SALR", value: round(salr, 2), unit: "g TAN/m²·天", limit: `≤${salrMax}（经济 ${salrRef}）`, status: salrStatus, note: `填料体积 ${round(mediaVol, 1)} m³ × 比表面积 ${carrierSA} m²/m³ = ${round(mediaVol * carrierSA, 0)} m²；TAN 日负荷 ${round(tanDaily * 1000, 0)} g/天（O1 比表面积负荷校验，对照 Frontiers 2023 MBBR 经验）` },
       { key: "no3", name: "硝态氮 NO₃-N", value: round(no3Nmg, 1), unit: "mg/L（以 N 计）", limit: 300, status: st(no3Nmg, 300, wq.no3SoftCap, true), note: denitRemoval > 0 ? `反硝化脱除 ${Math.round(denitRemoval * 100)}%，剩余随补水交换` : "仅随补水交换，需排换水或反硝化" },
       { key: "co2", name: "二氧化碳 CO₂", value: round(cCo2, 1), unit: "mg/L", limit: wq.co2Max * 2, status: st(cCo2, wq.co2Max * 2, wq.co2Max, true), note: `脱气塔脱除 ${round(co2Stripped, 1)} kg/天 + 开放水面天然挥发 ~${round(co2Natural, 1)} kg/天 + 补水稀释` },
       { key: "alk", name: "碱度(以CaCO₃计)", value: round(cAlkSys, 0), unit: "mg/L", limit: alkMin, status: (nahco3PerKgFish > 1.5 || cAlkSys < alkMin) ? "fail" : (nahco3PerKgFish > 0.8 || (doseM === 0 && cAlkSys < alkTarget)) ? "warn" : "ok", note: doseM > 0 ? `需投加 NaHCO₃ ${round(nahco3Day, 1)} kg/天(≈${round(nahco3PerKgFish, 3)} kg/kg鱼)` : "源水碱度充足，无需投加" },
@@ -792,6 +819,7 @@ RAS.engine = (function () {
         totalVol: round(bfTotalVol, 1),
         units: bfUnits, unitVol: round(bfUnitVol, 1),
         mediaFill: bf.mediaFill,
+        salr: round(salr, 2), salrRef, salrMax, salrStatus,   // O1：比表面积负荷(g TAN/m²·天) 及校验
       },
       oxygen: {
         type: ox.type,

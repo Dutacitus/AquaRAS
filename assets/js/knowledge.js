@@ -171,6 +171,20 @@ window.RAS_KNOWLEDGE = {
       nitrThetaNOB: 1.10,// NOB 硝化温度系数 θ：rNitrat 有效 = rateNitratation × θ_NOB^(T−25)；NOB 比 AOB 对低温更敏感(θ 更高)→低温 NO₂ 积累（捕捉低温亚硝态氮失控）
       mediaFill: 0.60,   // 填料填充率（K1 60–70%）
       mediaSurface: 500, // m²/m³ 填料比表面积（Kaldnes K1 标准值）
+      // —— O2：硝化速率与溶解氧耦合（DO 半饱和 Monod 项）——
+      doKs: 1.5,         // mg/L 硝化菌氧半饱和常数 Ks（DO<~2 mg/L 时速率下降）
+      // —— O3：对称 pH 响应（高 pH 抑制）——
+      pHopt: 8.0,         // AOB/NOB 最优 pH（7.5–8.0 区间）
+      pHhighDecay: 0.7,   // 每 (pH−pHopt) 越 0.1 的有效速率衰减系数（>pHopt 一侧）
+      pHhighWidth: 0.1,   // 高 pH 衰减步长（单位 pH）
+      // —— O3：可选 FA/FNA 短程硝化抑制（默认关闭，避免改变已验证基线）——
+      faInhibit: false,   // 是否启用游离氨(FA)/游离亚硝酸(FNA)抑制模型
+      faAOB: 10,          // mg/L(N) AOB 受 FA 抑制半饱和
+      faNOB: 0.5,         // mg/L(N) NOB 受 FA 抑制半饱和（更敏感→短程硝化 NO₂ 积累）
+      fnaHalf: 0.05,      // mg/L 游离亚硝酸(FNA)抑制半饱和
+      // —— O1：比表面积负荷 SALR 校验 ——
+      salrRef: 5,         // g TAN / m²·天 经济设计负荷（Frontiers 2023 MBBR）
+      salrMax: 10,        // g TAN / m²·天 安全上限（超则告警并建议增大填料体积）
     },
     drumFilter: {
       type: "转鼓微滤机",
@@ -281,6 +295,7 @@ window.RAS_KNOWLEDGE = {
     pK1_25: 6.35,       // 碳酸一级解离常数 pK1（25℃ 淡水；引擎内按 temp/salinity 修正）
     pK2_25: 10.33,      // 碳酸二级解离常数 pK2（25℃ 淡水）
     pKaNH3_25: 9.25,    // NH₄⁺/NH₃ 离解常数 pKa（25℃；温度每升 1℃ 约降 0.03）
+    fnaPka: 3.15,        // FNA(游离亚硝酸 HNO₂) 离解 pKa（25℃ 淡水；FNA=HNO₂⇌NO₂⁻+H⁺，pKa≈3.15；短程硝化 FA/FNA 抑制模型用，仅 faInhibit=true 生效，O3 v1.20.0）
     nahco3Eff: 0.5957,  // g CaCO₃当量 / g NaHCO₃（84 g/mol NaHCO₃ 提供 1 mol = 50 g CaCO₃当量）
     nh3Acute: 0.02,     // mg/L(N) 非离子氨急性毒性阈值基准（25℃；随温度按 nh3TempCoef 修正，暖水更严）
     nh3Chronic: 0.01,   // mg/L(N) 非离子氨慢性毒性阈值基准（25℃；同上温度修正）

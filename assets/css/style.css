@@ -103,7 +103,7 @@ body::before {
   box-shadow: 0 10px 30px var(--brand-soft), inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 .brand h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.025em; line-height: 1.15; }
-.brand p { font-size: 12.5px; color: var(--text-soft); margin-top: 3px; letter-spacing: 0.005em; }
+.brand p { font-size: 12.5px; color: var(--text-soft); margin-top: 3px; letter-spacing: 0.005em; text-align: justify; }
 
 .header-actions { display: flex; align-items: center; gap: 10px; }
 
@@ -208,7 +208,7 @@ body::before {
 .btn-lux:disabled { opacity: 0.55; cursor: progress; transform: none; }
 
 /* ---------- Result metric cards ---------- */
-.section-title { position: relative; font-size: 17px; font-weight: 800; margin: 28px 0 14px; padding: 0 26px; display: flex; align-items: center; gap: 10px; letter-spacing: -0.01em; }
+.section-title { position: relative; font-size: 17px; font-weight: 800; margin: 28px 0 14px; padding: 0 26px 0 36px; display: flex; align-items: center; gap: 10px; letter-spacing: -0.01em; }
 .section-title::before {
   content: ""; position: absolute; left: 26px; top: 0; width: 5px; height: 20px; border-radius: 3px;
   background: linear-gradient(var(--brand), var(--brand-2));
@@ -370,7 +370,7 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
 .note {
   display: flex; gap: 12px; padding: 16px 18px; border-radius: var(--radius-sm);
   background: var(--brand-soft); border: 1px solid var(--brand-soft);
-  font-size: 13.5px; color: var(--text-soft); margin-top: 16px;
+  font-size: 13.5px; color: var(--text-soft); margin-top: 16px; text-align: justify;
 }
 .note b { color: var(--text); }
 .note .ic { font-size: 18px; }
@@ -384,7 +384,7 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
 .sobol-title { font-size: 15.5px; font-weight: 800; color: var(--text); letter-spacing: -0.01em; }
 .sobol-unit { font-size: 12px; color: var(--text-faint); font-family: var(--font-num); }
 .sobol-mean { font-size: 12.5px; color: var(--brand); font-family: var(--font-num); margin-left: auto; }
-.sobol-dominant { font-size: 13.5px; color: var(--text-soft); margin-bottom: 12px; }
+.sobol-dominant { font-size: 13.5px; color: var(--text-soft); margin-bottom: 12px; text-align: justify; }
 .sobol-dominant b { color: var(--accent); }
 .sobol-bars { display: flex; flex-direction: column; gap: 8px; }
 .sobol-bar-row { display: grid; grid-template-columns: 184px 1fr auto; align-items: center; gap: 12px; }
@@ -399,7 +399,7 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
 .sobol-bar-val { font-size: 11px; color: var(--text-faint); font-family: var(--font-num); white-space: nowrap; }
 .sobol-inter { color: var(--brand-2); margin-left: 6px; }
 .sobol-foot { font-size: 11.5px; margin-top: 10px; }
-.sobol-note { font-size: 12.5px; color: var(--text-soft); padding: 4px 0; }
+.sobol-note { font-size: 12.5px; color: var(--text-soft); padding: 4px 0; text-align: justify; }
 @media (max-width: 640px) {
   .sobol-bar-row { grid-template-columns: 120px 1fr; }
   .sobol-bar-val { grid-column: 1 / -1; margin-top: -2px; }
@@ -452,7 +452,7 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
 
   /* 指标 / 标题左右留白收窄 */
   .metrics { padding: 0 14px; }
-  .section-title { padding: 0 14px; margin: 22px 0 12px; font-size: 16px; }
+  .section-title { padding: 0 14px 0 24px; margin: 22px 0 12px; font-size: 16px; }
   .section-title::before { left: 14px; }
   #optResult .metrics, #libCompare .metrics { padding: 14px !important; }
 
@@ -605,10 +605,10 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
 /* —— 设计计算书 —— */
 .doc-hero { padding: 24px 26px 4px; }
 .doc-title { font-size: 22px; margin: 0 0 8px; letter-spacing: .3px; }
-.doc-lead { margin: 0; color: var(--text-soft); line-height: 1.7; max-width: 880px; }
+.doc-lead { margin: 0; color: var(--text-soft); line-height: 1.7; max-width: 880px; text-align: justify; }
 .doc-section { padding: 18px 26px 0; }
 .doc-section h3 { font-size: 17px; margin: 0 0 10px; color: var(--brand-2); }
-.doc-p { color: var(--text-soft); line-height: 1.75; max-width: 900px; margin: 0 0 12px; }
+.doc-p { color: var(--text-soft); line-height: 1.75; max-width: 900px; margin: 0 0 12px; text-align: justify; }
 .doc-refs { display: flex; flex-direction: column; gap: 6px; max-width: 900px; }
 .doc-refs span { font-size: 12.5px; color: var(--text-faint); padding: 6px 10px;
   background: var(--card-soft); border: 1px solid var(--border-soft); border-radius: 8px; }
@@ -618,7 +618,7 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
 .doc-card h4 { margin: 0 0 10px; font-size: 14.5px; color: var(--text); }
 .doc-table { margin: 0; }
 .doc-table th, .doc-table td { padding: 7px 10px; font-size: 13px; }
-.doc-cap { font-size: 11.5px; color: var(--text-faint); margin: 10px 0 0; line-height: 1.5; }
+.doc-cap { font-size: 11.5px; color: var(--text-faint); margin: 10px 0 0; line-height: 1.5; text-align: justify; }
 .doc-steps { list-style: none; margin: 12px 0 0; padding: 0; max-width: 900px;
   display: flex; flex-direction: column; gap: 10px; }
 .doc-steps li { display: flex; gap: 12px; align-items: flex-start;
@@ -629,13 +629,13 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
   color: #fff; display: flex; align-items: center; justify-content: center;
   font-size: 13px; font-weight: 700; }
 .doc-steps li b { color: var(--text); }
-.doc-steps li div { color: var(--text-soft); font-size: 13.5px; }
+.doc-steps li div { color: var(--text-soft); font-size: 13.5px; text-align: justify; }
 .doc-confidential { margin: 18px 26px 26px; padding: 18px 20px;
   border: 1px solid var(--border-strong); border-radius: 14px;
   background: color-mix(in srgb, var(--accent) 8%, var(--card-soft));
   border-left: 4px solid var(--accent); }
 .doc-confidential .doc-lock { font-size: 15px; font-weight: 700; margin: 0 0 8px; color: var(--accent); }
-.doc-confidential p { margin: 0 0 10px; color: var(--text-soft); line-height: 1.7; font-size: 13.5px; }
+.doc-confidential p { margin: 0 0 10px; color: var(--text-soft); line-height: 1.7; font-size: 13.5px; text-align: justify; }
 .doc-confidential p:last-child { margin-bottom: 0; }
 .doc-confidential .doc-cap { color: var(--text-faint); }
 
@@ -756,7 +756,7 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
 }
 .hero-sub {
   font-size: clamp(14px, 1.7vw, 17px); line-height: 1.7; color: var(--text-soft);
-  max-width: 680px; margin: 0; font-weight: 500;
+  max-width: 680px; margin: 0; font-weight: 500; text-align: justify;
 }
 
 .hero-cta-row { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
