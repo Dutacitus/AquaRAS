@@ -1,6 +1,6 @@
 {
   "name": "aquaras-server",
-  "version": "1.18.3",
+  "version": "1.19.0",
   "description": "AquaRAS 后端服务 — Node + Express，方案存储 CRUD",
   "main": "server.js",
   "scripts": {
