@@ -12,16 +12,8 @@ const express = require("express");
 const router = express.Router();
 const db = require("./db");
 const { getCategoryList, getCategoryLeaves, applyOverrides, getBase } = require("./knowledge-merge");
-
-// 复用 supplier-routes 的管理员中间件
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "aquaras2024";
-function requireAdmin(req, res, next) {
-  const token = req.headers["x-admin-token"];
-  if (!token || token !== ADMIN_PASSWORD) {
-    return res.status(401).json({ error: "需要管理员权限" });
-  }
-  next();
-}
+const { requireAdmin } = require("./auth");
+const logger = require("./logger");
 
 /* ===== 读取操作（公开） ===== */
 

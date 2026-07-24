@@ -11,24 +11,8 @@
 const express = require("express");
 const router = express.Router();
 const db = require("./db");
-
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "aquaras2024";
-
-/* ========== 中间件：管理员验证 ========== */
-function requireAdmin(req, res, next) {
-  const token = req.headers["x-admin-token"];
-  console.log("[suppliers] requireAdmin token:", token ? token.substring(0, 4) + "***" : "(空)", "path:", req.method, req.path);
-  if (!token || token !== ADMIN_PASSWORD) {
-    return res.status(401).json({ error: "需要管理员权限" });
-  }
-  next();
-}
-
-/* ========== 辅助：判断是否为管理员请求 ========== */
-function isAdminReq(req) {
-  const token = req.headers["x-admin-token"];
-  return token === ADMIN_PASSWORD;
-}
+const { requireAdmin, isAdminReq } = require("./auth");
+const logger = require("./logger");
 
 /* ========== 验证管理员密码 ========== */
 router.post("/admin/verify", (req, res) => {
