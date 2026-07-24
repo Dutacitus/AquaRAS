@@ -91,7 +91,7 @@
  */
 window.RAS_KNOWLEDGE = {
   meta: {
-    version: "1.19.0",
+    version: "1.20.0",
     title: "RAS 工艺设计知识库",
     dataAsOf: "2026",
     confidence: "中",
