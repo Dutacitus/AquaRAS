@@ -91,7 +91,7 @@
  */
 window.RAS_KNOWLEDGE = {
   meta: {
-    version: "1.21.0",
+    version: "1.22.0",
     title: "RAS 工艺设计知识库",
     dataAsOf: "2026",
     confidence: "中",
@@ -285,6 +285,9 @@ window.RAS_KNOWLEDGE = {
     sysWaterFactor: 1.15,// 系统总水量 / 养殖池有效水量（回流管路+滤池保有量）
     fcrDensityCoef: 0.008, // FCR–密度耦合分子系数(1/(kg/m³))：饱和型耦合 FCR = sp.fcr×(1+coef×Δ)/(1+sat×Δ)，Δ=density−stockingDensity；默认密度处零效应（v1.18.2）
     fcrDensitySat: 0.003,  // FCR–密度耦合饱和系数(1/(kg/m³))：使高密度边际 FCR 升高递减并渐近饱和（Δ→∞ 时 FCR→sp.fcr×coef/sat），避免线性模型无界暴涨（v1.18.2）
+    // —— O12 v1.22.0 鱼生长生物能学耦合（热生长模型）全局参数 ——
+    growthHandlingDays: 14,  // 每茬清塘/分级/消毒/再放养固定天数（非生长周期，计入茬次间隔）
+    rationSatiationMax: 3.5, // %BW/d 饱食投喂率上限（投喂节律经验上限；所需投喂率超此值＝生长受料限制约、设定产量不可行）
     denitRemoval: 0.85,  // 反硝化脱氮率（NO3-N 去除比例；现代 RAS 配生物脱氮典型 0.8–0.9）
     denitRate: 0.25,     // kg NO3-N / m³(反应器) / 天 — 异养反硝化容积负荷（设计值）
     // —— 碳酸盐体系 / pH / NH₃（v1.12.0）——
@@ -377,6 +380,23 @@ window.RAS_KNOWLEDGE = {
   // o2PerFeed: kg O2 / kg 饲料（品种/温度相关氧耗系数；salmon 冷水低，温水高）
   // designTemp: ℃ 设定养殖水温（= 温控负荷的"目标温度"，与环境均温共同决定 HVAC 能耗）
   //   注：原固定 hvacLoadW 已于 v1.4.0 移除，HVAC 改为随 (designTemp − 地区均温) 气候化计算
+  // —— O12 v1.22.0 鱼生长生物能学耦合：热生长模型逐品种参数 ——
+  // 模型：SGR(特定生长率, %/d) = sgrMax × exp(−0.5×((T−tempOpt)/tempSigma)²)，T≤tempMin 时生长≈0（钟形温度响应）
+  // 据此反算最小养成天数、生物最大茬次/年产量，与设定目标交叉校验（设计水温↔产量吞吐耦合）
+  // 参数来源：文献热生长曲线（如 Björnsson 鲑、淡水鱼类 SGR 表）取整；stockingSize 为放养规格(g/尾)，harvestSize 用 species.harvestSize
+  speciesBio: {
+    bass:        { sgrMax: 3.0, tempOpt: 27, tempSigma: 7, tempMin: 14, stockingSize: 50 },   // 加州鲈，温水肉食
+    salmon:      { sgrMax: 2.2, tempOpt: 14, tempSigma: 5, tempMin: 4,  stockingSize: 60 },   // 大西洋鲑，冷水
+    trout:       { sgrMax: 2.4, tempOpt: 14, tempSigma: 5, tempMin: 4,  stockingSize: 80 },   // 虹鳟，冷水
+    turbot:      { sgrMax: 2.2, tempOpt: 18, tempSigma: 6, tempMin: 8,  stockingSize: 100 },  // 大菱鲆，低温海水
+    tilapia:     { sgrMax: 3.4, tempOpt: 29, tempSigma: 7, tempMin: 18, stockingSize: 50 },   // 罗非鱼，暖水杂食
+    shrimp:      { sgrMax: 4.5, tempOpt: 29, tempSigma: 6, tempMin: 20, stockingSize: 0.5 },  // 南美白对虾，暖水甲壳(PL 苗极小)
+    catfish:     { sgrMax: 3.2, tempOpt: 28, tempSigma: 7, tempMin: 18, stockingSize: 50 },   // 斑点叉尾鮰，暖水杂食
+    eel:         { sgrMax: 2.0, tempOpt: 25, tempSigma: 6, tempMin: 15, stockingSize: 30 },   // 鳗鱼，温水
+    grouper:     { sgrMax: 2.6, tempOpt: 28, tempSigma: 6, tempMin: 18, stockingSize: 50 },   // 石斑鱼，海水
+    yellowcroaker:{ sgrMax: 2.8, tempOpt: 24, tempSigma: 6, tempMin: 14, stockingSize: 40 },  // 大黄鱼，海水
+    tonguesole:  { sgrMax: 2.2, tempOpt: 21, tempSigma: 5, tempMin: 12, stockingSize: 50 },   // 半滑舌鳎，海水/半咸水
+  },
   species: {
     bass: {
       key: "bass",

@@ -100,6 +100,50 @@ RAS.engine = (function () {
     const tanDaily = annualFeed * tanPerFeed / 365;
     const tanAnnual = annualFeed * tanPerFeed;
 
+    // —— 2.5 鱼生长生物能学耦合（O12 v1.22.0）——
+    // 热生长模型：设计水温 → 温度限制的特定生长率(SGR)上限 → 最小养成天数 → 生物最大茬次/年产量。
+    // 与用户设定目标(annualTons)交叉校验，揭示"加热/制冷设定点 ↔ 产量吞吐"的生物可行约束（与 HVAC 能耗耦合）。
+    const bio = (K.speciesBio && K.speciesBio[inputs.speciesKey]) ? K.speciesBio[inputs.speciesKey] : null;
+    const growthHandlingDays = K.process.growthHandlingDays != null ? K.process.growthHandlingDays : 14;
+    const rationSatiationMax = K.process.rationSatiationMax != null ? K.process.rationSatiationMax : 3.5; // %BW/d
+    let bioGrowth = { available: false };
+    if (bio && bio.sgrMax > 0 && bio.stockingSize > 0 && sp.harvestSize > 0) {
+      const sgrMax = bio.sgrMax, tempOpt = bio.tempOpt, tempSigma = bio.tempSigma, tempMin = bio.tempMin;
+      const stockingSize = bio.stockingSize, harvestSizeB = sp.harvestSize; // g/尾
+      // 钟形温度响应（thermal growth coefficient）：偏离最适温→生长率按高斯衰减，≤tempMin 几乎不生长
+      const tempResp = (temp <= tempMin) ? 0 : Math.exp(-0.5 * Math.pow((temp - tempOpt) / tempSigma, 2));
+      const sgrTemp = sgrMax * tempResp;                                   // %/d 温度限制的生长潜力上限
+      const daysGrowMin = sgrTemp > 0 ? Math.log(harvestSizeB / stockingSize) / (sgrTemp / 100) : Infinity; // 养成天数(放养→出塘)
+      const cyclesMax = isFinite(daysGrowMin) ? 365 / (daysGrowMin + growthHandlingDays) : 0;  // 生物最大茬次/年(含清塘间隔)
+      const annualMaxKg = density * totalTankVol * cyclesMax;             // 给定池容下生物最大年产量
+      // 投喂率(%BW/d)反算：与现有 fcr/cycles 口径一致（平均生物量介于放养/出塘之间）
+      const rRatio = stockingSize / harvestSizeB;
+      const rationBW = (cycles * fcr / 365) / ((1 + rRatio) / 2) * 100;   // %/d
+      const overFeed = rationBW > rationSatiationMax;                     // 所需投喂率超饱食上限→料限制约/不可行
+      // 交叉校验：目标/生物最大上限（>1 即超出生物可行）
+      const ratioTarget = annualMaxKg > 0 ? annual / annualMaxKg : Infinity;
+      const statusBio = (!sgrTemp || temp <= tempMin) ? "fail"
+        : (ratioTarget > 1.15 || overFeed) ? "fail"
+        : (ratioTarget > 1.0) ? "warn" : "ok";
+      bioGrowth = {
+        available: true,
+        sgrTemp: round(sgrTemp, 3),
+        tempOpt, tempSigma, tempMin,
+        tempResp: round(tempResp, 3),
+        daysGrowMin: isFinite(daysGrowMin) ? round(daysGrowMin, 1) : null,
+        cyclesAssumed: round(cycles, 2),
+        cyclesMax: round(cyclesMax, 2),
+        annualMaxKg: round(annualMaxKg),
+        annualTargetKg: round(annual),
+        ratioTarget: isFinite(ratioTarget) ? round(ratioTarget, 3) : null,
+        rationBW: round(rationBW, 2),
+        rationSatiationMax,
+        overFeed,
+        feasible: statusBio !== "fail",
+        status: statusBio,
+      };
+    }
+
     // —— 3. 水力学 ——
     const totalSysWater = totalTankVol * K.process.sysWaterFactor;
     const recircFlow = totalTankVol * turns;
@@ -699,8 +743,19 @@ RAS.engine = (function () {
       { key: "tss", name: "悬浮固体 TSS", value: round(cTss, 1), unit: "mg/L", limit: wq.ssMax, status: st(cTss, wq.ssMax, wq.ssMax * 1.5, true), note: foamFrac ? "微滤机 + 二级固液分离 + 泡沫分离细颗粒" : "微滤机去除" },
       { key: "doc", name: "溶解有机碳 DOC", value: round(cDoc, 1), unit: "mg/L", limit: wq.docSoftCap, status: cDoc > wq.docMax ? "fail" : (cDoc > wq.docSoftCap ? "warn" : "ok"), note: `泡沫分离 ${docFoam > 0 ? Math.round(docFoam * 100) + "%" : "(未配)"} + 臭氧 ${docOz > 0 ? Math.round(docOz * 100) + "%" : "(未配)"} 串联去除${docSynergy > 1 ? `（臭氧协同 ζ=${docSynergy.toFixed(2)}，skimmer 有效 DOC 去除提至 ${Math.round(docFoamEff * 100)}%）` : ""}` },
       { key: "disinfection", name: "主动消毒(生物安保)", value: round(disinfectLog, 1), unit: "LOG", limit: dLogTarget, status: disinfectStatus, note: `UV ${uvOn ? (uvEq.dose != null ? uvEq.dose : 30) + "mJ/cm²" : "关"} / 臭氧 ${ozoneOn ? (ozEq.dose != null ? ozEq.dose : 0.02) + "g/m³" : "关"} 对数灭活` },
-      { key: "do", name: "有效溶氧 DO", value: round(effectiveDo, 1), unit: "mg/L", limit: doMinV, status: effDoDeficit > 0.1 ? "fail" : "ok", note: "池内实测 " + round(o2Achieved, 1) + " mg/L" + (co2DoePenalty > 0 ? "；高 CO₂(" + round(cCo2, 1) + " mg/L)经 Bohr 效应折减 " + Math.round(co2DoePenalty * 100) + "%→有效 " + round(effectiveDo, 1) : "") + "；供氧余量 " + round(o2Margin, 0) + "%" },
+      { key: "do", name: "有效溶氧 DO", value: round(effectiveDo, 1), unit: "mg/L", limit: doMinV, status: effDoDeficit > 0.1 ? "fail" : "ok", note: "池内实测 " + round(o2Achieved, 1) + " mg/L" + (co2DoePenalty > 0 ? "；高 CO₂(" + round(cCo2, 1) + " mg/L)经 Bohr 效应折减 " + Math.round(co2DoePenalty * 100) + "%→有效 " + round(effectiveDo, 1) : "") +         "；供氧余量 " + round(o2Margin, 0) + "%" },
     ];
+
+    // O12 v1.22.0 鱼生长生物能学耦合校验：将生物可行产量上限与设计目标交叉呈现
+    if (bioGrowth && bioGrowth.available) {
+      checks.push({
+        key: "bioGrowth", name: "鱼生长生物能学耦合",
+        value: bioGrowth.cyclesMax, unit: "茬/年 生物最大",
+        limit: `设定 ${bioGrowth.cyclesAssumed} 茬；目标 ${round(bioGrowth.annualTargetKg / 1000, 1)}t ≤ 生物最大 ${round(bioGrowth.annualMaxKg / 1000, 1)}t`,
+        status: bioGrowth.status,
+        note: `设计水温 ${Math.round(temp)}℃ 下 SGR 上限 ${bioGrowth.sgrTemp}%/d（温度响应 ${bioGrowth.tempResp}，最适 ${bioGrowth.tempOpt}℃）；养成 ${bioGrowth.daysGrowMin} 天/茬。投喂率 ${bioGrowth.rationBW}%BW${bioGrowth.overFeed ? " ⚠超饱食上限 " + bioGrowth.rationSatiationMax + "%（料限制约）" : " 在饱食范围内"}。${bioGrowth.status === "ok" ? "产量目标生物可行" : "产量目标超出生物可行上限，需升温或下调目标"}`,
+      });
+    }
     // P1-2 尾水排放污染物浓度（v1.13.8，对照 DB44/2462-2024 合规）：稳态质量平衡推算排放口浓度（与循环水同浓度）
     const cTn = cTan + cNo2 + no3Nmg; // mg/L as N — 总氮 = TAN + NO₂ + NO₃（均以 N 计）
     const pDaily = dailyFeedAvg * (K.process.feedPContent != null ? K.process.feedPContent : 0.012)
@@ -761,6 +816,7 @@ RAS.engine = (function () {
         status: disinfectStatus,
       },
       tailwater,
+      bioGrowth,
     };
 
     return {
@@ -946,6 +1002,7 @@ RAS.engine = (function () {
         },
       },
       waterQuality,
+      bioGrowth,
       compliance: tailwater,
       tailwaterTreatment: {
         key: twTechKey, name: twTech.name,
