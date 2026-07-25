@@ -535,7 +535,6 @@
         metricCard("年养殖茬次", c.cycles, "茬", `有效容积年产 ${c.yieldPerM3Year} kg/m³`),
         metricCard("实际产能", c.actualYield, "吨/年", "满足目标且有余量", "accent"),
         metricCard("宽深比 D:H", c.tankDH, "", `圆池旋流自清约束 ≤5`, c.tankShape && c.tankShape.dhRevised ? "brand" : undefined),
-        metricCard("池底坡度", "—", "", `锥底集污坡（AquaRAS 设计值）`),
         metricCard("单池停留时间", c.hrtMin, "min", `推荐停留时间见 AquaRAS 设计准则`, c.hrtStatus === "ok" ? undefined : "brand"),
         metricCard("日循环次数", c.turns, "次/日", `${c.turnsSource === "auto" ? (c.turnsCapped ? "负荷反算·封顶" : "污染负荷反算") : c.turnsSource === "custom" ? "用户自定义" : "系统默认"}`, c.turnsSource === "auto" ? "brand" : undefined),
       ])}
@@ -544,7 +543,7 @@
         <div>
           <div class="tk-title">养殖池水力结构</div>
           <div class="tk-line">· <b>池型</b>：圆形"茶杯"池 <b>Ø${c.tankD}×${c.tankH}m</b>，宽深比 <b>${c.tankDH}</b>（≤5）。</div>
-          <div class="tk-line">· <b>自清机制</b>：切向进水形成旋流(forced vortex)，二次流将残饵粪便向池心锥底坡（中心坑深 ${c.coneDepth}m）富集，经中心底排一次性排出。</div>
+          <div class="tk-line">· <b>自清机制</b>：切向进水形成旋流(forced vortex)，二次流将残饵粪便向池心锥底汇集（中心坑深 ${c.coneDepth}m）富集，经中心底排一次性排出。</div>
           <div class="tk-line">· <b>循环与停留</b>：日循环 <b>${c.turns} 次/日</b>（${(c.turnsSource === "auto" ? (c.turnsDriver === "co2" ? "由污染负荷反算（CO₂ 脱气主导）" : c.turnsDriver === "tss" ? "由污染负荷反算（悬浮物主导）" : c.turnsDriver === "hrt" ? `由良好刷新下限反算(HRT ${c.hrtTarget}min)` : "自动反算") : c.turnsSource === "custom" ? "用户自定义" : "知识库默认")}${c.turnsCapped ? "；⚠ 负荷超 HRT 包络上限，已封顶，建议提高补水率或增设处理单元" : ""}），单池水力停留 <b>${c.hrtMin} min</b>（推荐值见 AquaRAS 设计准则）${c.hrtStatus === "ok" ? "，溶氧/氨氮更新充分" : "，偏长/偏短，建议调整循环次数或分池"}。</div>
           <div class="tk-line">· <b>流速与排水</b>：建议切向流速依据 AquaRAS 设计准则确定（自清动量 + 鱼福利）；推荐 Cornell 双排水——中心底排 5–20% 高浓度污物流直送微滤，侧排 80–95% 清洁水回生物滤池。</div>
         </div></div></div>
@@ -579,8 +578,8 @@
         metricCard("年碳排放", d.environment.annualCarbonT, "tCO₂e/年", "全厂电力排放"),
       ])}
       ${section("生物滤池 (MBBR)", "Biofilter", [
-        metricCard("反应器容积", bf.reactorVol, "m³", `硝化负荷 (AquaRAS 设计值) kg TAN/m³·d`),
-        metricCard("含填料总容积", bf.totalVol, "m³", `填充率 (AquaRAS 设计值)`, "brand"),
+        metricCard("反应器容积", bf.reactorVol, "m³", `硝化负荷见 AquaRAS 设计准则（kg TAN/m³·d）`),
+        metricCard("含填料总容积", bf.totalVol, "m³", `填充率见 AquaRAS 设计准则`, "brand"),
         metricCard("滤池单元", bf.units, "座", `单座 ${bf.unitVol} m³`),
         metricCard("类型", bf.type, "", "移动床生物膜"),
       ])}
@@ -648,7 +647,7 @@
     const rows = [
       ["圆形养殖池", c.tankCount + " 个", `Ø${c.tankD} m × ${c.tankH} m（D:H ${c.tankDH}），锥底＋中心底排，有效 ${c.singleTankVol} m³`, "PP/玻璃钢/混凝土"],
       ["转鼓微滤机", so.units + " 台", `${so.screen} µm 筛网，单台 ${so.eachFlow} m³/h`, "不锈钢"],
-      ["MBBR 生物滤池", bf.units + " 座", `总 ${bf.totalVol} m³，填料（AquaRAS 设计值）`, "曝气+悬浮填料"],
+      ["MBBR 生物滤池", bf.units + " 座", `总 ${bf.totalVol} m³，填料为 AquaRAS 设计值`, "曝气+悬浮填料"],
       ["增氧系统", "1 套", `供氧 ${ox.o2Supply} kg/h（${ox.type}）`, "氧气锥+LHO"],
       ["CO₂ 脱除塔", "1 座", `${ox.degasserType}`, "填料式"],
       ["循环水泵", "≥2 台", `${hy.recircFlowH} m³/h，一用一备`, "变频"],
