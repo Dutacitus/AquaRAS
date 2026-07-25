@@ -52,11 +52,12 @@ RAS.pid = (function () {
   function bus(x1, x2, y) {
     return `<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" class="pid-bus"/>`;
   }
-  function pipe(x1, y1, x2, y2, label) {
+  function pipe(x1, y1, x2, y2, label, labelY) {
     const mx = (x1 + x2) / 2;
+    const ly = labelY !== undefined ? labelY : Math.min(y1, y2) - 7;
     return `<g class="pid-pipe"><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="pid-line"/>
       <polygon points="${x2},${y2} ${x2 - 9},${y2 - 5} ${x2 - 9},${y2 + 5}" class="pid-head"/>
-      ${label ? `<text x="${mx}" y="${y1 - 7}" class="pid-flow-label">${label}</text>` : ""}</g>`;
+      ${label ? `<text x="${mx}" y="${ly}" class="pid-flow-label">${label}</text>` : ""}</g>`;
   }
   function valve(cx, cy, tag) {
     return `<g class="pid-valve">
@@ -143,7 +144,7 @@ RAS.pid = (function () {
     const mainEquips = U.map((u, i) => equip(xs[i], eqY, eqW, eqH, u.tag, u.label, u.sub, u.cls, u.k)).join("\n      ");
 
     // ── 主管路 ──
-    let mainPipes = pipe(xs[0] + eqW, cy, xs[1], cy, Q + " m³/h") + "\n      ";
+    let mainPipes = pipe(xs[0] + eqW, cy, xs[1], cy, Q + " m³/h", eqY - 12) + "\n      ";
     for (let i = 1; i < n - 1; i++) {
       mainPipes += pipe(xs[i] + eqW, cy, xs[i + 1], cy) + "\n      ";
     }
@@ -185,7 +186,7 @@ RAS.pid = (function () {
       <!-- 主管路 -->
       ${mainPipes}
       <!-- 回水管(闭合正交环) -->
-      ${pipe(lastCol, yRet, xs[0] + eqW, yRet, "净化回水")}
+      ${pipe(lastCol, yRet, xs[0] + eqW, yRet, "净化回水", yRet + 52)}
       <path d="M ${lastColCx} ${eqY + eqH} L ${lastColCx} ${yRet} L ${xs[0] + eqW / 2} ${yRet} L ${xs[0] + eqW / 2} ${eqY + eqH}" class="pid-line pid-return"/>
 
       <!-- 换热器(回水管上) -->
@@ -207,12 +208,12 @@ RAS.pid = (function () {
         <line x1="${dnPipe1X}" y1="${yRet}" x2="${dnPipe1X}" y2="420" class="pid-line"/>
         <polygon points="${dnPipe1X},420 ${dnPipe1X - 5},410 ${dnPipe1X + 5},410" class="pid-head"/>
       </g>
-      <text x="${dnPipe1X + 10}" y="376" class="pid-flow-label denit-txt">侧流</text>
+      <text x="${dnPipe1X + 10}" y="392" class="pid-flow-label denit-txt">侧流</text>
       <g class="pid-pipe pid-denit">
         <line x1="${dnPipe2X}" y1="420" x2="${dnPipe2X}" y2="${yRet}" class="pid-line"/>
         <polygon points="${dnPipe2X},${yRet} ${dnPipe2X - 5},${yRet + 10} ${dnPipe2X + 5},${yRet + 10}" class="pid-head"/>
       </g>
-      <text x="${dnPipe2X + 10}" y="376" class="pid-flow-label denit-txt">回注</text>` : ""}
+      <text x="${dnPipe2X + 10}" y="392" class="pid-flow-label denit-txt">回注</text>` : ""}
 
       <!-- 集中控制系统 -->
       <g class="pid-dcs" filter="url(#pidShadow)">
@@ -225,7 +226,7 @@ RAS.pid = (function () {
       ${ortho([[dcsX + dcsW - 40, dcsY], [dcsX + dcsW - 40, 372], [lastColCx, 372]], "pid-control")}
 
       <!-- 图例 -->
-      <g class="pid-legend" transform="translate(${dcsX}, ${H - 30})">
+      <g class="pid-legend" transform="translate(${dcsX}, ${H - 36})">
         <circle cx="8" cy="-8" r="9" class="pid-bubble"/><text x="22" y="-4" class="pid-sub">仪表测点</text>
         <rect x="120" y="-16" width="14" height="14" rx="3" class="pid-box c8"/><text x="140" y="-4" class="pid-sub">控制系统</text>
         <rect x="230" y="-16" width="14" height="14" rx="3" class="pid-valve-box" transform="rotate(45 237 -9)"/><text x="250" y="-4" class="pid-sub">控制阀</text>

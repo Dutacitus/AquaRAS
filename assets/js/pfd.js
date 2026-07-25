@@ -141,7 +141,7 @@ RAS.pfd = (function () {
       <!-- 回水（下排 右→左，闭合正交环）-->
       <path d="M ${lastColCx} ${eqY + eqH} L ${lastColCx} ${yRet} L ${tkCx} ${yRet} L ${tkCx} ${eqY + eqH}" class="pfd-line pfd-return"/>
       <polygon points="${tkCx},${eqY + eqH} ${tkCx - 5},${eqY + eqH + 9} ${tkCx + 5},${eqY + eqH + 9}" class="pfd-head pfd-return"/>
-      <text x="${retLabelX}" y="${yRet - 8}" class="pfd-flow-label">净化回水 ${Q} m³/h</text>
+      <text x="${heCx}" y="${yRet + 48}" class="pfd-flow-label">净化回水 ${Q} m³/h</text>
 
       <!-- 换热（回水管上）-->
       ${node(heX, yRet - 26, 120, 52, "换热器", `${d.inputs.temp}℃ 控温`, "c8", "he")}
@@ -160,7 +160,7 @@ RAS.pfd = (function () {
         <path d="M ${sludgeCenterX} ${eqY + eqH} L ${sludgeCenterX} 290 L ${sludgeTurnX} 290 L ${sludgeTurnX} 400 L ${xs[drIdx]} 400" class="pfd-line"/>
         <polygon points="${xs[drIdx]},400 ${xs[drIdx] - 1},390 ${xs[drIdx] + 9},390" class="pfd-head"/>
       </g>
-      <text x="${sludgeLabelX}" y="282" class="pfd-flow-label">排渣 ~${d.solids.tssDaily} kg/d</text>
+      <text x="${sludgeTurnX + 6}" y="270" class="pfd-flow-label">排渣 ~${d.solids.tssDaily} kg/d</text>
 
       <!-- 反硝化反应器（侧流脱氮；仅 denitRemoval>0 时显示）-->
       ${denitOn ? `${node(dnX, 400, eqW, eqH, "反硝化反应器", d.waterQuality.denit.volume + " m³ · 脱氮 " + Math.round(d.waterQuality.denit.removal * 100) + "%", "c9", "dn")}
@@ -172,10 +172,10 @@ RAS.pfd = (function () {
         <path d="M ${dnPipe2X} ${yRet} L ${dnPipe2X} 400" class="pfd-line"/>
         <polygon points="${dnPipe2X},${yRet} ${dnPipe2X - 5},${yRet + 10} ${dnPipe2X + 5},${yRet + 10}" class="pfd-head"/>
       </g>
-      <text x="${dnLabelX}" y="352" class="pfd-flow-label">NO₃ 侧流脱氮</text>` : ""}
+      <text x="${dnLabelX}" y="388" class="pfd-flow-label">NO₃ 侧流脱氮</text>` : ""}
 
       <!-- 图例 -->
-      <g class="pfd-legend" transform="translate(150, ${H - 16})">
+      <g class="pfd-legend" transform="translate(150, ${H - 28})">
         <rect x="0" y="-14" width="14" height="14" rx="3" class="pfd-box c2"/>
         <text x="20" y="-2" class="pfd-sub">主循环</text>
         <rect x="110" y="-14" width="14" height="14" rx="3" class="pfd-box c8"/>

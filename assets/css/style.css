@@ -260,7 +260,7 @@ body::before {
 .pfd-head { fill: var(--pipe); }
 .pfd-return { stroke: var(--brand); stroke-dasharray: 6 5; }
 .pfd-return.pfd-head { fill: var(--brand); }
-.pfd-flow-label { font-size: 11px; fill: var(--text-faint); text-anchor: middle; }
+.pfd-flow-label { font-size: 11px; fill: var(--text-faint); text-anchor: middle; paint-order: stroke; stroke: var(--bg); stroke-width: 3.4px; stroke-linejoin: round; }
 .pfd-flow-label.side { text-anchor: start; fill: var(--text-soft); font-weight: 600; }
 /* 协调的类别色（冷调青→靛→翠，污泥用琥珀语义色） */
 .pfd-node.c1 .pfd-box { stroke: #38bdf8; }
@@ -838,7 +838,7 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
 .pid-line { stroke: var(--pipe); stroke-width: 2.2; fill: none; }
 .pid-head { fill: var(--pipe); }
 .pid-return { stroke: var(--brand); stroke-dasharray: 6 5; }
-.pid-flow-label { font-size: 11px; fill: var(--text-faint); text-anchor: middle; }
+.pid-flow-label { font-size: 11px; fill: var(--text-faint); text-anchor: middle; paint-order: stroke; stroke: var(--bg); stroke-width: 3.4px; stroke-linejoin: round; }
 .pid-sludge, .pid-sludge.pid-head { stroke: #fb923c; fill: #fb923c; }
 .pid-node.c1 .pid-box { stroke: #38bdf8; }
 .pid-node.c2 .pid-box { stroke: #22d3ee; }
