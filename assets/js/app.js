@@ -175,7 +175,7 @@
       targetDensity: document.getElementById("density").value ? num("density") : null,
       cycles: document.getElementById("cycles").value ? num("cycles") : null,
       fcr: document.getElementById("fcr").value ? num("fcr") : null,
-      recircTurns: num("turns", 12),
+      recircTurns: document.getElementById("turns").value ? num("turns") : null,
       makeupRate: num("makeup", 1) / 100,
       designTemp: document.getElementById("designTemp").value ? num("designTemp") : null,
       ambientTemp: document.getElementById("ambient").value ? num("ambient", 15) : 15,
@@ -216,8 +216,18 @@
 
   /* ---------------- 渲染：工艺参数 ---------------- */
   function metricCard(k, v, unit, sub, cls) {
+    const valStr = String(v ?? "");
+    const dispVal = valStr === "" ? "—" : v;
+    const isNumeric = /^-?[\d\s.,]+$/.test(valStr.replace(/\s/g, "")) && /\d/.test(valStr);
+    const fullText = valStr + (unit || "");
+    let fs = 27;
+    if (fullText.length > 16) fs = 15;
+    else if (fullText.length > 11) fs = 18;
+    else if (fullText.length > 7) fs = 22;
+    const wrapCls = isNumeric ? "v-nowrap" : "v-wrap";
+    const fsStyle = fs < 27 ? ` style="font-size:${fs}px"` : "";
     return `<div class="metric ${cls || ""}"><div class="k">${k}</div>
-      <div class="v">${v}${unit ? `<small>${unit}</small>` : ""}</div>${sub ? `<div class="sub">${sub}</div>` : ""}</div>`;
+      <div class="v ${wrapCls}"${fsStyle}>${v}${unit ? `<small>${unit}</small>` : ""}</div>${sub ? `<div class="sub">${sub}</div>` : ""}</div>`;
   }
   function section(title, badge, items) {
     return `<div class="section-title">${title}${badge ? `<span class="badge">${badge}</span>` : ""}</div>
@@ -245,7 +255,7 @@
       <div class="note" style="padding:6px 26px 0"><span class="ic">♻️</span>
       <div>反硝化：脱氮率 <b>${Math.round(wq.denit.removal * 100)}%</b>，NO₃-N 稳态 <b>${wq.no3N}</b> mg/L（以 N 计），需反硝化反应器容积约 <b>${wq.denit.volume}</b> m³（负荷 ${wq.denit.no3NLoadDaily} kg NO₃-N/天）。</div></div>
       ${wq.bioGrowth && wq.bioGrowth.available ? `<div class="note" style="padding:6px 26px 0"><span class="ic">🐟</span>
-      <div><b>鱼生长生物能学耦合（O12）</b>：热生长模型给出 SGR 上限 <b>${wq.bioGrowth.sgrTemp}%/d</b>（温度响应 ${wq.bioGrowth.tempResp}，最适 ${wq.bioGrowth.tempOpt}℃），最小养成 <b>${wq.bioGrowth.daysGrowMin}</b> 天/茬 → 生物最大 <b>${wq.bioGrowth.cyclesMax}</b> 茬/年、生物最大年产量 <b>${(wq.bioGrowth.annualMaxKg/1000).toFixed(1)}</b> t。${wq.bioGrowth.revision && wq.bioGrowth.revision.applied ? `<b style="color:#f59e0b">⚙️ 已自动反灌修订</b>：设计 ${wq.bioGrowth.revision.designCycles} 茬 &gt; 生物上限 ${wq.bioGrowth.revision.cyclesMax} 茬，池容放大 <b>${wq.bioGrowth.revision.volDeltaPct}%</b> 后按 <b>${wq.bioGrowth.revision.effectiveCycles}</b> 茬/年定容。` : `设定 <b>${wq.bioGrowth.cyclesAssumed}</b> 茬`}/目标 <b>${(wq.bioGrowth.annualTargetKg/1000).toFixed(1)}</b> t → <b style="color:${wq.bioGrowth.status==='ok'?'#38bdf8':wq.bioGrowth.status==='warn'?'#f59e0b':'#f87171'}">${wq.bioGrowth.status==='ok'?'生物可行':wq.bioGrowth.status==='warn'?'临界/偏紧':'不可行'}</b>。这是"设计水温↔产量吞吐"的生物约束，与 HVAC 能耗存在权衡。</div></div>` : ""}
+      <div><b>鱼生长生物能学耦合</b>：热生长模型给出 SGR 上限 <b>${wq.bioGrowth.sgrTemp}%/d</b>（温度响应 ${wq.bioGrowth.tempResp}，最适 ${wq.bioGrowth.tempOpt}℃），最小养成 <b>${wq.bioGrowth.daysGrowMin}</b> 天/茬 → 生物最大 <b>${wq.bioGrowth.cyclesMax}</b> 茬/年、生物最大年产量 <b>${(wq.bioGrowth.annualMaxKg/1000).toFixed(1)}</b> t。设定 <b>${wq.bioGrowth.cyclesAssumed}</b> 茬 / 目标 <b>${(wq.bioGrowth.annualTargetKg/1000).toFixed(1)}</b> t → <b style="color:${wq.bioGrowth.status==='ok'?'#38bdf8':wq.bioGrowth.status==='warn'?'#f59e0b':'#f87171'}">${wq.bioGrowth.status==='ok'?'生物可行':wq.bioGrowth.status==='warn'?'临界/偏紧':'不可行'}</b>。这是"设计水温↔产量吞吐"的生物约束，与 HVAC 能耗存在权衡。</div></div>` : ""}
       <div style="padding:0 26px 26px"><div class="note">
         <span class="ic">🔬</span>
         <div>稳态质量平衡校核：基于两段硝化（AOB/NOB）+ 反硝化 + 脱气塔 + 微滤机一阶去除，并叠加补水稀释与水源背景浓度，推算系统浓度，供设计可行性判断。溶氧按供氧能力（覆盖鱼代谢 + 硝化耗氧，余量 ${wq.o2Margin}%）闭环判定池内可达 <b>${wq.o2Achieved}</b> mg/L${wq.o2Deficit > 0.1 ? `（缺口 ${wq.o2Deficit} mg/L，供氧不足）` : ""}；数值为工程估算，运行需在线监测 DO/pH/TAN/CO₂ 并预留余量。</div></div></div>`;
@@ -520,9 +530,22 @@
         metricCard("单池尺寸", `Ø${c.tankD}`, `×${c.tankH}m`, `有效 ${c.singleTankVol} m³`),
         metricCard("总养殖水体", c.totalTankVol, "m³", `有效容积合计`, "brand"),
         metricCard("放养密度", c.density, "kg/m³", "设计生物量密度"),
-        metricCard("年养殖茬次", c.cycles, "茬", `有效容积年产 ${c.yieldPerM3Year} kg/m³${c.cyclesDesign && Math.abs(c.cyclesDesign - c.cycles) > 0.001 ? `（设计 ${c.cyclesDesign} 茬，已按生物上限修订）` : ""}`),
+        metricCard("年养殖茬次", c.cycles, "茬", `有效容积年产 ${c.yieldPerM3Year} kg/m³`),
         metricCard("实际产能", c.actualYield, "吨/年", "满足目标且有余量", "accent"),
+        metricCard("宽深比 D:H", c.tankDH, "", `圆池旋流自清约束 ≤5`, c.tankShape && c.tankShape.dhRevised ? "brand" : undefined),
+        metricCard("池底坡度", c.tankSlopePct, "%", `锥底集污坡 ≈1:${c.tankSlopePct ? Math.round(100 / c.tankSlopePct) : "—"}`),
+        metricCard("单池停留时间", c.hrtMin, "min", `推荐 ${c.tankHRTmin}–${c.tankHRTmax}min`, c.hrtStatus === "ok" ? undefined : "brand"),
+        metricCard("日循环次数", c.turns, "次/日", `${c.turnsSource === "auto" ? (c.turnsCapped ? "负荷反算·封顶" : "污染负荷反算") : c.turnsSource === "custom" ? "用户自定义" : "系统默认"}`, c.turnsSource === "auto" ? "brand" : undefined),
       ])}
+      <div style="padding:0 26px 6px"><div class="note ${c.hrtStatus === "ok" ? "" : "note-warn"}">
+        <span class="ic">🌀</span>
+        <div>
+          <div class="tk-title">养殖池水力结构</div>
+          <div class="tk-line">· <b>池型</b>：圆形"茶杯"池 <b>Ø${c.tankD}×${c.tankH}m</b>，宽深比 <b>${c.tankDH}</b>（≤5）。</div>
+          <div class="tk-line">· <b>自清机制</b>：切向进水形成旋流(forced vortex)，二次流将残饵粪便向池心 <b>${c.tankSlopePct}%</b> 锥底坡（≈1:${c.tankSlopePct ? Math.round(100 / c.tankSlopePct) : "—"}、中心坑深 ${c.coneDepth}m）富集，经中心底排一次性排出。</div>
+          <div class="tk-line">· <b>循环与停留</b>：日循环 <b>${c.turns} 次/日</b>（${(c.turnsSource === "auto" ? (c.turnsDriver === "co2" ? "由污染负荷反算（CO₂ 脱气主导）" : c.turnsDriver === "tss" ? "由污染负荷反算（悬浮物主导）" : c.turnsDriver === "hrt" ? `由良好刷新下限反算(HRT ${c.hrtTarget}min)` : "自动反算") : c.turnsSource === "custom" ? "用户自定义" : "知识库默认")}${c.turnsCapped ? "；⚠ 负荷超 HRT 包络上限，已封顶，建议提高补水率或增设处理单元" : ""}），单池水力停留 <b>${c.hrtMin} min</b>（推荐 ${c.tankHRTmin}–${c.tankHRTmax}min）${c.hrtStatus === "ok" ? "，溶氧/氨氮更新充分" : "，偏长/偏短，建议调整循环次数或分池"}。</div>
+          <div class="tk-line">· <b>流速与排水</b>：建议切向流速 <b>${c.tankShape ? c.tankShape.swirlTarget[0] : 15}–${c.tankShape ? c.tankShape.swirlTarget[1] : 30} cm/s</b>（自清动量 + 鱼福利）；推荐 Cornell 双排水——中心底排 5–20% 高浓度污物流直送微滤，侧排 80–95% 清洁水回生物滤池。</div>
+        </div></div></div>
       ${section("投喂与氮负荷", "Feed & N", [
         metricCard("饲料系数 FCR", f.fcr, "", "饲料/增重"),
         metricCard("年饲料量", (f.annualFeed/1000).toFixed(1), "吨", "全周期投喂总量"),
@@ -621,7 +644,7 @@
     host.className = "panel active glass";
     const c = d.culture, bf = d.biofilter, so = d.solids, ox = d.oxygen, hy = d.hydraulics;
     const rows = [
-      ["圆形养殖池", c.tankCount + " 个", `Ø${c.tankD} m × ${c.tankH} m，有效 ${c.singleTankVol} m³`, "PP/玻璃钢/混凝土"],
+      ["圆形养殖池", c.tankCount + " 个", `Ø${c.tankD} m × ${c.tankH} m（D:H ${c.tankDH}），锥底 ${c.tankSlopePct}%＋中心底排，有效 ${c.singleTankVol} m³`, "PP/玻璃钢/混凝土"],
       ["转鼓微滤机", so.units + " 台", `${so.screen} µm 筛网，单台 ${so.eachFlow} m³/h`, "不锈钢"],
       ["MBBR 生物滤池", bf.units + " 座", `总 ${bf.totalVol} m³，填料 ${bf.mediaFill*100}%`, "曝气+悬浮填料"],
       ["增氧系统", "1 套", `供氧 ${ox.o2Supply} kg/h（${ox.type}）`, "氧气锥+LHO"],
@@ -646,7 +669,7 @@
       rows.push(["臭氧氧化系统", "1 套", `投加量 0.02 g O₃/m³，接触消毒+NO₂氧化，含尾气破坏`, "不锈钢/耐臭氧"]);
     }
     host.innerHTML = `
-      <div class="section-title" style="padding:24px 26px 0">设备清单 (BOM)</div>
+      <div class="section-title" style="margin-top:24px">设备清单 (BOM)</div>
       <div class="table-wrap" style="padding:14px 26px 26px"><table class="data">
         <thead><tr><th>设备 / 单元</th><th class="num">数量</th><th>规格参数</th><th>材质 / 备注</th></tr></thead>
         <tbody>${rows.map(r => `<tr><td><b>${r[0]}</b></td><td class="num">${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join("")}</tbody>
@@ -713,7 +736,7 @@
       ["水费", e.opexWater], ["固废处置", e.opexSolids], ["碱度投加(NaHCO₃)", e.opexAlk], ["人工 (" + e.laborCount + " 人)", e.opexLabor], ["维护", e.opexMaint],
     ];
     host.innerHTML = `
-      <div class="section-title" style="padding:24px 26px 0;justify-content:space-between">投资估算 (CAPEX) · 各投资项可展开
+      <div class="section-title" style="margin-top:24px;justify-content:space-between">投资估算 (CAPEX) · 各投资项可展开
         <button type="button" class="link-btn" id="capToggleAll">展开全部</button></div>
       <div class="table-wrap" style="padding:14px 26px 6px"><table class="data">
         <thead><tr><th>投资项（含子项分解）</th><th class="num">金额</th></tr></thead>
@@ -721,12 +744,12 @@
         <tfoot><tr><td>合计 CAPEX</td><td class="num">${ec(e.capexTotal)}</td></tr></tfoot></table></div>
       <div class="note" style="padding:4px 26px 0"><span class="ic">📐</span>
       <div>总投资 = 直接费(设备+土建) + 间接费(EPCM 12% + 调试 4% + 不可预见 6% + 其他 3% = 直接费 25%，封顶上限) + 可选土地费。规模因子 <b>${e.scaleFactor}</b>：单位投资随年产量呈亚线性变化（六 tenths 法则），大规更省、小规更贵；各分项已按<b>固定/可变比例</b>拆分（规模因子仅作用于可变段）。选择地区后 CAPEX/电价/人工按<b>地区指数</b>调整。表中「直接费子项合计」「间接费子项合计」为各自分项小计（不含土地），二者合计即工程费；「合计 CAPEX」为计入土地后的总投资。</div></div>
-      <div class="section-title" style="padding:8px 26px 0">运营成本估算 (OPEX / 年)</div>
+      <div class="section-title" style="margin-top:8px">运营成本估算 (OPEX / 年)</div>
       <div class="table-wrap" style="padding:14px 26px 6px"><table class="data">
         <thead><tr><th>运营成本项</th><th class="num">金额 / 年</th></tr></thead>
         <tbody>${opRows.map(r => `<tr><td>${r[0]}</td><td class="num">${ec(r[1])}</td></tr>`).join("")}</tbody>
         <tfoot><tr><td>合计 OPEX</td><td class="num">${ec(e.opexTotal)}</td></tr></tfoot></table></div>
-      <div class="section-title" style="padding:8px 26px 0">设备维护费分项（按设备寿命）</div>
+      <div class="section-title" style="margin-top:8px">设备维护费分项（按设备寿命）</div>
       <div class="table-wrap" style="padding:14px 26px 6px"><table class="data">
         <thead><tr><th>设备项</th><th class="num">CAPEX</th><th class="num">年维护费</th><th class="num">寿命</th><th class="num">重置准备/年</th></tr></thead>
         <tbody>${(e.maintBreakdown || []).map((m) => `<tr><td>${m.label}</td><td class="num">${ec(m.capex)}</td><td class="num">${ec(m.annual)}</td><td class="num">${m.life} 年</td><td class="num">${ec(m.reserve)}</td></tr>`).join("")}</tbody>
@@ -740,7 +763,7 @@
         ${metricCard("规模因子", e.scaleFactor, "×", "单位投资因子", "accent")}
         ${metricCard("出塘尾数", e.harvestNum.toLocaleString(), "尾", "按商品规格")}
       </div>
-      <div class="section-title" style="padding:8px 26px 0">盈利能力与投资回报</div>
+      <div class="section-title" style="margin-top:8px">盈利能力与投资回报</div>
       <div class="metrics" style="padding:14px 26px 26px">
         ${metricCard("年营业收入", (e.revenue/10000).toFixed(1), "万元", "售价 "+e.salePrice+" 元/kg", "brand")}
         ${metricCard("年毛利", (e.grossProfit/10000).toFixed(1), "万元", "营收−运营", e.grossProfit>=0?"accent":"")}
@@ -749,9 +772,9 @@
         ${metricCard("年化 ROI", e.roi!=null?e.roi:"—", "%", "毛利/CAPEX")}
         ${metricCard("毛利率", e.marginRate!=null?e.marginRate:"—", "%", "毛利/营收")}
       </div>
-      <div class="section-title" style="padding:18px 26px 0">光伏投资分析 (PV)</div>
+      <div class="section-title" style="margin-top:18px">光伏投资分析 (PV)</div>
       ${renderPVPanel(d)}
-      <div class="section-title" style="padding:8px 26px 0">敏感度分析 (What-if · ±20%)</div>
+      <div class="section-title" style="margin-top:8px">敏感度分析 (What-if · ±20%)</div>
       <div class="sn-wrap" style="padding:14px 26px 8px">
         <div class="sn-ctrl">
           <label>分析指标</label>
@@ -765,13 +788,13 @@
         <div class="note" style="margin-top:10px"><span class="ic">🎯</span>
         <div>龙卷风图：固定其他因素，将每个驱动参数在基线 <b>±20%</b>（补水率 ±50%）间扰动，观察所选指标的变化幅度。条带越宽，该参数对结果越敏感——绿色为改善方向、红色为恶化方向。</div></div>
       </div>
-      <div class="section-title" style="padding:18px 26px 0">参数不确定性 · 蒙特卡洛区间</div>
+      <div class="section-title" style="margin-top:18px">参数不确定性 · 蒙特卡洛区间</div>
       <div style="padding:10px 26px 0;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <button id="mcRun" class="btn-lux">运行蒙特卡洛（2000 次）</button>
         <span class="muted" style="font-size:12px">对 MBBR 硝化速率 / 热泵 COP / 补水率等模型系数做三角分布抽样，输出成本与回收期 P10–P90 区间</span>
       </div>
       <div id="mcResult" style="padding:6px 26px 8px"></div>
-      <div class="section-title" style="padding:18px 26px 0">参数不确定性 · Sobol 主因子分析</div>
+      <div class="section-title" style="margin-top:18px">参数不确定性 · Sobol 主因子分析</div>
       <div style="padding:10px 26px 0;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <button id="sobolRun" class="btn-lux">运行 Sobol 主因子（N=1024）</button>
         <span class="muted" style="font-size:12px">Saltelli 方差分解：量化 8 个模型系数对各指标的一阶(S)与总阶(ST)贡献，ST−S 即交互效应，定位真正驱动结果方差的主导因子</span>
@@ -1186,7 +1209,7 @@
       <td>${i+1}</td><td>${t.yield} t</td><td>${E.rmb(t.capEx)}</td><td>${t.costPerKg} 元/kg</td>
       <td>${t.energy} kWh/kg</td><td>${Math.round(t.area)} m²</td><td>${t.vars.fcr}</td><td>${t.vars.sf}</td><td>${t.payback!=null?t.payback.toFixed(1):"—"} 年</td></tr>`).join("");
     host.innerHTML = `
-      <div class="section-title" style="padding:18px 26px 0">最优方案（共搜索 ${res.count} 个可行解）</div>
+      <div class="section-title" style="margin-top:18px">最优方案（共搜索 ${res.count} 个可行解）</div>
       <div class="metrics" style="padding:14px 26px">
         ${metricCard("决策变量", "—", "", varTxt)}
         ${metricCard("总投资 CAPEX", (b.economics.capexTotal/10000).toFixed(1), "万元", `Δ ${dCapex>=0?"+":""}${(dCapex/10000).toFixed(1)} 万元`, "brand")}
@@ -1197,7 +1220,7 @@
         ${metricCard("回收期", b.economics.paybackYears!=null?b.economics.paybackYears.toFixed(1):"—", "年", "含盈利估算")}
       </div>
       ${renderPareto(res)}
-      <div class="section-title" style="padding:8px 26px 0">候选方案 Top 6</div>
+      <div class="section-title" style="margin-top:8px">候选方案 Top 6</div>
       <div class="table-wrap" style="padding:14px 26px 26px"><table class="data">
         <thead><tr><th>#</th><th>产能</th><th>CAPEX</th><th>单位成本</th><th>比能耗</th><th>面积</th><th>FCR</th><th>安全系数</th><th>回收期</th></tr></thead>
         <tbody>${topRows}</tbody></table></div>
@@ -1236,7 +1259,7 @@
       <td>${p.costPerKg}</td><td>${Math.round(p.area)}</td><td>${p.fcr}</td><td>${p.sf}</td>
       <td>${p.payback != null ? p.payback.toFixed(1) : "—"} 年</td></tr>`).join("");
     return `
-      <div class="section-title" style="padding:18px 26px 0">成本-能耗 Pareto 前沿（${res.paretoCount} 个非支配解 / 共 ${res.count} 可行解）</div>
+      <div class="section-title" style="margin-top:18px">成本-能耗 Pareto 前沿（${res.paretoCount} 个非支配解 / 共 ${res.count} 可行解）</div>
       <div class="pareto-wrap" style="padding:14px 26px">
         <svg viewBox="0 0 ${W} ${H}" class="pareto-svg" preserveAspectRatio="xMidYMid meet">
           <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" class="pareto-axis"/>
@@ -1255,7 +1278,7 @@
         <div class="note" style="margin-top:8px"><span class="ic">📈</span>
         <div>${noteTxt}</div></div>
       </div>
-      <div class="section-title" style="padding:8px 26px 0">Pareto 前沿候选</div>
+      <div class="section-title" style="margin-top:8px">Pareto 前沿候选</div>
       <div class="table-wrap" style="padding:14px 26px 26px"><table class="data">
         <thead><tr><th>#</th><th>CAPEX</th><th>比能耗</th><th>单位成本</th><th>面积</th><th>FCR</th><th>安全系数</th><th>回收期</th></tr></thead>
         <tbody>${rows}</tbody></table></div>`;
@@ -1393,7 +1416,7 @@
       const dTxt = (typeof delta === "number") ? (delta > 0 ? "+" : "") + (Math.round(delta * 100) / 100) : "—";
       return `<tr><td>${m[0]}</td><td class="num">${m[2](va)}</td><td class="num">${m[2](vb)}</td><td class="num">${dTxt}</td></tr>`;
     }).join("");
-    host.innerHTML = `<div class="section-title" style="padding:8px 0 0">方案对比：${a.name} vs ${b.name}</div>
+    host.innerHTML = `<div class="section-title" style="margin-top:8px">方案对比：${a.name} vs ${b.name}</div>
       <div class="table-wrap" style="padding:12px 0 0"><table class="data">
         <thead><tr><th>指标</th><th class="num">${a.name}</th><th class="num">${b.name}</th><th class="num">Δ(B−A)</th></tr></thead>
         <tbody>${rows}</tbody></table></div>`;

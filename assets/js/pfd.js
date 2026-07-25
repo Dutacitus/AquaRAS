@@ -7,12 +7,28 @@
 window.RAS = window.RAS || {};
 
 RAS.pfd = (function () {
+  // 估算文本像素宽度（CJK 全宽、ASCII 半宽），用于判断是否需压缩以贴合方框
+  function estWidth(s, fs) {
+    let w = 0;
+    for (const ch of String(s)) {
+      const c = ch.codePointAt(0);
+      w += c > 0x2e80 ? fs : (c === 0x20 ? fs * 0.3 : fs * 0.55);
+    }
+    return w;
+  }
+  // 仅在文本估算宽度超过框内可用宽度时才返回需强制压缩到的宽度，否则返回 0（不压缩，保持自然间距）
+  function fitLen(s, fs, maxW) {
+    const ew = estWidth(s, fs);
+    return ew > maxW ? Math.max(24, Math.round(maxW)) : 0;
+  }
   function node(x, y, w, h, title, sub, cls, key) {
+    const tLen = fitLen(title, 14, w - 16);
+    const sLen = fitLen(sub, 11.5, w - 12);
     return `
       <g class="pfd-node ${cls || ""}" data-key="${key || ""}">
         <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="14" class="pfd-box" filter="url(#pfdShadow)"/>
-        <text x="${x + w / 2}" y="${y + h / 2 - 4}" class="pfd-title">${title}</text>
-        <text x="${x + w / 2}" y="${y + h / 2 + 14}" class="pfd-sub">${sub}</text>
+        <text x="${x + w / 2}" y="${y + h / 2 - 4}" class="pfd-title"${tLen ? ` textLength="${tLen}" lengthAdjust="spacingAndGlyphs"` : ""}>${title}</text>
+        <text x="${x + w / 2}" y="${y + h / 2 + 14}" class="pfd-sub"${sLen ? ` textLength="${sLen}" lengthAdjust="spacingAndGlyphs"` : ""}>${sub}</text>
       </g>`;
   }
   function arrow(x1, y1, x2, y2, cls) {

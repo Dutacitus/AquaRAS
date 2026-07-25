@@ -91,7 +91,7 @@
  */
 window.RAS_KNOWLEDGE = {
   meta: {
-    version: "1.22.1",
+    version: "1.24.0",
     title: "RAS 工艺设计知识库",
     dataAsOf: "2026",
     confidence: "中",
@@ -288,6 +288,15 @@ window.RAS_KNOWLEDGE = {
     // —— O12 v1.22.0 鱼生长生物能学耦合（热生长模型）全局参数 ——
     growthHandlingDays: 14,  // 每茬清塘/分级/消毒/再放养固定天数（非生长周期，计入茬次间隔）
     rationSatiationMax: 3.5, // %BW/d 饱食投喂率上限（投喂节律经验上限；所需投喂率超此值＝生长受料限制约、设定产量不可行）
+    // —— O13 v1.23.0 养殖池水力结构（流体力学最优圆池）全局参数 ——
+    // 圆形"茶杯"池：切向进水形成旋流(forced vortex)，二次流(Boyce/茶杯效应)把残饵粪便向池心底排富集实现自清。
+    tankDHmax: 5,        // 宽深比 D:H 上限（经典 RAS 圆池 3–5:1）；超限时旋流切向动量沿半径衰减过快→池心积污，故自动加深水深维持 D:H≤此值
+    tankSlopePct: 7,     // 池底锥形坡度 %(≈1:14)：把颗粒导向中心集污坑；<3%(1:33) 颗粒滞留腐败，>12% 土建/温度分层代价高，5–10% 最优（Cornell/Nofima）
+    tankHRTmin: 15,      // 单池水力停留时间下限(min)：过短则过流能耗高、鱼应激
+    tankHRTmax: 90,      // 单池水力停留时间上限(min)：过长则溶氧/氨氮/CO₂ 更新不足（可提高日循环次数 turns 或分池改善）
+    tankHRTtarget: 60,   // 目标单池水力停留时间(min)：路径A 默认日循环次数=round(1440/target) 反算依据；落 [15,90] 推荐区间偏长端更稳（溶氧/氨氮更新充分、能耗适中），recircTurnsAuto=true 时生效
+    swirlVelMin: 15,     // 目标切向旋流流速下限(cm/s)：兼顾自清动量与鱼群运动塑形（约 1 BL/s）
+    swirlVelMax: 30,     // 目标切向旋流流速上限(cm/s)：过高鱼耗能/应激（约 2 BL/s）
     denitRemoval: 0.85,  // 反硝化脱氮率（NO3-N 去除比例；现代 RAS 配生物脱氮典型 0.8–0.9）
     denitRate: 0.25,     // kg NO3-N / m³(反应器) / 天 — 异养反硝化容积负荷（设计值）
     // —— 碳酸盐体系 / pH / NH₃（v1.12.0）——
@@ -295,7 +304,7 @@ window.RAS_KNOWLEDGE = {
     alkProdDenit: 3.57, // kg 碱度(以CaCO₃计) / kg N：反硝化产碱 3.57 g/gN（以 CaCO₃ 计，每还原 1 mol NO₃-N 产生 1 mol 碱度）；M3 净耗碱 = 硝化耗 − 反硝化产
     alkTarget: 120,     // mg/L 目标操作碱度（RAS 常控 100–200，取中值 120；低于则硝化/鱼受抑）
     alkMin: 80,         // mg/L 碱度下限（<80 硝化明显受抑、pH 易崩）
-    phTarget: 7.2,      // 目标操作 pH（O10 v1.21.0 脱气需求反算用，略高于下限留安全余量）
+    phTarget: 7.2,      // 目标操作 pH（v1.21.0 脱气需求反算用，略高于下限留安全余量）
     pK1_25: 6.35,       // 碳酸一级解离常数 pK1（25℃ 淡水；引擎内按 temp/salinity 修正）
     pK2_25: 10.33,      // 碳酸二级解离常数 pK2（25℃ 淡水）
     pKaNH3_25: 9.25,    // NH₄⁺/NH₃ 离解常数 pKa（25℃；温度每升 1℃ 约降 0.03）
@@ -342,7 +351,7 @@ window.RAS_KNOWLEDGE = {
   // 输入默认值（v1.5.0 从引擎收回，集中管理用户未自定义时的回退值）
   defaults: {
     makeupRate: 0.0075,  // 默认补水率（占循环量；≈日换水 9%，真实 RAS 5–15%）
-    recircTurns: 12,     // 默认日循环次数
+    recircTurns: 24,     // 默认日循环次数（关 recircTurnsAuto 且用户未自定义时的回退值；自动模式下由 HRT 目标 60min 反算亦得 24）
     safety: 1.15,        // 默认安全系数
     // P0-4 水源背景浓度（mg/L，以 N 计）：计入稳态质量平衡，真实地表水/地下水含微量氨氮与硝酸盐
     // 用户可在表单覆盖（inputs.makeupBackground），引擎回退此默认值
@@ -394,8 +403,8 @@ window.RAS_KNOWLEDGE = {
     catfish:     { sgrMax: 3.2, tempOpt: 28, tempSigma: 7, tempMin: 18, stockingSize: 50 },   // 斑点叉尾鮰，暖水杂食
     eel:         { sgrMax: 2.0, tempOpt: 25, tempSigma: 6, tempMin: 15, stockingSize: 30 },   // 鳗鱼，温水
     grouper:     { sgrMax: 2.6, tempOpt: 28, tempSigma: 6, tempMin: 18, stockingSize: 50 },   // 石斑鱼，海水
-    yellowcroaker:{ sgrMax: 2.8, tempOpt: 24, tempSigma: 6, tempMin: 14, stockingSize: 40 },  // 大黄鱼，海水
-    tonguesole:  { sgrMax: 2.2, tempOpt: 21, tempSigma: 5, tempMin: 12, stockingSize: 50 },   // 半滑舌鳎，海水/半咸水
+    yellowCroaker:{ sgrMax: 2.8, tempOpt: 24, tempSigma: 6, tempMin: 14, stockingSize: 40 },  // 大黄鱼，海水
+    tongueSole:  { sgrMax: 2.2, tempOpt: 21, tempSigma: 5, tempMin: 12, stockingSize: 50 },   // 半滑舌鳎，海水/半咸水
   },
   species: {
     bass: {
@@ -781,7 +790,7 @@ window.RAS_KNOWLEDGE = {
       maintenanceRate: 0.04,// 维护占直接费比例/年（v1.3.0 基数由总投资改为直接费）
       elecPrice: 0.72,     // 元/kWh（2025 工商业均价,省际 0.63–0.77）
       solidsDisposalPrice: 0.35, // 元/kg 干固 — 污泥（脱水后）外运/堆肥/沼气的处置单价（v1.7.0 P1-4）
-      nahco3Price: 1.6,      // 元/kg 工业级小苏打(NaHCO₃)：碱度补充投加单价，2023–2025 均价（O15 v1.21.0）
+      nahco3Price: 1.6,      // 元/kg 工业级小苏打(NaHCO₃)：碱度补充投加单价，2023–2025 均价（v1.21.0）
     },
     // 财务模型（v1.15.0 M11）：投资评估与融资假设（纯模型系数，用户可在表单覆盖 finance 输入）
     finance: {

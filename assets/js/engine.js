@@ -27,9 +27,10 @@ RAS.engine = (function () {
   /*
    * 主计算函数
    * inputs: {
-   *   speciesKey, annualTons, targetDensity?, cycles?, recircTurns?,
-   *   makeupRate?, safety?, designTemp?, elecPrice?, autoReviseBio?
+   *   speciesKey, annualTons, targetDensity?, cycles?, recircTurns?, recircTurnsAuto?,
+   *   makeupRate?, safety?, designTemp?, elecPrice?, autoReviseBio?, enforceTankDH?
    * }  // autoReviseBio(默认 true)：设计茬次超生物最大茬次时自动反灌产量链扩大池容
+   *    // enforceTankDH(默认 true)：养殖池宽深比 D:H 超上限时自动加深水深(流体力学最优圆池)
    */
   function compute(inputs) {
     const sp = K.species[inputs.speciesKey] || K.species.bass;
@@ -53,14 +54,27 @@ RAS.engine = (function () {
     const annual = (inputs.annualTons != null ? inputs.annualTons : 100) * 1000; // kg/年（annualTons 缺省按 100t 计，避免下游 NaN 级联）
     const density = inputs.targetDensity || sp.stockingDensity;   // kg/m³
     const cycles = inputs.cycles || sp.cyclesPerYear;
-    const turns = inputs.recircTurns || K.defaults.recircTurns;       // 日循环次数
+    // —— v1.24.0 日循环次数：默认由污染负荷（稳态质量平衡）反算最佳值，保留用户自定义覆盖 ——
+    // recircTurnsAuto(默认 true)：未显式给定 recircTurns 时，在 §2 投喂/氮负荷算完后由 CO₂ 脱气、悬浮物两约束反演所需循环流量→turns，
+    // 取较大者并与"良好刷新下限(由 HRT 目标 60min→24)"取 max、夹在 HRT 包络 [16,96] 内（升级自 v1.23.1 的 HRT 目标启发式）；
+    // 显式给定 recircTurns 时优先(可覆盖)；关 auto 且未给定则回退知识库默认。TAN/DO 由生物滤池/增氧定容，不驱动 turns。
+    const recircTurnsAuto = inputs.recircTurnsAuto !== false;
+    const hrtTargetForTurns = K.process.tankHRTtarget != null ? K.process.tankHRTtarget : 60;
+    let turns, turnsSource, turnsDriver = null, turnsByCO2 = 0, turnsByTSS = 0, turnsCapped = false;
+    if (inputs.recircTurns != null && inputs.recircTurns > 0) {
+      turns = inputs.recircTurns; turnsSource = "custom";
+    } else if (recircTurnsAuto) {
+      turns = Math.max(1, Math.round(1440 / hrtTargetForTurns)); turnsSource = "auto";
+    } else {
+      turns = K.defaults.recircTurns; turnsSource = "default";
+    }
     const makeup = inputs.makeupRate != null && inputs.makeupRate > 0 ? inputs.makeupRate : K.defaults.makeupRate; // 补水率(占循环量)
     const sf = inputs.safety || K.defaults.safety;                 // 安全系数
     const temp = inputs.designTemp || sp.designTemp;
     const elec = inputs.elecPrice > 0 ? inputs.elecPrice : (K.economics.opex.elecPrice * regPower);
     const salePrice = inputs.salePrice && inputs.salePrice > 0 ? inputs.salePrice : (sp.marketPrice || K.economics.salePrice || 22);
 
-    // —— 0. 鱼生长生物能学（O12-ext v1.22.0+）：温度驱动的生物最大茬次，先于产量链以便反灌修订 ——
+    // —— 0. 鱼生长生物能学（v1.22.0+）：温度驱动的生物最大茬次，先于产量链以便反灌修订 ——
     // SGR(特定生长率, %/d) = sgrMax × exp(−0.5×((T−tempOpt)/tempSigma)²)；T≤tempMin 几乎不生长；据最小养成天数得生物最大茬次/年。
     // 该量只取决于设计水温与品种，与池容无关，故可先于 §1 产量链计算并反灌。
     const growthHandlingDays = K.process.growthHandlingDays != null ? K.process.growthHandlingDays : 14;
@@ -100,12 +114,34 @@ RAS.engine = (function () {
     else if (tankVolumeNeed < 1200) { tankD = 8; tankH = 1.5; }
     else if (tankVolumeNeed < 3000) { tankD = 10; tankH = 1.6; }
     else { tankD = 12; tankH = 1.8; }
+    // —— v1.23.0 养殖池水力结构（流体力学最优圆池）——
+    // 圆形"茶杯"池靠切向进水形成旋流(forced vortex)，二次流把颗粒污物向池心锥底集污坑富集经中心底排自清。
+    // 结构约束：① 宽深比 D:H ≤ 上限（旋流切向动量沿半径均匀，避免大扁池池心自清力不足积污）→ 超限自动加深水深；
+    // ② 锥形池底找坡至中心坑（坡度过缓颗粒滞留腐败）；③ 单池水力停留时间(HRT)校核（溶氧/氨氮/CO₂ 更新充分）。
+    const enforceTankDH = inputs.enforceTankDH !== false; // 默认开启；inputs.enforceTankDH=false 可关闭 D:H 加深修订
+    const tankDHmax = K.process.tankDHmax != null ? K.process.tankDHmax : 5;
+    const tankSlopePct = K.process.tankSlopePct != null ? K.process.tankSlopePct : 7;
+    const dhRaw = tankD / tankH;                                          // 分档初值宽深比
+    const tankShape = {
+      dhBefore: round(dhRaw, 2), dhRevised: false, tankHBefore: tankH,
+      swirlTarget: [K.process.swirlVelMin != null ? K.process.swirlVelMin : 15, K.process.swirlVelMax != null ? K.process.swirlVelMax : 30],
+    };
+    if (enforceTankDH && dhRaw > tankDHmax) {
+      tankH = round(tankD / tankDHmax, 1);                                // 加深水深使 D:H≈上限，维持旋流自清与均匀流速
+      tankShape.dhRevised = true;
+    }
+    const tankDH = round(tankD / tankH, 2);                              // 修订后宽深比
+    const coneDepth = round((tankD / 2) * (tankSlopePct / 100), 2);      // 锥底中心相对池壁下沉深度(m)=半径×坡度
     const singleTankVol = Math.PI * Math.pow(tankD / 2, 2) * tankH * 0.9;
     let tankCount = Math.ceil(tankVolumeNeed / singleTankVol);
     const cols = Math.ceil(Math.sqrt(tankCount));
     const rows = Math.ceil(tankCount / cols);
     tankCount = cols * rows;
     const totalTankVol = tankCount * singleTankVol;
+    // 单池水力停留时间(HRT)：系统日循环 turns 次 ⇒ 单池过流量=单池体积×turns/日 ⇒ HRT=1440/turns(min)（与配管比例一致）
+    const tankHRTmin = K.process.tankHRTmin != null ? K.process.tankHRTmin : 15;
+    const tankHRTmax = K.process.tankHRTmax != null ? K.process.tankHRTmax : 90;
+    let hrtMin, hrtStatus;   // 在 v1.24.0 负荷反算确定 turns 后再赋值（见下方 O14 块）
     const actualYield = density * effectiveCycles * totalTankVol;
 
     // —— 2. 投喂与氮负荷 ——
@@ -133,7 +169,49 @@ RAS.engine = (function () {
     const tanDaily = annualFeed * tanPerFeed / 365;
     const tanAnnual = annualFeed * tanPerFeed;
 
-    // —— 2.5 鱼生长生物能学耦合（O12 / O12-ext v1.22.0+）——
+    // ===== v1.24.0：由污染负荷（稳态质量平衡）反算最佳日循环次数 turns =====
+    // 在 §3 水力学/泵/能耗定容之前完成，使下游流量、设备台数、能耗随负荷对齐。
+    // 模型：各污染物稳态浓度 C = P /(Q·α + makeup·Q + 被动项)，反解所需循环流量 Q；
+    // 取 CO₂ 脱气 / 悬浮物 两约束的较大者为负荷所需 turns，再与"良好刷新下限(HRT 目标→24)"取 max，
+    // 并夹在 HRT 包络 [ceil(1440/90)=16, floor(1440/15)=96] 内。TAN/DO 由生物滤池/增氧定容，不驱动 turns。
+    if (recircTurnsAuto && turnsSource === "auto") {
+      const wqL = K.waterQuality;
+      const degL = K.equipment.degasser;
+      const oxL = K.equipment.oxygen;
+      const dfL = K.equipment.drumFilter;
+      const co2StripL = (K.process.co2Kla != null ? K.process.co2Kla : 0) * totalTankVol;
+      const co2StarL = K.process.co2Star != null ? K.process.co2Star : 0.5;
+      const o2PerFeedL = (sp.o2PerFeed || oxL.o2PerFeed || 1.0) * (K.process.o2FishCal != null ? K.process.o2FishCal : 1);
+      const q10O2L = K.process.q10O2 != null ? K.process.q10O2 : 2.0;
+      const o2RefTempL = K.process.o2RefTemp != null ? K.process.o2RefTemp : 25;
+      const o2PerFeedEffL = o2PerFeedL * Math.pow(q10O2L, (temp - o2RefTempL) / 10);
+      const o2DailyL = dailyFeedAvg * o2PerFeedEffL;
+      const co2ProdL = o2DailyL * (K.process.co2Ratio != null ? K.process.co2Ratio : 0) + tanDaily * (K.process.co2PerN != null ? K.process.co2PerN : 0);
+      const Nco2 = co2ProdL * 1000 + co2StripL * co2StarL;
+      const co2RemL = degL.co2Removal != null ? degL.co2Removal : 0.9;
+      const tssPerFeedL = K.process.tssPerFeed != null ? K.process.tssPerFeed : 0.05;
+      const tssDailyL = dailyFeedAvg * tssPerFeedL;
+      const tssRemL = 1 - (1 - dfL.tssRemoval) * (1 - (K.process.secondarySolidsCapture != null ? K.process.secondarySolidsCapture : 0)) * (1 - (foamFrac ? (skEq.fineTssCapture != null ? skEq.fineTssCapture : 0.35) : 0));
+      const Qco2 = Math.max(0, (Nco2 / wqL.co2Max - co2StripL) / (co2RemL + makeup));
+      const Qtss = Math.max(0, (tssDailyL * 1000 / wqL.ssMax) / (tssRemL + makeup));
+      turnsByCO2 = totalTankVol > 0 ? Qco2 / totalTankVol : 0;
+      turnsByTSS = totalTankVol > 0 ? Qtss / totalTankVol : 0;
+      const turnsEnvLow = Math.ceil(1440 / tankHRTmax);    // HRT ≤ tankHRTmax
+      const turnsEnvHigh = Math.floor(1440 / tankHRTmin);  // HRT ≥ tankHRTmin
+      const turnsFloor = Math.max(turnsEnvLow, Math.round(1440 / hrtTargetForTurns));
+      const rawLoad = Math.max(turnsByCO2, turnsByTSS);
+      let driver = turnsByCO2 >= turnsByTSS ? "co2" : "tss";
+      let turnsLoad = rawLoad;
+      if (rawLoad <= turnsFloor) { turnsLoad = turnsFloor; driver = "hrt"; }
+      turnsCapped = rawLoad > turnsEnvHigh;
+      turns = Math.min(turnsEnvHigh, Math.max(turnsEnvLow, Math.ceil(turnsLoad)));
+      turnsSource = "auto";
+      turnsDriver = driver;
+    }
+    hrtMin = round(1440 / turns, 1);
+    hrtStatus = (hrtMin >= tankHRTmin && hrtMin <= tankHRTmax) ? "ok" : "warn";
+
+    // —— 2.5 鱼生长生物能学耦合（v1.22.0+）——
     // 复用 §0 已算的 bioMax(温度驱动 SGR 上限 → 最小养成天数 → 生物最大茬次/年产量)，与设定目标交叉校验。
     // O12-ext 已把 cyclesMax 反灌产量链自动修订池容，故此处 annualMax 基于修订后 totalTankVol，修订后一般转为可行。
     const rationSatiationMax = K.process.rationSatiationMax != null ? K.process.rationSatiationMax : 3.5; // %BW/d
@@ -493,7 +571,7 @@ RAS.engine = (function () {
       opexMaint += ann;
       maintBreakdown.push({ key: row.key, label: row.label, annual: ann, life: life, reserve: row.total / life, capex: row.total });
     });
-    // 9.3.5 碱度投加成本（O15 v1.21.0）：与下游水质稳态块同口径，先行核算 NaHCO₃ 年耗以并入 OPEX
+    // 9.3.5 碱度投加成本（v1.21.0）：与下游水质稳态块同口径，先行核算 NaHCO₃ 年耗以并入 OPEX
     const bgAlkO = (inputs.makeupBackground && inputs.makeupBackground.alk != null) ? inputs.makeupBackground.alk
                  : (K.defaults.makeupBackground && K.defaults.makeupBackground.alk != null ? K.defaults.makeupBackground.alk : 150);
     const alkPerNO = K.process.alkPerN != null ? K.process.alkPerN : 7.14;
@@ -655,7 +733,7 @@ RAS.engine = (function () {
     const phTarget = K.process.phTarget != null ? K.process.phTarget : 7.2;
     const co2RemovalReq = co2RemovalForPh(phTarget, cAlkSys, temp, matlFactor, K, co2Prod, co2Star, recircFlow, makeupFlow, co2StripFlow);
 
-    // 3) pH→硝化速率折减（O3：对称 pH 响应——低 pH(<7) 与高 pH(>pHopt≈8) 双向抑制 AOB/NOB）
+    // 3) pH→硝化速率折减（对称 pH 响应——低 pH(<7) 与高 pH(>pHopt≈8) 双向抑制 AOB/NOB）
     const phLow = pH >= 7.0 ? 1.0 : Math.max(0.2, Math.pow(0.85, (7.0 - pH) / 0.1));
     const pHopt = bf.pHopt != null ? bf.pHopt : 8.0;
     const pHhighDecay = bf.pHhighDecay != null ? bf.pHhighDecay : 0.7;
@@ -762,7 +840,7 @@ RAS.engine = (function () {
     const checks = [
       { key: "tan", name: "总氨氮 TAN", value: round(cTan, 2), unit: "mg/L", limit: tanHard, status: st(cTan, tanHard, tanHard * 1.5, true), note: "AOB 亚硝化 + 补水稀释" },
       { key: "no2", name: "亚硝态氮 NO₂", value: round(cNo2eff, 2), unit: "mg/L", limit: no2Hard, status: st(cNo2eff, no2Hard, no2Hard * 1.5, true), note: no2OxidizeFrac > 0 ? `NOB 硝化(NO₂→NO₃)${ozoneOn ? ` + 臭氧氧化削减 ${Math.round(no2OxidizeFrac * 100)}%` : ""}` : "NOB 硝化(NO₂→NO₃)，速率高于 AOB" },
-      { key: "salr", name: "生物滤池面积负荷 SALR", value: round(salr, 2), unit: "g TAN/m²·天", limit: `≤${salrMax}（经济 ${salrRef}）`, status: salrStatus, note: `填料体积 ${round(mediaVol, 1)} m³ × 比表面积 ${carrierSA} m²/m³ = ${round(mediaVol * carrierSA, 0)} m²；TAN 日负荷 ${round(tanDaily * 1000, 0)} g/天（O1 比表面积负荷校验，对照 Frontiers 2023 MBBR 经验）` },
+      { key: "salr", name: "生物滤池面积负荷 SALR", value: round(salr, 2), unit: "g TAN/m²·天", limit: `≤${salrMax}（经济 ${salrRef}）`, status: salrStatus, note: `填料体积 ${round(mediaVol, 1)} m³ × 比表面积 ${carrierSA} m²/m³ = ${round(mediaVol * carrierSA, 0)} m²；TAN 日负荷 ${round(tanDaily * 1000, 0)} g/天（对照 Frontiers 2023 MBBR 经验）` },
       { key: "no3", name: "硝态氮 NO₃-N", value: round(no3Nmg, 1), unit: "mg/L（以 N 计）", limit: 300, status: st(no3Nmg, 300, wq.no3SoftCap, true), note: denitRemoval > 0 ? `反硝化脱除 ${Math.round(denitRemoval * 100)}%，剩余随补水交换` : "仅随补水交换，需排换水或反硝化" },
       { key: "co2", name: "二氧化碳 CO₂", value: round(cCo2, 1), unit: "mg/L", limit: wq.co2Max * 2, status: st(cCo2, wq.co2Max * 2, wq.co2Max, true), note: `脱气塔脱除 ${round(co2Stripped, 1)} kg/天 + 开放水面天然挥发 ~${round(co2Natural, 1)} kg/天 + 补水稀释` },
       { key: "alk", name: "碱度(以CaCO₃计)", value: round(cAlkSys, 0), unit: "mg/L", limit: alkMin, status: (nahco3PerKgFish > 1.5 || cAlkSys < alkMin) ? "fail" : (nahco3PerKgFish > 0.8 || (doseM === 0 && cAlkSys < alkTarget)) ? "warn" : "ok", note: doseM > 0 ? `需投加 NaHCO₃ ${round(nahco3Day, 1)} kg/天(≈${round(nahco3PerKgFish, 3)} kg/kg鱼)` : "源水碱度充足，无需投加" },
@@ -773,6 +851,11 @@ RAS.engine = (function () {
       { key: "doc", name: "溶解有机碳 DOC", value: round(cDoc, 1), unit: "mg/L", limit: wq.docSoftCap, status: cDoc > wq.docMax ? "fail" : (cDoc > wq.docSoftCap ? "warn" : "ok"), note: `泡沫分离 ${docFoam > 0 ? Math.round(docFoam * 100) + "%" : "(未配)"} + 臭氧 ${docOz > 0 ? Math.round(docOz * 100) + "%" : "(未配)"} 串联去除${docSynergy > 1 ? `（臭氧协同 ζ=${docSynergy.toFixed(2)}，skimmer 有效 DOC 去除提至 ${Math.round(docFoamEff * 100)}%）` : ""}` },
       { key: "disinfection", name: "主动消毒(生物安保)", value: round(disinfectLog, 1), unit: "LOG", limit: dLogTarget, status: disinfectStatus, note: `UV ${uvOn ? (uvEq.dose != null ? uvEq.dose : 30) + "mJ/cm²" : "关"} / 臭氧 ${ozoneOn ? (ozEq.dose != null ? ozEq.dose : 0.02) + "g/m³" : "关"} 对数灭活` },
       { key: "do", name: "有效溶氧 DO", value: round(effectiveDo, 1), unit: "mg/L", limit: doMinV, status: effDoDeficit > 0.1 ? "fail" : "ok", note: "池内实测 " + round(o2Achieved, 1) + " mg/L" + (co2DoePenalty > 0 ? "；高 CO₂(" + round(cCo2, 1) + " mg/L)经 Bohr 效应折减 " + Math.round(co2DoePenalty * 100) + "%→有效 " + round(effectiveDo, 1) : "") +         "；供氧余量 " + round(o2Margin, 0) + "%" },
+      { key: "tankHydro", name: "养殖池水力结构", value: hrtMin, unit: "min 单池HRT",
+        limit: `D:H ${tankDH}(≤${tankDHmax})；HRT 宜 ${tankHRTmin}–${tankHRTmax}min`,
+        status: hrtStatus,
+        note: `单池 HRT ${hrtMin}min（推荐 ${tankHRTmin}–${tankHRTmax}min，${hrtStatus === "ok" ? "达标" : "偏离，建议调整循环次数或分池"}）；日循环 ${turns} 次/日（${turnsSource === "auto" ? (turnsDriver === "co2" ? "CO₂ 脱气主导" : turnsDriver === "tss" ? "悬浮物主导" : "负荷反算") : turnsSource === "custom" ? "用户自定义" : "系统默认"}${turnsCapped ? "，⚠ 已封顶 96 次/日" : ""}）。池型与自清机制详见「养殖池系统」说明。`,
+      },
     ];
 
     // O12 v1.22.0 鱼生长生物能学耦合校验：将生物可行产量上限与设计目标交叉呈现
@@ -782,7 +865,7 @@ RAS.engine = (function () {
         value: bioGrowth.cyclesMax, unit: "茬/年 生物最大",
         limit: `设定 ${bioGrowth.cyclesAssumed} 茬；目标 ${round(bioGrowth.annualTargetKg / 1000, 1)}t ≤ 生物最大 ${round(bioGrowth.annualMaxKg / 1000, 1)}t`,
         status: bioGrowth.status,
-        note: `设计水温 ${Math.round(temp)}℃ 下 SGR 上限 ${bioGrowth.sgrTemp}%/d（温度响应 ${bioGrowth.tempResp}，最适 ${bioGrowth.tempOpt}℃）；养成 ${bioGrowth.daysGrowMin} 天/茬 → 生物最大 ${bioGrowth.cyclesMax} 茬/年。${bioGrowth.revision && bioGrowth.revision.applied ? `⚙️ 已自动反灌修订：设计 ${bioGrowth.revision.designCycles} 茬 > 生物上限 ${bioGrowth.revision.cyclesMax} 茬，池容放大 ${bioGrowth.revision.volDeltaPct}% 后按 ${bioGrowth.revision.effectiveCycles} 茬/年定容。` : ""}投喂率 ${bioGrowth.rationBW}%BW${bioGrowth.overFeed ? " ⚠超饱食上限 " + bioGrowth.rationSatiationMax + "%（料限制约）" : " 在饱食范围内"}。${bioGrowth.status === "ok" ? "目标产量生物可行" : (bioGrowth.status === "warn" ? "临界（接近生物上限，建议升温或下调目标）" : "超出生物可行上限，需升温或下调目标")}`,
+        note: `设计水温 ${Math.round(temp)}℃ 下 SGR 上限 ${bioGrowth.sgrTemp}%/d（温度响应 ${bioGrowth.tempResp}，最适 ${bioGrowth.tempOpt}℃）；养成 ${bioGrowth.daysGrowMin} 天/茬 → 生物最大 ${bioGrowth.cyclesMax} 茬/年。投喂率 ${bioGrowth.rationBW}%BW${bioGrowth.overFeed ? " ⚠超饱食上限 " + bioGrowth.rationSatiationMax + "%（料限制约）" : " 在饱食范围内"}。${bioGrowth.status === "ok" ? "目标产量生物可行" : (bioGrowth.status === "warn" ? "临界（接近生物上限，建议升温或下调目标）" : "超出生物可行上限，需升温或下调目标")}`,
       });
     }
     // P1-2 尾水排放污染物浓度（v1.13.8，对照 DB44/2462-2024 合规）：稳态质量平衡推算排放口浓度（与循环水同浓度）
@@ -866,6 +949,12 @@ RAS.engine = (function () {
         actualYield: round(actualYield / 1000, 1),
         density, cycles: round(effectiveCycles, 2), cyclesDesign: round(cycles, 2),
         yieldPerM3Year: round(density * effectiveCycles),
+        // 养殖池水力结构
+        tankDH, tankSlopePct, coneDepth,
+        hrtMin, hrtStatus, tankHRTmin, tankHRTmax,
+        turns, turnsSource, hrtTarget: hrtTargetForTurns,
+        turnsDriver, turnsByCO2: round(turnsByCO2, 1), turnsByTSS: round(turnsByTSS, 1), turnsCapped,
+        tankShape,
       },
       feeding: {
         fcr, annualFeed: round(annualFeed),

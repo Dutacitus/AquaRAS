@@ -7,13 +7,28 @@
 window.RAS = window.RAS || {};
 
 RAS.pid = (function () {
+  // 估算文本像素宽度（CJK 全宽、ASCII 半宽），用于判断是否需压缩以贴合方框
+  function estWidth(s, fs) {
+    let w = 0;
+    for (const ch of String(s)) {
+      const c = ch.codePointAt(0);
+      w += c > 0x2e80 ? fs : (c === 0x20 ? fs * 0.3 : fs * 0.55);
+    }
+    return w;
+  }
+  function fitLen(s, fs, maxW) {
+    const ew = estWidth(s, fs);
+    return ew > maxW ? Math.max(24, Math.round(maxW)) : 0;
+  }
   function equip(x, y, w, h, tag, title, sub, cls, key) {
+    const tLen = fitLen(title, 14, w - 16);
+    const sLen = fitLen(sub, 11.5, w - 12);
     return `
       <g class="pid-node ${cls || ""}" data-key="${key || ""}">
         <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="14" class="pid-box" filter="url(#pidShadow)"/>
         <text x="${x + w / 2}" y="${y + 20}" class="pid-tag">${tag}</text>
-        <text x="${x + w / 2}" y="${y + h / 2 + 6}" class="pid-title">${title}</text>
-        <text x="${x + w / 2}" y="${y + h / 2 + 24}" class="pid-sub">${sub}</text>
+        <text x="${x + w / 2}" y="${y + h / 2 + 6}" class="pid-title"${tLen ? ` textLength="${tLen}" lengthAdjust="spacingAndGlyphs"` : ""}>${title}</text>
+        <text x="${x + w / 2}" y="${y + h / 2 + 24}" class="pid-sub"${sLen ? ` textLength="${sLen}" lengthAdjust="spacingAndGlyphs"` : ""}>${sub}</text>
       </g>`;
   }
   // 仪表：labelPos 'bottom'(默认) 或 'right'(标签右侧，避免与下方气泡重叠)
@@ -96,6 +111,8 @@ RAS.pid = (function () {
 
     const yBus = 472;                     // 信号总线 y
     const dcsX = 300, dcsY = 512, dcsW = W - 300 - 80, dcsH = 70;
+    const dcsLine1 = `控制回路：LIC 液位→FV-01 · AIC 溶氧→氧染 · TIC 温度→HE-01 · FIC 流量→P-01 · AIC 硝酸氮→碳源投加(DN-01)`;
+    const dcsLine2 = `联锁：LSH-01 高液位停泵 · DO 低于 ${d.species.doMin} 报警 · 备用纯氧 / 发电机自启`;
     const railX = 52, railBusX = 106;     // 仪表轨中心 & 轨内竖母线 x
     const dcsEntryX = 340;                // 总线进入 DCS 的 x
     const instYs = [104, 158, 212, 266, 320, 374, 428, 484];
@@ -201,8 +218,8 @@ RAS.pid = (function () {
       <g class="pid-dcs" filter="url(#pidShadow)">
         <rect x="${dcsX}" y="${dcsY}" width="${dcsW}" height="${dcsH}" rx="14" class="pid-box c8"/>
         <text x="${dcsX + 18}" y="${dcsY + 24}" class="pid-title left">集中控制系统 (PLC / DCS)</text>
-        <text x="${dcsX + 18}" y="${dcsY + 44}" class="pid-sub left">控制回路：LIC 液位→FV-01 · AIC 溶氧→氧锥 · TIC 温度→HE-01 · FIC 流量→P-01 · AIC 硝酸氮→碳源投加(DN-01)</text>
-        <text x="${dcsX + 18}" y="${dcsY + 62}" class="pid-sub left">联锁：LSH-01 高液位停泵 · DO 低于 ${d.species.doMin} 报警 · 备用纯氧 / 发电机自启</text>
+        <text x="${dcsX + 18}" y="${dcsY + 44}" class="pid-sub left"${fitLen(dcsLine1, 11.5, dcsW - 40) ? ` textLength="${fitLen(dcsLine1, 11.5, dcsW - 40)}" lengthAdjust="spacingAndGlyphs"` : ""}>${dcsLine1}</text>
+        <text x="${dcsX + 18}" y="${dcsY + 62}" class="pid-sub left"${fitLen(dcsLine2, 11.5, dcsW - 40) ? ` textLength="${fitLen(dcsLine2, 11.5, dcsW - 40)}" lengthAdjust="spacingAndGlyphs"` : ""}>${dcsLine2}</text>
       </g>
       <!-- 控制信号(DCS→FV-01，正交阶梯) -->
       ${ortho([[dcsX + dcsW - 40, dcsY], [dcsX + dcsW - 40, 372], [lastColCx, 372]], "pid-control")}
