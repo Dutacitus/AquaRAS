@@ -177,6 +177,11 @@ function mergePrivate(kb) {
     kb.economics = kb.economics || {};
     kb.economics.capexCalibration = PRIVATE.capexCalibration;
   }
+  if (PRIVATE.priceMeta !== undefined) {
+    kb.economics = kb.economics || {};
+    kb.economics.priceMeta = kb.economics.priceMeta || {};
+    if (PRIVATE.priceMeta.note !== undefined) kb.economics.priceMeta.note = PRIVATE.priceMeta.note;
+  }
   return kb;
 }
 

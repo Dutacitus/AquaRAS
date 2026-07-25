@@ -624,7 +624,7 @@
       ${renderTailwater(d)}
       <div style="padding:0 26px 26px"><div class="note">
         <span class="ic">⚠️</span>
-        <div><b>设计说明：</b>生物滤池硝化负荷已含水温折减与安全系数 ${d.inputs.sf}。需配置备用发电机、备用纯氧、在线监测（DO/pH/TAN/温度）与自动化控制，确保水质阈值 ${K.waterQuality.tanMax} mg/L TAN、DO>${K.waterQuality.doMin} mg/L。</div></div></div>`;
+        <div><b>设计说明：</b>生物滤池硝化负荷已含水温折减与安全系数 ${d.inputs.sf}。需配置备用发电机、备用纯氧、在线监测（DO/pH/TAN/温度）与自动化控制，确保满足 AquaRAS 设计水质阈值（TAN、DO 等，具体限值见管理员视图「设计计算书」）。</div></div></div>`;
     const twSel = document.getElementById("dischargeLevel");
     if (twSel) twSel.addEventListener("change", () => compute());
     const twTechSel = document.getElementById("tailwaterTech");
@@ -680,13 +680,13 @@
     const pv = d.economics && d.economics.pv;
     if (!pv || !pv.enabled) {
       return `<div class="note" style="padding:10px 26px 24px"><span class="ic">☀️</span>
-        <div>未启用光伏。在设计输入「光伏投资」中填写<b>光伏装机容量</b>或<b>光伏覆盖比例</b>即可接入光伏投资模块：自动计算年发电量、自发自用/余电上网、节省电费与回收期/IRR，并并入项目 CAPEX 与运营成本。模型系数（造价 3.65 元/W、等效小时 1100h、运维 0.06 元/kWh）来自 2026 中国工商业分布式光伏共识。</div></div>`;
+        <div>未启用光伏。在设计输入「光伏投资」中填写<b>光伏装机容量</b>或<b>光伏覆盖比例</b>即可接入光伏投资模块：自动计算年发电量、自发自用/余电上网、节省电费与回收期/IRR，并并入项目 CAPEX 与运营成本。光伏模型系数（造价 / 等效小时 / 运维单价等）经市场共识校准，具体数值属 AquaRAS 商业机密，详见管理员视图。</div></div>`;
     }
     const ec = E.rmb;
     const rows = [
       ["装机容量", pv.kWp, "kWp", "光伏阵列峰值"],
       ["储能配置", pv.batteryKWh, "kWh", pv.batteryKWh > 0 ? "提升自用率" : "未配储"],
-      ["年发电量", (pv.annualGenKwh / 1000).toFixed(0), "MWh", "等效小时 1100h"],
+      ["年发电量", (pv.annualGenKwh / 1000).toFixed(0), "MWh", "等效小时"],
       ["自发自用", (pv.selfKwh / 1000).toFixed(0), "MWh", "自用率 " + (pv.selfUseRatio * 100).toFixed(1) + "%"],
       ["余电上网", (pv.exportKwh / 1000).toFixed(0), "MWh", "上网电价 0.35 元/kWh"],
     ];
@@ -743,7 +743,7 @@
         <tbody>${capRows}</tbody>
         <tfoot><tr><td>合计 CAPEX</td><td class="num">${ec(e.capexTotal)}</td></tr></tfoot></table></div>
       <div class="note" style="padding:4px 26px 0"><span class="ic">📐</span>
-      <div>总投资 = 直接费(设备+土建) + 间接费(EPCM 12% + 调试 4% + 不可预见 6% + 其他 3% = 直接费 25%，封顶上限) + 可选土地费。规模因子 <b>${e.scaleFactor}</b>：单位投资随年产量呈亚线性变化（六 tenths 法则），大规更省、小规更贵；各分项已按<b>固定/可变比例</b>拆分（规模因子仅作用于可变段）。选择地区后 CAPEX/电价/人工按<b>地区指数</b>调整。表中「直接费子项合计」「间接费子项合计」为各自分项小计（不含土地），二者合计即工程费；「合计 CAPEX」为计入土地后的总投资。</div></div>
+      <div>总投资 = 直接费(设备+土建) + 间接费(EPCM / 调试 / 不可预见 / 其他，设封顶上限) + 可选土地费。规模因子 <b>${e.scaleFactor}</b>：单位投资随年产量呈亚线性变化（规模经济幂律），大规更省、小规更贵；各分项已按<b>固定/可变比例</b>拆分（规模因子仅作用于可变段）。选择地区后 CAPEX/电价/人工按<b>地区指数</b>调整。表中「直接费子项合计」「间接费子项合计」为各自分项小计（不含土地），二者合计即工程费；「合计 CAPEX」为计入土地后的总投资。具体费率与规模指数属 AquaRAS 商业机密，详见管理员视图「设计计算书」。</div></div>
       <div class="section-title" style="margin-top:8px">运营成本估算 (OPEX / 年)</div>
       <div class="table-wrap" style="padding:14px 26px 6px"><table class="data">
         <thead><tr><th>运营成本项</th><th class="num">金额 / 年</th></tr></thead>
