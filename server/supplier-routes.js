@@ -11,11 +11,21 @@
 const express = require("express");
 const router = express.Router();
 const db = require("./db");
-const { requireAdmin, isAdminReq } = require("./auth");
+const { requireAdmin, isAdminReq, ADMIN_PASSWORD } = require("./auth");
 const logger = require("./logger");
+const rateLimit = require("express-rate-limit");
+
+// 密码验证端点严格限流：10 分钟内每 IP 最多 5 次，防止被当作密码试错/确认神谕
+const verifyLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, error: "密码验证尝试过于频繁，请 10 分钟后再试" },
+});
 
 /* ========== 验证管理员密码 ========== */
-router.post("/admin/verify", (req, res) => {
+router.post("/admin/verify", verifyLimiter, (req, res) => {
   const { password } = req.body || {};
   if (password === ADMIN_PASSWORD) {
     return res.json({ ok: true });

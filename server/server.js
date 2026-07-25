@@ -39,7 +39,15 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ---- 中间件 ----
-app.use(cors());                             // 允许跨域（前端可不同端口）
+// 跨域限制：默认完全不开启 CORS（同源访问无需跨域头，浏览器同源策略即可拦截跨域）；
+// 仅在设置了环境变量 CORS_ORIGINS 时才按白名单放行（逗号分隔，例如
+// https://your.github.io,http://localhost:3000）。注意：cors 包在 origin 为 false 时
+// 会回退为 "*"，因此这里用"条件挂载"实现真正的默认拒绝。
+const allowedCorsOrigins = (process.env.CORS_ORIGINS || "")
+  .split(",").map((s) => s.trim()).filter(Boolean);
+if (allowedCorsOrigins.length) {
+  app.use(cors({ origin: allowedCorsOrigins }));
+}
 app.use(express.json({ limit: "5mb" }));    // 解析 JSON body（支持大方案 result）
 
 // ---- 请求日志 ----

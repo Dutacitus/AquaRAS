@@ -56,7 +56,7 @@ router.get("/leaves/:category", (req, res) => {
 });
 
 // 导出合并后的完整知识库
-router.get("/export", (_req, res) => {
+router.get("/export", requireAdmin, (_req, res) => {
   try {
     const overrides = db.listKnowledgeOverrides();
     const merged = applyOverrides(overrides);
@@ -68,7 +68,7 @@ router.get("/export", (_req, res) => {
 });
 
 // 审计日志
-router.get("/audit", (req, res) => {
+router.get("/audit", requireAdmin, (req, res) => {
   try {
     const { category, limit } = req.query;
     const rows = db.listKnowledgeAudit(category || null, parseInt(limit) || 100);

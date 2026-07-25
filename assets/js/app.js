@@ -2252,7 +2252,9 @@
   async function loadKBAudit(category) {
     try {
       const BASE = cloud.getBase();
-      const res = await fetch(BASE + "/api/knowledge/audit?category=" + encodeURIComponent(category) + "&limit=20");
+      const tk = localStorage.getItem("ras_admin_token") || "";
+      const res = await fetch(BASE + "/api/knowledge/audit?category=" + encodeURIComponent(category) + "&limit=20",
+        tk ? { headers: { "x-admin-token": tk } } : {});
       if (!res.ok) return;
       const rows = await res.json();
       const list = document.getElementById("kbAuditList");
@@ -2290,7 +2292,9 @@
   async function loadKnowledgeOverrides() {
     try {
       const BASE = cloud.getBase();
-      const res = await fetch(BASE + "/api/knowledge/export");
+      const tk = localStorage.getItem("ras_admin_token") || "";
+      const res = await fetch(BASE + "/api/knowledge/export",
+        tk ? { headers: { "x-admin-token": tk } } : {});
       if (!res.ok) return;
       const merged = await res.json();
       // 将合并后的知识库应用到全局

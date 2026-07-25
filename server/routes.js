@@ -11,7 +11,7 @@ const { requireAdmin } = require("./auth");
 const logger = require("./logger");
 
 /* ========== LIST（公开） ========== */
-router.get("/", (_req, res) => {
+router.get("/", requireAdmin, (_req, res) => {
   try {
     const items = db.list();
     res.json(items);
@@ -22,7 +22,7 @@ router.get("/", (_req, res) => {
 });
 
 /* ========== GET by ID（公开） ========== */
-router.get("/:id", (req, res) => {
+router.get("/:id", requireAdmin, (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) return res.status(400).json({ error: "无效的 id" });
