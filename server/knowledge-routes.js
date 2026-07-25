@@ -1,7 +1,8 @@
 /*
  * AquaRAS 知识库路由 — /api/knowledge
- *   GET    /categories              — 类别列表（含覆盖统计）
- *   GET    /leaves/:category         — 获取某类别的所有叶子参数（含当前覆盖值）
+ *   GET    /categories              — 类别列表（含覆盖统计，仅元数据，无数值）
+ *   GET    /leaves/:category         — 获取某类别的所有叶子参数（含当前覆盖值）【管理员】
+ *   GET    /full                    — 面向管理员的完整知识库（含私有 IP 叙述）【管理员】
  *   GET    /overrides               — 列表所有覆盖值
  *   PUT    /overrides               — 批量保存覆盖值 { category, overrides: [{item_key, value, value_type, notes}] }
  *   POST   /reset                   — 重置覆盖值（body: { category } 或 {} 全部重置）
@@ -11,13 +12,13 @@
 const express = require("express");
 const router = express.Router();
 const db = require("./db");
-const { getCategoryList, getCategoryLeaves, applyOverrides, getBase } = require("./knowledge-merge");
+const { getCategoryList, getCategoryLeaves, applyOverrides, getBase, getFull } = require("./knowledge-merge");
 const { requireAdmin } = require("./auth");
 const logger = require("./logger");
 
-/* ===== 读取操作（公开） ===== */
+/* ===== 读取操作 ===== */
 
-// 类别列表
+// 类别列表（仅元数据/描述，不含任何数值系数，可公开用于知识库管理面板导航）
 router.get("/categories", (_req, res) => {
   try {
     const cats = getCategoryList();
@@ -33,8 +34,8 @@ router.get("/categories", (_req, res) => {
   }
 });
 
-// 某类别叶子参数（含当前覆盖值）
-router.get("/leaves/:category", (req, res) => {
+// 某类别叶子参数（含当前覆盖值）—— 含完整系数，仅管理员可访问
+router.get("/leaves/:category", requireAdmin, (req, res) => {
   try {
     const { category } = req.params;
     const leaves = getCategoryLeaves(category);
@@ -55,15 +56,26 @@ router.get("/leaves/:category", (req, res) => {
   }
 });
 
-// 导出合并后的完整知识库
+// 导出合并后的完整知识库（含私有 IP 叙述）
 router.get("/export", requireAdmin, (_req, res) => {
   try {
     const overrides = db.listKnowledgeOverrides();
-    const merged = applyOverrides(overrides);
+    const merged = getFull(overrides);
     res.json(merged);
   } catch (e) {
     console.error("[knowledge] export error:", e.message);
     res.status(500).json({ error: "导出失败" });
+  }
+});
+
+// 面向管理员的完整知识库（基线 + 覆盖 + 私有 IP 叙述），用于"设计计算书"等机密视图
+router.get("/full", requireAdmin, (_req, res) => {
+  try {
+    const overrides = db.listKnowledgeOverrides();
+    res.json(getFull(overrides));
+  } catch (e) {
+    console.error("[knowledge] full error:", e.message);
+    res.status(500).json({ error: "读取完整知识库失败" });
   }
 });
 

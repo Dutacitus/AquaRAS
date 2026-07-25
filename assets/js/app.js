@@ -613,7 +613,7 @@
       ])}
       ${renderHvacSeason(en, d.inputs.temp)}
       ${renderEnergySplit(en)}
-      ${renderScaleCurve(d._raw.annual / 1000)}
+      ${isAdmin ? renderScaleCurve(d._raw.annual / 1000) : `<div class="note" style="padding:0 26px 8px"><span class="ic">📉</span><div>规模经济曲线为 AquaRAS 内部标定，仅管理员可见，反映了单位投资随养殖规模下降的工程经验关系。</div></div>`}
       ${section("建筑规模", "Building", [
         metricCard("养殖区占地", b.tankFootprint, "m²", "含通道"),
         metricCard("设备区", b.equipArea, "m²", "滤池/泵房"),
@@ -890,10 +890,55 @@
   }
 
   /* ---------------- 渲染：设计计算书（计算标准 + 方法论 + 核心逻辑保密） ---------------- */
-  function renderDoc() {
+  // 普通用户可见的方法论概览（脱敏：不含任何系数、公式与参考文献）
+  function renderDocOverview() {
+    return `
+    <section class="hero">
+      <h1>设计计算书（方法论概览）</h1>
+      <p>本工具基于 RAS（循环水养殖）工程经验体系，对工艺与投资的工程量级进行自动估算。</p>
+    </section>
+    <div class="doc-section">
+      <h2>一、计算依据与标准体系</h2>
+      <p>计算遵循质量守恒原理与现行水产养殖工程设计相关规范（水质控制、尾水排放、建筑节能等），引用行业公开标准与文献。具体参数与公式属于 AquaRAS 商业机密，不对外公开。</p>
+    </div>
+    <div class="doc-section">
+      <h2>二、核心计算逻辑（概览）</h2>
+      <ul>
+        <li><b>质量平衡</b>：依据投喂与饲料转化率推演氮磷负荷，校核水质可行性；</li>
+        <li><b>单元设备</b>：按养殖水体与负荷匹配生物滤池、微滤机、增氧、脱气、UV/臭氧等；</li>
+        <li><b>水力学</b>：循环流量与回用率按质量平衡与系统设计确定；</li>
+        <li><b>温控与能耗</b>：按地区气候与双工况策略估算供热/制冷负荷与装机功率；</li>
+        <li><b>经济模型</b>：CAPEX 按单位水体投资估算并计入规模经济与间接费；OPEX 含饲料/苗种/水/电/人工/固废；输出单位鱼成本、回收期与 ROI；</li>
+        <li><b>不确定性</b>：以蒙特卡洛方法给出成本/能耗/毛利的 P10–P90 区间。</li>
+      </ul>
+    </div>
+    <div class="doc-section">
+      <h2>三、保密声明</h2>
+      <p class="doc-cap">🔒 设备选型系数、经济模型参数、规模经济曲线与实现代码均为 AquaRAS 商业机密，不对普通用户披露。完整计算书与管理功能仅对管理员开放。</p>
+    </div>`;
+  }
+
+  async function renderDoc() {
     const host = document.getElementById("panel-doc");
     if (!host) return;
     host.className = "panel glass";
+
+    // 普通用户：仅展示方法论概览（脱敏，不含任何系数/公式/参考文献）
+    if (!isAdmin) {
+      host.innerHTML = renderDocOverview();
+      return;
+    }
+
+    // 管理员：拉取完整知识库（含私有 IP 叙述）后渲染
+    let D = window.RAS_KNOWLEDGE;
+    if (!D || !D.references || !D.meta || !D.meta.note) {
+      try {
+        const tk = localStorage.getItem("ras_admin_token") || "";
+        const res = await fetch(cloud.getBase() + "/api/knowledge/full", tk ? { headers: { "x-admin-token": tk } } : {});
+        if (res.ok) D = await res.json();
+      } catch (e) { /* 失败则退回当前知识库 */ }
+    }
+    const K = D || window.RAS_KNOWLEDGE;
     const wq = K.waterQuality, eq = K.equipment, ec = K.economics;
     const sp = K.species[document.getElementById("species").value];
     const wqRows = [
@@ -1556,11 +1601,11 @@
         <h2>水质可行性校核</h2>${keyval(d.waterQuality.checks.map((c) => [c.name + " (" + c.status + ")", c.value + " " + c.unit + " / 限值 " + c.limit]))}
         <h2>盈利与投资回报</h2>${keyval([["售价(元/kg)", d.economics.salePrice], ["年营业收入", E.rmb(d.economics.revenue)], ["年毛利", E.rmb(d.economics.grossProfit)], ["投资回收期", (d.economics.paybackYears != null ? d.economics.paybackYears.toFixed(1) + " 年" : "不可行")], ["年化 ROI", (d.economics.roi != null ? d.economics.roi + " %" : "—")]])}
         <h2>设计计算书（方法论）</h2>
-        <p style="font-size:13px;color:#475569">计算体系：质量守恒原理 + RAS 工程经验基准。水质限值 TAN≤${K.waterQuality.tanMax}、NO₂≤${K.waterQuality.no2Max}、DO≥${K.waterQuality.doMin}、CO₂≤${K.waterQuality.co2Max}、TSS≤${K.waterQuality.ssMax} mg/L（pH ${K.waterQuality.phLow}–${K.waterQuality.phHigh}）。生物滤池硝化负荷 ${K.equipment.biofilter.rate} kg TAN/m³·d，微滤机 TSS 去除率 ${(K.equipment.drumFilter.tssRemoval*100)}%，脱气塔 CO₂ 去除率 ${(K.equipment.degasser.co2Removal*100)}%。投资按养殖水体估算（土建按面积），运营含水费。</p>
+        <p style="font-size:13px;color:#475569">计算体系：质量守恒原理 + RAS 工程经验基准。水质控制目标、设备选型系数与经济模型参数均依据现行规范与工程经验设定，具体数值为 AquaRAS 商业机密，不在本报告披露。</p>
         <p style="font-size:12.5px;color:#94a3b8;border-left:3px solid #0ea5e9;padding-left:10px">🔒 核心算法、设备选型系数、经济模型参数与实现代码为 AquaRAS 商业机密，不在本文档披露。本报告为工程量级估算，实际工程须由具备资质单位依据现行规范深化设计。</p>
         <h2>工艺流程图 (PFD)</h2><div style="border:1px solid #eee;border-radius:12px;padding:10px">${pfd}</div>
         <h2>管道仪表图 (P&ID)</h2><div style="border:1px solid #eee;border-radius:12px;padding:10px">${pid}</div>
-        <h2>参考文献</h2><ul>${K.references.map(r=>`<li style="font-size:13px;color:#475569">${r}</li>`).join("")}</ul>
+        <h2>参考文献</h2><p style="font-size:13px;color:#94a3b8">计算所依据的规范与文献目录为 AquaRAS 商业机密，仅向管理员提供。</p>
         <p style="margin-top:30px;color:#94a3b8;font-size:12px">本报告由 AquaRAS 自动生成，结果为工程估算，实际工程需结合场地与规范深化。</p>
         </body></html>`);
       w.document.close();
@@ -1839,6 +1884,8 @@
 
     // 4. 知识库面板 UI
     updateKBUI();
+    // 5. 计算书随管理员状态重渲染（脱敏概览 / 完整机密视图）
+    renderDoc();
   }
 
   /* ---- 新增 / 编辑供应商 ---- */
@@ -2042,7 +2089,8 @@
   async function loadKBCategories() {
     try {
       const BASE = cloud.getBase();
-      const res = await fetch(BASE + "/api/knowledge/categories");
+      const tk = localStorage.getItem("ras_admin_token") || "";
+      const res = await fetch(BASE + "/api/knowledge/categories", tk ? { headers: { "x-admin-token": tk } } : {});
       if (!res.ok) throw new Error("HTTP " + res.status);
       kbCategories = await res.json();
       renderKBCategorySelect();
@@ -2069,7 +2117,8 @@
   async function loadKBLeaves(category) {
     try {
       const BASE = cloud.getBase();
-      const res = await fetch(BASE + "/api/knowledge/leaves/" + category);
+      const tk = localStorage.getItem("ras_admin_token") || "";
+      const res = await fetch(BASE + "/api/knowledge/leaves/" + category, tk ? { headers: { "x-admin-token": tk } } : {});
       if (!res.ok) throw new Error("HTTP " + res.status);
       kbLeaves = await res.json();
       kbDirty = {};

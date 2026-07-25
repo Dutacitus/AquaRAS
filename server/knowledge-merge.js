@@ -7,6 +7,11 @@
 const path = require("path");
 const fs = require("fs");
 
+// 私有 IP 叙述（meta.note / meta.sourceMap / references / economics.capexCalibration），
+// 仅存在于服务端，绝不进入前端静态包；仅通过管理员接口合并后下发。
+let PRIVATE = null;
+try { PRIVATE = require("./knowledge-private"); } catch (e) { /* 私有文件缺失不影响基础计算 */ }
+
 let _base = null;
 
 function ensureGlobals() {
@@ -157,4 +162,30 @@ function reloadBase() {
   return getBase();
 }
 
-module.exports = { applyOverrides, getCategoryLeaves, getCategoryList, getBase, reloadBase };
+/**
+ * 将私有 IP 叙述合并进已合并覆盖值后的知识库（仅管理员接口调用）
+ */
+function mergePrivate(kb) {
+  if (!PRIVATE) return kb;
+  if (PRIVATE.meta) {
+    kb.meta = kb.meta || {};
+    if (PRIVATE.meta.note !== undefined) kb.meta.note = PRIVATE.meta.note;
+    if (PRIVATE.meta.sourceMap !== undefined) kb.meta.sourceMap = PRIVATE.meta.sourceMap;
+  }
+  if (PRIVATE.references !== undefined) kb.references = PRIVATE.references;
+  if (PRIVATE.capexCalibration !== undefined) {
+    kb.economics = kb.economics || {};
+    kb.economics.capexCalibration = PRIVATE.capexCalibration;
+  }
+  return kb;
+}
+
+/**
+ * 获取面向管理员的完整知识库（基线 + DB 覆盖 + 私有 IP 叙述）
+ * @param {Array} overrides - DB 覆盖记录数组
+ */
+function getFull(overrides) {
+  return mergePrivate(applyOverrides(overrides || []));
+}
+
+module.exports = { applyOverrides, getCategoryLeaves, getCategoryList, getBase, reloadBase, getFull };
