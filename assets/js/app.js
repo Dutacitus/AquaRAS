@@ -245,7 +245,7 @@
       <div class="note" style="padding:6px 26px 0"><span class="ic">♻️</span>
       <div>反硝化：脱氮率 <b>${Math.round(wq.denit.removal * 100)}%</b>，NO₃-N 稳态 <b>${wq.no3N}</b> mg/L（以 N 计），需反硝化反应器容积约 <b>${wq.denit.volume}</b> m³（负荷 ${wq.denit.no3NLoadDaily} kg NO₃-N/天）。</div></div>
       ${wq.bioGrowth && wq.bioGrowth.available ? `<div class="note" style="padding:6px 26px 0"><span class="ic">🐟</span>
-      <div><b>鱼生长生物能学耦合（O12）</b>：热生长模型给出 SGR 上限 <b>${wq.bioGrowth.sgrTemp}%/d</b>（温度响应 ${wq.bioGrowth.tempResp}，最适 ${wq.bioGrowth.tempOpt}℃），最小养成 <b>${wq.bioGrowth.daysGrowMin}</b> 天/茬 → 生物最大 <b>${wq.bioGrowth.cyclesMax}</b> 茬/年、生物最大年产量 <b>${(wq.bioGrowth.annualMaxKg/1000).toFixed(1)}</b> t。设定 <b>${wq.bioGrowth.cyclesAssumed}</b> 茬/目标 <b>${(wq.bioGrowth.annualTargetKg/1000).toFixed(1)}</b> t → <b style="color:${wq.bioGrowth.status==='ok'?'#38bdf8':wq.bioGrowth.status==='warn'?'#f59e0b':'#f87171'}">${wq.bioGrowth.status==='ok'?'生物可行':'临界/不可行'}</b>。这是"设计水温↔产量吞吐"的生物约束，与 HVAC 能耗存在权衡。</div></div>` : ""}
+      <div><b>鱼生长生物能学耦合（O12）</b>：热生长模型给出 SGR 上限 <b>${wq.bioGrowth.sgrTemp}%/d</b>（温度响应 ${wq.bioGrowth.tempResp}，最适 ${wq.bioGrowth.tempOpt}℃），最小养成 <b>${wq.bioGrowth.daysGrowMin}</b> 天/茬 → 生物最大 <b>${wq.bioGrowth.cyclesMax}</b> 茬/年、生物最大年产量 <b>${(wq.bioGrowth.annualMaxKg/1000).toFixed(1)}</b> t。${wq.bioGrowth.revision && wq.bioGrowth.revision.applied ? `<b style="color:#f59e0b">⚙️ 已自动反灌修订</b>：设计 ${wq.bioGrowth.revision.designCycles} 茬 &gt; 生物上限 ${wq.bioGrowth.revision.cyclesMax} 茬，池容放大 <b>${wq.bioGrowth.revision.volDeltaPct}%</b> 后按 <b>${wq.bioGrowth.revision.effectiveCycles}</b> 茬/年定容。` : `设定 <b>${wq.bioGrowth.cyclesAssumed}</b> 茬`}/目标 <b>${(wq.bioGrowth.annualTargetKg/1000).toFixed(1)}</b> t → <b style="color:${wq.bioGrowth.status==='ok'?'#38bdf8':wq.bioGrowth.status==='warn'?'#f59e0b':'#f87171'}">${wq.bioGrowth.status==='ok'?'生物可行':wq.bioGrowth.status==='warn'?'临界/偏紧':'不可行'}</b>。这是"设计水温↔产量吞吐"的生物约束，与 HVAC 能耗存在权衡。</div></div>` : ""}
       <div style="padding:0 26px 26px"><div class="note">
         <span class="ic">🔬</span>
         <div>稳态质量平衡校核：基于两段硝化（AOB/NOB）+ 反硝化 + 脱气塔 + 微滤机一阶去除，并叠加补水稀释与水源背景浓度，推算系统浓度，供设计可行性判断。溶氧按供氧能力（覆盖鱼代谢 + 硝化耗氧，余量 ${wq.o2Margin}%）闭环判定池内可达 <b>${wq.o2Achieved}</b> mg/L${wq.o2Deficit > 0.1 ? `（缺口 ${wq.o2Deficit} mg/L，供氧不足）` : ""}；数值为工程估算，运行需在线监测 DO/pH/TAN/CO₂ 并预留余量。</div></div></div>`;
@@ -520,7 +520,7 @@
         metricCard("单池尺寸", `Ø${c.tankD}`, `×${c.tankH}m`, `有效 ${c.singleTankVol} m³`),
         metricCard("总养殖水体", c.totalTankVol, "m³", `有效容积合计`, "brand"),
         metricCard("放养密度", c.density, "kg/m³", "设计生物量密度"),
-        metricCard("年养殖茬次", c.cycles, "茬", `单位体积年产 ${c.yieldPerM3Year} kg/m³`),
+        metricCard("年养殖茬次", c.cycles, "茬", `有效容积年产 ${c.yieldPerM3Year} kg/m³${c.cyclesDesign && Math.abs(c.cyclesDesign - c.cycles) > 0.001 ? `（设计 ${c.cyclesDesign} 茬，已按生物上限修订）` : ""}`),
         metricCard("实际产能", c.actualYield, "吨/年", "满足目标且有余量", "accent"),
       ])}
       ${section("投喂与氮负荷", "Feed & N", [

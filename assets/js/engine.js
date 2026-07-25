@@ -28,8 +28,8 @@ RAS.engine = (function () {
    * 主计算函数
    * inputs: {
    *   speciesKey, annualTons, targetDensity?, cycles?, recircTurns?,
-   *   makeupRate?, safety?, designTemp?, elecPrice?
-   * }
+   *   makeupRate?, safety?, designTemp?, elecPrice?, autoReviseBio?
+   * }  // autoReviseBio(默认 true)：设计茬次超生物最大茬次时自动反灌产量链扩大池容
    */
   function compute(inputs) {
     const sp = K.species[inputs.speciesKey] || K.species.bass;
@@ -60,8 +60,41 @@ RAS.engine = (function () {
     const elec = inputs.elecPrice > 0 ? inputs.elecPrice : (K.economics.opex.elecPrice * regPower);
     const salePrice = inputs.salePrice && inputs.salePrice > 0 ? inputs.salePrice : (sp.marketPrice || K.economics.salePrice || 22);
 
+    // —— 0. 鱼生长生物能学（O12-ext v1.22.0+）：温度驱动的生物最大茬次，先于产量链以便反灌修订 ——
+    // SGR(特定生长率, %/d) = sgrMax × exp(−0.5×((T−tempOpt)/tempSigma)²)；T≤tempMin 几乎不生长；据最小养成天数得生物最大茬次/年。
+    // 该量只取决于设计水温与品种，与池容无关，故可先于 §1 产量链计算并反灌。
+    const growthHandlingDays = K.process.growthHandlingDays != null ? K.process.growthHandlingDays : 14;
+    const bioRaw = (K.speciesBio && K.speciesBio[inputs.speciesKey]) ? K.speciesBio[inputs.speciesKey] : null;
+    let bioMax = null; // 温度相关生物上限量（与池容无关）
+    if (bioRaw && bioRaw.sgrMax > 0 && bioRaw.stockingSize > 0 && sp.harvestSize > 0) {
+      const tempResp = (temp <= bioRaw.tempMin) ? 0 : Math.exp(-0.5 * Math.pow((temp - bioRaw.tempOpt) / bioRaw.tempSigma, 2));
+      const sgrTemp = bioRaw.sgrMax * tempResp;
+      const daysGrowMin = sgrTemp > 0 ? Math.log(sp.harvestSize / bioRaw.stockingSize) / (sgrTemp / 100) : Infinity;
+      const cyclesMax = isFinite(daysGrowMin) ? 365 / (daysGrowMin + growthHandlingDays) : 0;
+      bioMax = {
+        sgrTemp, tempResp, daysGrowMin, cyclesMax,
+        tempOpt: bioRaw.tempOpt, tempSigma: bioRaw.tempSigma, tempMin: bioRaw.tempMin,
+        stockingSize: bioRaw.stockingSize, harvestSize: sp.harvestSize,
+      };
+    }
+
     // —— 1. 养殖池系统 ——
-    const tankVolumeNeed = annual / (density * cycles); // m³
+    // O12-ext 鱼生长生物能学反灌：设计茬次若超过"生物最大茬次(由设计水温决定)"，则把生物最大茬次反灌产量链，
+    // 以 effectiveCycles(≤cyclesMax) 重新定容，自动扩大养殖池容以保证目标产量生物可行（而非仅提示不可行）。
+    const autoReviseBio = inputs.autoReviseBio !== false; // 默认开启；inputs.autoReviseBio=false 可关闭自动修订
+    let effectiveCycles = cycles;
+    const bioRevision = { applied: false };
+    if (bioMax && bioMax.cyclesMax > 0 && cycles > bioMax.cyclesMax && autoReviseBio) {
+      effectiveCycles = bioMax.cyclesMax;
+      bioRevision.applied = true;
+      bioRevision.reason = "设计茬次超出生物最大茬次(由设计水温决定)，已反灌产量链自动扩大池容";
+      bioRevision.designCycles = round(cycles, 2);
+      bioRevision.effectiveCycles = round(effectiveCycles, 2);
+      bioRevision.cyclesMax = round(bioMax.cyclesMax, 2);
+      bioRevision.temp = Math.round(temp);
+      bioRevision.volDeltaPct = round((cycles / effectiveCycles - 1) * 100, 1); // 池容需放大的百分比(=设计茬次/生物茬次−1)
+    }
+    const tankVolumeNeed = annual / (density * effectiveCycles); // m³
     let tankD, tankH;
     if (tankVolumeNeed < 400) { tankD = 6; tankH = 1.4; }
     else if (tankVolumeNeed < 1200) { tankD = 8; tankH = 1.5; }
@@ -73,7 +106,7 @@ RAS.engine = (function () {
     const rows = Math.ceil(tankCount / cols);
     tankCount = cols * rows;
     const totalTankVol = tankCount * singleTankVol;
-    const actualYield = density * cycles * totalTankVol;
+    const actualYield = density * effectiveCycles * totalTankVol;
 
     // —— 2. 投喂与氮负荷 ——
     // 饲料系数可由使用者自定义（不同养殖水平差异大），留空/非法时回退品种默认
@@ -100,25 +133,19 @@ RAS.engine = (function () {
     const tanDaily = annualFeed * tanPerFeed / 365;
     const tanAnnual = annualFeed * tanPerFeed;
 
-    // —— 2.5 鱼生长生物能学耦合（O12 v1.22.0）——
-    // 热生长模型：设计水温 → 温度限制的特定生长率(SGR)上限 → 最小养成天数 → 生物最大茬次/年产量。
-    // 与用户设定目标(annualTons)交叉校验，揭示"加热/制冷设定点 ↔ 产量吞吐"的生物可行约束（与 HVAC 能耗耦合）。
-    const bio = (K.speciesBio && K.speciesBio[inputs.speciesKey]) ? K.speciesBio[inputs.speciesKey] : null;
-    const growthHandlingDays = K.process.growthHandlingDays != null ? K.process.growthHandlingDays : 14;
+    // —— 2.5 鱼生长生物能学耦合（O12 / O12-ext v1.22.0+）——
+    // 复用 §0 已算的 bioMax(温度驱动 SGR 上限 → 最小养成天数 → 生物最大茬次/年产量)，与设定目标交叉校验。
+    // O12-ext 已把 cyclesMax 反灌产量链自动修订池容，故此处 annualMax 基于修订后 totalTankVol，修订后一般转为可行。
     const rationSatiationMax = K.process.rationSatiationMax != null ? K.process.rationSatiationMax : 3.5; // %BW/d
     let bioGrowth = { available: false };
-    if (bio && bio.sgrMax > 0 && bio.stockingSize > 0 && sp.harvestSize > 0) {
-      const sgrMax = bio.sgrMax, tempOpt = bio.tempOpt, tempSigma = bio.tempSigma, tempMin = bio.tempMin;
-      const stockingSize = bio.stockingSize, harvestSizeB = sp.harvestSize; // g/尾
-      // 钟形温度响应（thermal growth coefficient）：偏离最适温→生长率按高斯衰减，≤tempMin 几乎不生长
-      const tempResp = (temp <= tempMin) ? 0 : Math.exp(-0.5 * Math.pow((temp - tempOpt) / tempSigma, 2));
-      const sgrTemp = sgrMax * tempResp;                                   // %/d 温度限制的生长潜力上限
-      const daysGrowMin = sgrTemp > 0 ? Math.log(harvestSizeB / stockingSize) / (sgrTemp / 100) : Infinity; // 养成天数(放养→出塘)
-      const cyclesMax = isFinite(daysGrowMin) ? 365 / (daysGrowMin + growthHandlingDays) : 0;  // 生物最大茬次/年(含清塘间隔)
-      const annualMaxKg = density * totalTankVol * cyclesMax;             // 给定池容下生物最大年产量
-      // 投喂率(%BW/d)反算：与现有 fcr/cycles 口径一致（平均生物量介于放养/出塘之间）
+    if (bioMax) {
+      const sgrTemp = bioMax.sgrTemp, tempOpt = bioMax.tempOpt, tempSigma = bioMax.tempSigma, tempMin = bioMax.tempMin;
+      const stockingSize = bioMax.stockingSize, harvestSizeB = bioMax.harvestSize; // g/尾
+      const tempResp = bioMax.tempResp, daysGrowMin = bioMax.daysGrowMin, cyclesMax = bioMax.cyclesMax;
+      const annualMaxKg = density * totalTankVol * cyclesMax;             // 给定池容下生物最大年产量（含反灌修订后的池容）
+      // 投喂率(%BW/d)反算：与设计茬次 effectiveCycles 口径一致（平均生物量介于放养/出塘之间）
       const rRatio = stockingSize / harvestSizeB;
-      const rationBW = (cycles * fcr / 365) / ((1 + rRatio) / 2) * 100;   // %/d
+      const rationBW = (effectiveCycles * fcr / 365) / ((1 + rRatio) / 2) * 100;   // %/d
       const overFeed = rationBW > rationSatiationMax;                     // 所需投喂率超饱食上限→料限制约/不可行
       // 交叉校验：目标/生物最大上限（>1 即超出生物可行）
       const ratioTarget = annualMaxKg > 0 ? annual / annualMaxKg : Infinity;
@@ -131,7 +158,8 @@ RAS.engine = (function () {
         tempOpt, tempSigma, tempMin,
         tempResp: round(tempResp, 3),
         daysGrowMin: isFinite(daysGrowMin) ? round(daysGrowMin, 1) : null,
-        cyclesAssumed: round(cycles, 2),
+        cyclesAssumed: round(effectiveCycles, 2),
+        cyclesDesign: round(cycles, 2),
         cyclesMax: round(cyclesMax, 2),
         annualMaxKg: round(annualMaxKg),
         annualTargetKg: round(annual),
@@ -141,6 +169,7 @@ RAS.engine = (function () {
         overFeed,
         feasible: statusBio !== "fail",
         status: statusBio,
+        revision: bioRevision,
       };
     }
 
@@ -753,7 +782,7 @@ RAS.engine = (function () {
         value: bioGrowth.cyclesMax, unit: "茬/年 生物最大",
         limit: `设定 ${bioGrowth.cyclesAssumed} 茬；目标 ${round(bioGrowth.annualTargetKg / 1000, 1)}t ≤ 生物最大 ${round(bioGrowth.annualMaxKg / 1000, 1)}t`,
         status: bioGrowth.status,
-        note: `设计水温 ${Math.round(temp)}℃ 下 SGR 上限 ${bioGrowth.sgrTemp}%/d（温度响应 ${bioGrowth.tempResp}，最适 ${bioGrowth.tempOpt}℃）；养成 ${bioGrowth.daysGrowMin} 天/茬。投喂率 ${bioGrowth.rationBW}%BW${bioGrowth.overFeed ? " ⚠超饱食上限 " + bioGrowth.rationSatiationMax + "%（料限制约）" : " 在饱食范围内"}。${bioGrowth.status === "ok" ? "产量目标生物可行" : "产量目标超出生物可行上限，需升温或下调目标"}`,
+        note: `设计水温 ${Math.round(temp)}℃ 下 SGR 上限 ${bioGrowth.sgrTemp}%/d（温度响应 ${bioGrowth.tempResp}，最适 ${bioGrowth.tempOpt}℃）；养成 ${bioGrowth.daysGrowMin} 天/茬 → 生物最大 ${bioGrowth.cyclesMax} 茬/年。${bioGrowth.revision && bioGrowth.revision.applied ? `⚙️ 已自动反灌修订：设计 ${bioGrowth.revision.designCycles} 茬 > 生物上限 ${bioGrowth.revision.cyclesMax} 茬，池容放大 ${bioGrowth.revision.volDeltaPct}% 后按 ${bioGrowth.revision.effectiveCycles} 茬/年定容。` : ""}投喂率 ${bioGrowth.rationBW}%BW${bioGrowth.overFeed ? " ⚠超饱食上限 " + bioGrowth.rationSatiationMax + "%（料限制约）" : " 在饱食范围内"}。${bioGrowth.status === "ok" ? "目标产量生物可行" : (bioGrowth.status === "warn" ? "临界（接近生物上限，建议升温或下调目标）" : "超出生物可行上限，需升温或下调目标")}`,
       });
     }
     // P1-2 尾水排放污染物浓度（v1.13.8，对照 DB44/2462-2024 合规）：稳态质量平衡推算排放口浓度（与循环水同浓度）
@@ -835,8 +864,8 @@ RAS.engine = (function () {
         tankCount, cols, rows,
         totalTankVol: round(totalTankVol),
         actualYield: round(actualYield / 1000, 1),
-        density, cycles,
-        yieldPerM3Year: round(density * cycles),
+        density, cycles: round(effectiveCycles, 2), cyclesDesign: round(cycles, 2),
+        yieldPerM3Year: round(density * effectiveCycles),
       },
       feeding: {
         fcr, annualFeed: round(annualFeed),
