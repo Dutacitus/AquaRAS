@@ -420,13 +420,30 @@ RAS.engine = (function () {
       opexMaint += ann;
       maintBreakdown.push({ key: row.key, label: row.label, annual: ann, life: life, reserve: row.total / life, capex: row.total });
     });
+    // 9.3.5 碱度投加成本（O15 v1.21.0）：与下游水质稳态块同口径，先行核算 NaHCO₃ 年耗以并入 OPEX
+    const bgAlkO = (inputs.makeupBackground && inputs.makeupBackground.alk != null) ? inputs.makeupBackground.alk
+                 : (K.defaults.makeupBackground && K.defaults.makeupBackground.alk != null ? K.defaults.makeupBackground.alk : 150);
+    const alkPerNO = K.process.alkPerN != null ? K.process.alkPerN : 7.14;
+    const alkTargetO = K.process.alkTarget != null ? K.process.alkTarget : 120;
+    const alkProdDenitO = K.process.alkProdDenit != null ? K.process.alkProdDenit : 3.57;
+    const denitRO = K.process.denitRemoval != null ? K.process.denitRemoval : 0.85;
+    const nahco3EffO = K.process.nahco3Eff != null ? K.process.nahco3Eff : 0.5957;
+    const alkConsumeDayO = Math.max(0, tanDaily * alkPerNO - tanDaily * denitRO * alkProdDenitO); // g/d 净耗碱（硝化耗−反硝化产）
+    const consMO = alkConsumeDayO * 1e6;                          // mg/d
+    const srcMO = makeupFlow * bgAlkO * 1000;                     // mg/d 补水带入
+    const alkNatO = makeupFlow > 0 ? bgAlkO - consMO / (makeupFlow * 1000) : -1e9; // mg/L 自然平衡碱度
+    const doseMO = alkNatO >= alkTargetO ? 0 : Math.max(0, consMO - srcMO + makeupFlow * alkTargetO * 1000); // mg/d 需补
+    const nahco3DayO = doseMO > 0 ? doseMO / 1e6 / nahco3EffO : 0; // kg/d 纯 NaHCO₃
+    const nahco3PriceO = K.economics.opex.nahco3Price != null ? K.economics.opex.nahco3Price : 1.6; // 元/kg
+    const opexAlk = nahco3DayO * 365 * nahco3PriceO;  // 元/年 NaHCO₃ 碱度补充成本
+
     const opexFeed = annualFeed * feedPrice;
     const harvestNum = annual / (sp.harvestSize / 1000);
     const opexFinger = harvestNum * fingerPrice;
     const opexElec = (annualEnergy * 1000 - pvSelfKwh) * elecPrice;     // 净电网电费 = (总电量 − 光伏自用) × 电价
     const opexLabor = laborPrice * laborCount;
     const opexWater = makeupFlow * 365 * waterPrice;   // 生产补水费（补水流量 × 年 × 水价）
-    const opexTotal = opexFeed + opexFinger + opexElec + opexLabor + opexMaint + opexWater + opexSolids + opexTailYr + pvOpex;
+    const opexTotal = opexFeed + opexFinger + opexElec + opexLabor + opexMaint + opexWater + opexSolids + opexTailYr + pvOpex + opexAlk;
     const costPerKg = opexTotal / annual;
 
     // 9.5 间接费（按直接费比例，合计上限 = 直接费 × indirectCap）
@@ -559,24 +576,11 @@ RAS.engine = (function () {
     const nahco3Day = doseM > 0 ? doseM / 1e6 / (K.process.nahco3Eff != null ? K.process.nahco3Eff : 0.5957) : 0; // kg NaHCO₃/天
     const nahco3PerKgFish = nahco3Day * 365 / Math.max(1, annual);           // kg/kg 鱼
 
-    // 2) pH 子模型：CO₂(aq) + 总碱度 → 碳酸平衡数值求解 [H⁺]（温度/盐度修正 pK）
-    const pK1 = (K.process.pK1_25 != null ? K.process.pK1_25 : 6.35) - 0.012 * (temp - 25) - (matlFactor > 1 ? 0.5 : 0);
-    const pK2 = (K.process.pK2_25 != null ? K.process.pK2_25 : 10.33) - 0.013 * (temp - 25) - (matlFactor > 1 ? 0.2 : 0);
-    const K1 = Math.pow(10, -pK1), K2 = Math.pow(10, -pK2), Kw = 1e-14;
-    const Aeq = cAlkSys / 50000;                   // eq/L（50 g/eq CaCO₃）
-    const Cmol = Math.max(1e-6, cCo2) / 44000;     // mol/L（44 g/mol CO₂）
-    const fPH = (H) => Aeq - (K1 * Cmol / H + 2 * K1 * K2 * Cmol / (H * H) + Kw / H - H);
-    let Hlo = 1e-11, Hhi = 1e-4, flo = fPH(Hlo), fhi = fPH(Hhi);
-    let pH = 7.0;
-    if (flo * fhi <= 0) {
-      for (let i = 0; i < 60; i++) {
-        const Hm = Math.sqrt(Hlo * Hhi);
-        const fm = fPH(Hm);
-        if (flo * fm <= 0) { Hhi = Hm; fhi = fm; } else { Hlo = Hm; flo = fm; }
-      }
-      pH = -Math.log10(Math.sqrt(Hlo * Hhi));
-    }
-    pH = Math.min(14, Math.max(0, pH));
+    // 2) pH 子模型：CO₂(aq) + 总碱度 → 碳酸平衡数值求解（温度/盐度修正 pK）。O10 v1.21.0 提取为 solvePH()，供脱气需求反算复用
+    const pH = solvePH(cCo2, cAlkSys, temp, matlFactor, K);
+    // O10 v1.21.0：脱气需求反算——求保目标 pH 所需的最小脱气塔 CO₂ 去除率，使 CO₂–pH 闭环成为可设计约束
+    const phTarget = K.process.phTarget != null ? K.process.phTarget : 7.2;
+    const co2RemovalReq = co2RemovalForPh(phTarget, cAlkSys, temp, matlFactor, K, co2Prod, co2Star, recircFlow, makeupFlow, co2StripFlow);
 
     // 3) pH→硝化速率折减（O3：对称 pH 响应——低 pH(<7) 与高 pH(>pHopt≈8) 双向抑制 AOB/NOB）
     const phLow = pH >= 7.0 ? 1.0 : Math.max(0.2, Math.pow(0.85, (7.0 - pH) / 0.1));
@@ -690,6 +694,7 @@ RAS.engine = (function () {
       { key: "co2", name: "二氧化碳 CO₂", value: round(cCo2, 1), unit: "mg/L", limit: wq.co2Max * 2, status: st(cCo2, wq.co2Max * 2, wq.co2Max, true), note: `脱气塔脱除 ${round(co2Stripped, 1)} kg/天 + 开放水面天然挥发 ~${round(co2Natural, 1)} kg/天 + 补水稀释` },
       { key: "alk", name: "碱度(以CaCO₃计)", value: round(cAlkSys, 0), unit: "mg/L", limit: alkMin, status: (nahco3PerKgFish > 1.5 || cAlkSys < alkMin) ? "fail" : (nahco3PerKgFish > 0.8 || (doseM === 0 && cAlkSys < alkTarget)) ? "warn" : "ok", note: doseM > 0 ? `需投加 NaHCO₃ ${round(nahco3Day, 1)} kg/天(≈${round(nahco3PerKgFish, 3)} kg/kg鱼)` : "源水碱度充足，无需投加" },
       { key: "ph", name: "pH", value: round(pH, 2), unit: "", limit: `${phLo}–${phHi}${matlFactor > 1 ? "（海水带）" : ""}`, status: (pH < phLo || pH > wq.phHighHard) ? "fail" : (pH > phHi ? "warn" : "ok"), note: `CO₂ ${round(cCo2, 1)} mg/L + 碱度 ${round(cAlkSys, 0)} mg/L 碳酸平衡${matlFactor > 1 ? "（海水碳酸标度）" : ""}` },
+      { key: "phClosure", name: "CO₂–pH 闭环(脱气需求)", value: round(deg.co2Removal * 100, 0), unit: "% 当前脱气去除率", limit: `需 ≥ ${round(co2RemovalReq * 100, 0)}% 保 pH≥${phTarget}`, status: (deg.co2Removal + 1e-6 >= co2RemovalReq) ? "ok" : "warn", note: `稳态 pH ${round(pH, 2)}；脱气余量 ${round((deg.co2Removal - co2RemovalReq) * 100, 1)} pp（为负＝脱气塔不足，pH 将跌破目标）` },
       { key: "nh3", name: "非离子氨 NH₃", value: round(cNH3, 4), unit: "mg/L(N)", limit: round(nh3AcuteT, 4), status: cNH3 > nh3AcuteT ? "fail" : (cNH3 > nh3ChronicT ? "warn" : "ok"), note: `TAN ${round(cTan, 2)} × 离解率 ${round(fNH3 * 100, 1)}% (pKa ${round(pKaNH3, 2)})；温度修正限值 急${round(nh3AcuteT, 4)}/慢${round(nh3ChronicT, 4)} @${Math.round(temp)}℃` },
       { key: "tss", name: "悬浮固体 TSS", value: round(cTss, 1), unit: "mg/L", limit: wq.ssMax, status: st(cTss, wq.ssMax, wq.ssMax * 1.5, true), note: foamFrac ? "微滤机 + 二级固液分离 + 泡沫分离细颗粒" : "微滤机去除" },
       { key: "doc", name: "溶解有机碳 DOC", value: round(cDoc, 1), unit: "mg/L", limit: wq.docSoftCap, status: cDoc > wq.docMax ? "fail" : (cDoc > wq.docSoftCap ? "warn" : "ok"), note: `泡沫分离 ${docFoam > 0 ? Math.round(docFoam * 100) + "%" : "(未配)"} + 臭氧 ${docOz > 0 ? Math.round(docOz * 100) + "%" : "(未配)"} 串联去除${docSynergy > 1 ? `（臭氧协同 ζ=${docSynergy.toFixed(2)}，skimmer 有效 DOC 去除提至 ${Math.round(docFoamEff * 100)}%）` : ""}` },
@@ -725,6 +730,8 @@ RAS.engine = (function () {
       co2Stripped: round(co2Stripped, 1),
       co2Natural: round(co2Natural, 1),
       ph: round(pH, 2),
+      phTarget: round(phTarget, 2),
+      co2RemovalReq: round(co2RemovalReq, 3),
       cAlk: round(cAlkSys, 0),
       alkConsumeDay: round(alkConsumeDay, 1),
       nahco3Day: round(nahco3Day, 1),
@@ -903,6 +910,8 @@ RAS.engine = (function () {
         opexMaint: round(opexMaint),
         opexWater: round(opexWater),
         opexSolids: round(opexSolids),
+        opexAlk: round(opexAlk),
+        opexAlkPerKg: round(opexAlk / annual, 2),
         maintBreakdown,
         opexTotal: round(opexTotal),
         costPerKg: round(costPerKg, 1),
@@ -1207,6 +1216,35 @@ RAS.engine = (function () {
    * 结果从"单点"升级为 P10/P50/P90 区间 + 分布直方图 + 水质可行率。
    * 仅扰动"模型系数"（不碰用户可自定义的价格/输入）。
    */
+  // O10 v1.21.0：碳酸平衡 pH 求解（CO₂(aq)+总碱度→[H⁺] 二分），供水质闭环与脱气需求反算复用
+  function solvePH(cCo2, cAlkSys, temp, matlFactor, K) {
+    const pK1 = (K.process.pK1_25 != null ? K.process.pK1_25 : 6.35) - 0.012 * (temp - 25) - (matlFactor > 1 ? 0.5 : 0);
+    const pK2 = (K.process.pK2_25 != null ? K.process.pK2_25 : 10.33) - 0.013 * (temp - 25) - (matlFactor > 1 ? 0.2 : 0);
+    const K1 = Math.pow(10, -pK1), K2 = Math.pow(10, -pK2), Kw = 1e-14;
+    const Aeq = cAlkSys / 50000;                   // eq/L（50 g/eq CaCO₃）
+    const Cmol = Math.max(1e-6, cCo2) / 44000;     // mol/L（44 g/mol CO₂）
+    const f = (H) => Aeq - (K1 * Cmol / H + 2 * K1 * K2 * Cmol / (H * H) + Kw / H - H);
+    let Hlo = 1e-11, Hhi = 1e-4, flo = f(Hlo), fhi = f(Hhi);
+    if (flo * fhi <= 0) {
+      for (let i = 0; i < 60; i++) {
+        const Hm = Math.sqrt(Hlo * Hhi);
+        const fm = f(Hm);
+        if (flo * fm <= 0) { Hhi = Hm; fhi = fm; } else { Hlo = Hm; flo = fm; }
+      }
+      return Math.min(14, Math.max(0, -Math.log10(Math.sqrt(Hlo * Hhi))));
+    }
+    return Math.min(14, Math.max(0, 7.0));
+  }
+  // O10 v1.21.0：脱气需求反算——给定目标 pH，二分求所需脱气塔 CO₂ 去除率（去除率↑→CO₂↓→pH↑）
+  function co2RemovalForPh(phTarget, cAlkSys, temp, matlFactor, K, co2Prod, co2Star, recircFlow, makeupFlow, co2StripFlow) {
+    const cCo2At = (r) => (co2Prod * 1000 + co2StripFlow * co2Star) / (r * recircFlow + makeupFlow + co2StripFlow);
+    let lo = 0, hi = 0.995;
+    for (let i = 0; i < 50; i++) {
+      const mid = (lo + hi) / 2;
+      if (solvePH(cCo2At(mid), cAlkSys, temp, matlFactor, K) < phTarget) lo = mid; else hi = mid;
+    }
+    return (lo + hi) / 2;
+  }
   function triangular(low, mode, high) {
     if (!(high > low)) return mode;
     const u = Math.random();
@@ -1247,43 +1285,61 @@ RAS.engine = (function () {
     });
     return hs;
   }
+  // O16 v1.21.0：蒙特卡洛分两层采样——
+  //   · epistemic 轮：仅扰动"模型系数"(K.uncertainty.params, kind=epistemic)，经营假设取标称值
+  //   · full 轮：模型系数 + 经营假设(aleatory, buildUserSensParams) 全扰动
+  // 输出每个指标同时给出全口径(P10/P50/P90)与纯模型口径(.epi)，供决策区分"模型不确定"vs"经营假设波动"
   function monteCarlo(inputs, opts) {
     opts = opts || {};
     const N = opts.N && opts.N > 0 ? opts.N : 2000;
-    const params = (K.uncertainty && K.uncertainty.params) || [];
-    const base = Object.assign({}, inputs);
     const keys = ["costPerKg", "energyIntensity", "capexTotal", "grossProfit", "paybackYears", "marginRate"];
-    const collect = {}; keys.forEach((k) => (collect[k] = []));
-    const wq = { ok: 0, warn: 0, fail: 0 };
-    for (let i = 0; i < N; i++) {
-      const over = {};
-      params.forEach((u) => {
-        const t = triangular(u.low, u.exp, u.high);
-        if (u.inputKey) base[u.inputKey] = t;          // 经 inputs 覆盖（如补水率）
-        else over[u.path] = t;                          // 经知识库覆盖（如 COP/速率）
-      });
-      const d = withOverrides(over, () => compute(base));
-      const pick = (k) => k === "energyIntensity" ? d.energy.energyIntensity
-        : k === "capexTotal" ? d.economics.capexTotal
-        : k === "grossProfit" ? d.economics.grossProfit
-        : k === "paybackYears" ? d.economics.paybackYears
-        : k === "marginRate" ? d.economics.marginRate
-        : d.economics.costPerKg;
-      keys.forEach((k) => {
-        const v = pick(k);
-        if (typeof v === "number" && isFinite(v)) collect[k].push(v);
-      });
-      wq[d.waterQuality.status] = (wq[d.waterQuality.status] || 0) + 1;
+    const epiParams = ((K.uncertainty && K.uncertainty.params) || []).filter((p) => p.kind !== "aleatory"); // 模型系数(epistemic)
+    const aleaParams = buildUserSensParams(inputs);                                              // 经营假设(aleatory)
+    function pass(passParams) {
+      const base = Object.assign({}, inputs);
+      const collect = {}; keys.forEach((k) => (collect[k] = []));
+      const wq = { ok: 0, warn: 0, fail: 0 };
+      for (let i = 0; i < N; i++) {
+        const over = {};
+        passParams.forEach((u) => {
+          const t = triangular(u.low, u.exp, u.high);
+          if (u.inputKey) base[u.inputKey] = t;          // 经 inputs 覆盖（如 FCR/电价）
+          else over[u.path] = t;                          // 经知识库覆盖（如 COP/速率）
+        });
+        const d = withOverrides(over, () => compute(base));
+        const pick = (k) => k === "energyIntensity" ? d.energy.energyIntensity
+          : k === "capexTotal" ? d.economics.capexTotal
+          : k === "grossProfit" ? d.economics.grossProfit
+          : k === "paybackYears" ? d.economics.paybackYears
+          : k === "marginRate" ? d.economics.marginRate
+          : d.economics.costPerKg;
+        keys.forEach((k) => {
+          const v = pick(k);
+          if (typeof v === "number" && isFinite(v)) collect[k].push(v);
+        });
+        wq[d.waterQuality.status] = (wq[d.waterQuality.status] || 0) + 1;
+      }
+      const o = {};
+      keys.forEach((k) => { o[k] = { p10: round(pct(collect[k], 10), 2), p50: round(pct(collect[k], 50), 2), p90: round(pct(collect[k], 90), 2) }; });
+      o.waterQuality = {
+        okPct: round((wq.ok / N) * 100), warnPct: round((wq.warn / N) * 100), failPct: round((wq.fail / N) * 100),
+      };
+      o.histCost = histogram(collect.costPerKg, 12);
+      o.histPayback = histogram(collect.paybackYears.filter((v) => v != null), 12);
+      return o;
     }
-    const out = { N, params: params.map((u) => ({ key: u.key, label: u.label })) };
+    const epi = pass(epiParams);
+    const full = pass(epiParams.concat(aleaParams));
+    const out = { N, kindSplit: true };
+    out.params = epiParams.concat(aleaParams).map((p) => ({ key: p.key, label: p.label, kind: (p.kind === "aleatory" || p.group === "user") ? "aleatory" : "epistemic" }));
     keys.forEach((k) => {
-      out[k] = { p10: round(pct(collect[k], 10), 2), p50: round(pct(collect[k], 50), 2), p90: round(pct(collect[k], 90), 2) };
+      out[k] = Object.assign({}, full[k]);   // 主值 = 全口径(模型+经营)，向后兼容 UI
+      out[k].epi = epi[k];                   // 仅模型系数(epistemic)口径
     });
-    out.waterQuality = {
-      okPct: round((wq.ok / N) * 100), warnPct: round((wq.warn / N) * 100), failPct: round((wq.fail / N) * 100),
-    };
-    out.histCost = histogram(collect.costPerKg, 12);
-    out.histPayback = histogram(collect.paybackYears.filter((v) => v != null), 12);
+    out.waterQuality = full.waterQuality;
+    out.waterQualityEpistemic = epi.waterQuality;
+    out.histCost = full.histCost;
+    out.histPayback = full.histPayback;
     return out;
   }
 
@@ -1424,6 +1480,10 @@ RAS.engine = (function () {
         indices, dominant: indices[0] ? indices[0].label : null,
         top2: indices.slice(0, 2).map((x) => x.label),
         stSum: round(indices.reduce((s, x) => s + x.ST, 0), 3),
+        kindShare: {  // O16 v1.21.0：方差贡献按 epistemic(模型系数)/aleatory(经营假设) 分组汇总
+          epistemic: round(indices.reduce((s, x) => s + (x.group === "model" ? x.ST : 0), 0), 3),
+          aleatory: round(indices.reduce((s, x) => s + (x.group === "user" ? x.ST : 0), 0), 3),
+        },
       };
     });
     return out;

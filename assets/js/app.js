@@ -457,13 +457,23 @@
   function renderMonteCarlo(res) {
     const box = document.getElementById("mcResult");
     if (!box) return;
-    const row = (label, o, unit) => `
-      <div style="display:grid;grid-template-columns:1.1fr 1fr 1fr 1fr;gap:6px;padding:4px 0;font-size:12.5px;border-bottom:1px solid rgba(255,255,255,.06)">
-        <span style="color:#cbd5e1">${label}</span>
-        <span style="color:#94a3b8">P10 <b style="color:#e2e8f0">${o.p10}</b>${unit}</span>
-        <span style="color:#94a3b8">P50 <b style="color:#38bdf8">${o.p50}</b>${unit}</span>
-        <span style="color:#94a3b8">P90 <b style="color:#f59e0b">${o.p90}</b>${unit}</span>
+    const row = (label, o, unit) => {
+      if (!o || typeof o.p50 !== "number") return "";
+      const epi = o.epi && typeof o.epi.p50 === "number";
+      return `
+      <div style="padding:4px 0;font-size:12.5px;border-bottom:1px solid rgba(255,255,255,.06)">
+        <div style="display:grid;grid-template-columns:1.1fr 1fr 1fr 1fr;gap:6px">
+          <span style="color:#cbd5e1">${label}</span>
+          <span style="color:#94a3b8">P10 <b style="color:#e2e8f0">${o.p10}</b>${unit}</span>
+          <span style="color:#94a3b8">P50 <b style="color:#38bdf8">${o.p50}</b>${unit}</span>
+          <span style="color:#94a3b8">P90 <b style="color:#f59e0b">${o.p90}</b>${unit}</span>
+        </div>
+        ${epi ? `<div style="display:grid;grid-template-columns:1.1fr 3fr;gap:6px;margin-top:2px">
+          <span style="color:#64748b;font-size:11px">仅模型系数</span>
+          <span style="color:#64748b;font-size:11px">P50 ${o.epi.p50}${unit} · 区间 ${o.epi.p10}–${o.epi.p90}</span>
+        </div>` : ""}
       </div>`;
+    };
     const hist = (data, color) => {
       if (!data || !data.length) return "";
       const maxN = Math.max.apply(null, data.map((d) => d.n)) || 1;
@@ -489,7 +499,7 @@
         <div style="font-size:12px;color:#cbd5e1;margin:8px 0 2px">投资回收期分布 (年)</div>
         <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:4px 6px">${hist(res.histPayback, "#f59e0b")}</div>
         <div class="note" style="margin-top:8px"><span class="ic">🎲</span>
-        <div>蒙特卡洛 <b>${res.N}</b> 次采样（三角分布，系数 ±区间）。水质可行口径：达标 <b>${res.waterQuality.okPct}%</b> / 预警 <b>${res.waterQuality.warnPct}%</b> / 超限 <b>${res.waterQuality.failPct}%</b>。结果从单点升级为区间，供决策参考。</div></div>
+        <div>蒙特卡洛 <b>${res.N}</b> 次采样（三角分布）。<b>全口径</b>=模型系数+经营假设；<b>仅模型系数</b>(epistemic) 口径见各指标次级行（浅灰）。水质可行(全口径)：达标 <b>${res.waterQuality.okPct}%</b> / 预警 <b>${res.waterQuality.warnPct}%</b> / 超限 <b>${res.waterQuality.failPct}%</b>${res.waterQualityEpistemic ? `；仅模型系数口径达标 <b>${res.waterQualityEpistemic.okPct}%</b>` : ""}。分层后可知区间宽度多少来自"模型本身不确定"、多少来自"你的经营假设波动"。</div></div>
       </div>`;
   }
   function round2(v) { return typeof v === "number" ? Math.round(v * 100) / 100 : v; }
@@ -698,7 +708,7 @@
     }).join("");
     const opRows = [
       ["饲料", e.opexFeed], ["苗种", e.opexFinger], ["电费", e.opexElec],
-      ["水费", e.opexWater], ["固废处置", e.opexSolids], ["人工 (" + e.laborCount + " 人)", e.opexLabor], ["维护", e.opexMaint],
+      ["水费", e.opexWater], ["固废处置", e.opexSolids], ["碱度投加(NaHCO₃)", e.opexAlk], ["人工 (" + e.laborCount + " 人)", e.opexLabor], ["维护", e.opexMaint],
     ];
     host.innerHTML = `
       <div class="section-title" style="padding:24px 26px 0;justify-content:space-between">投资估算 (CAPEX) · 各投资项可展开
@@ -847,6 +857,7 @@
         });
         html += `</div>`;
         html += `<div class="sobol-foot muted">ΣST=${m.stSum}（闭合性检查，越接近 1 越可信）</div>`;
+        if (m.kindShare) html += `<div class="sobol-foot" style="margin-top:3px">方差来源：<b style="color:#38bdf8">模型系数 ${Math.round(m.kindShare.epistemic * 100)}%</b> · <b style="color:#f59e0b">经营假设 ${Math.round(m.kindShare.aleatory * 100)}%</b>（按 ST 汇总，O16）</div>`;
       }
       html += `</div>`;
     });

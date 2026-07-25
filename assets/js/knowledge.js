@@ -91,7 +91,7 @@
  */
 window.RAS_KNOWLEDGE = {
   meta: {
-    version: "1.20.0",
+    version: "1.21.0",
     title: "RAS 工艺设计知识库",
     dataAsOf: "2026",
     confidence: "中",
@@ -292,6 +292,7 @@ window.RAS_KNOWLEDGE = {
     alkProdDenit: 3.57, // kg 碱度(以CaCO₃计) / kg N：反硝化产碱 3.57 g/gN（以 CaCO₃ 计，每还原 1 mol NO₃-N 产生 1 mol 碱度）；M3 净耗碱 = 硝化耗 − 反硝化产
     alkTarget: 120,     // mg/L 目标操作碱度（RAS 常控 100–200，取中值 120；低于则硝化/鱼受抑）
     alkMin: 80,         // mg/L 碱度下限（<80 硝化明显受抑、pH 易崩）
+    phTarget: 7.2,      // 目标操作 pH（O10 v1.21.0 脱气需求反算用，略高于下限留安全余量）
     pK1_25: 6.35,       // 碳酸一级解离常数 pK1（25℃ 淡水；引擎内按 temp/salinity 修正）
     pK2_25: 10.33,      // 碳酸二级解离常数 pK2（25℃ 淡水）
     pKaNH3_25: 9.25,    // NH₄⁺/NH₃ 离解常数 pKa（25℃；温度每升 1℃ 约降 0.03）
@@ -313,18 +314,19 @@ window.RAS_KNOWLEDGE = {
     docBaseRemoval: 0.45,// 基础 DOC 去除率（生物滤池异养菌同化/硝化耦合去除；无专用泡沫分离/臭氧时也存在的本底去除，避免 DOC 虚高累积）
   },
 
-  // 参数不确定性区间（v1.8.0 P2-1）：供蒙特卡洛采样，结果从单点升级为区间
-  // 仅含"模型系数"（非用户可自定义的价格/输入）。采样用三角分布，mode=exp 居中
+  // 参数不确定性区间（v1.8.0 P2-1）：供蒙特卡洛/索伯尔采样，结果从单点升级为区间
+  // kind: "epistemic" = 模型系数（文献/经验，不可直接测量；Sobol 属 model 组）
+  //       "aleatory"  = 经营/用户假设（市场或现场可调；Sobol 属 user 组，O16 v1.21.0）
+  // 注意：makeupRate 等纯用户输入由 buildUserSensParams 提供(aleatory)，此处不重复，避免 Sobol 双重计数
   uncertainty: {
     params: [
-      { key: "biofilter.rateNitritation", path: "equipment.biofilter.rateNitritation", low: 0.45, exp: 0.60, high: 0.90, label: "MBBR AOB 实际硝化速率" },
-      { key: "biofilter.nitrTheta", path: "equipment.biofilter.nitrTheta", low: 1.04, exp: 1.08, high: 1.12, label: "硝化温度系数 θ" },
-      { key: "heat.copHeat",        path: "equipment.heat.copHeat",        low: 3.2,  exp: 4.0,  high: 5.0,  label: "热泵制热 COP" },
-      { key: "heat.copCool",        path: "equipment.heat.copCool",        low: 2.8,  exp: 3.5,  high: 4.5,  label: "制冷 COP" },
-      { key: "heat.evapRate",       path: "equipment.heat.evapRate",       low: 0.08, exp: 0.12, high: 0.18, label: "水面蒸发率" },
-      { key: "process.denitRate",   path: "process.denitRate",             low: 0.18, exp: 0.25, high: 0.35, label: "反硝化容积负荷" },
-      { key: "defaults.makeupRate", path: "defaults.makeupRate",           low: 0.005, exp: 0.0075, high: 0.015, label: "补水率", inputKey: "makeupRate" },
-      { key: "process.alkPerN", path: "process.alkPerN", low: 6.5, exp: 7.14, high: 8.0, label: "硝化耗碱度系数" },
+      { key: "biofilter.rateNitritation", path: "equipment.biofilter.rateNitritation", low: 0.45, exp: 0.60, high: 0.90, label: "MBBR AOB 实际硝化速率", kind: "epistemic" },
+      { key: "biofilter.nitrTheta", path: "equipment.biofilter.nitrTheta", low: 1.04, exp: 1.08, high: 1.12, label: "硝化温度系数 θ", kind: "epistemic" },
+      { key: "heat.copHeat",        path: "equipment.heat.copHeat",        low: 3.2,  exp: 4.0,  high: 5.0,  label: "热泵制热 COP", kind: "epistemic" },
+      { key: "heat.copCool",        path: "equipment.heat.copCool",        low: 2.8,  exp: 3.5,  high: 4.5,  label: "制冷 COP", kind: "epistemic" },
+      { key: "heat.evapRate",       path: "equipment.heat.evapRate",       low: 0.08, exp: 0.12, high: 0.18, label: "水面蒸发率", kind: "epistemic" },
+      { key: "process.denitRate",   path: "process.denitRate",             low: 0.18, exp: 0.25, high: 0.35, label: "反硝化容积负荷", kind: "epistemic" },
+      { key: "process.alkPerN", path: "process.alkPerN", low: 6.5, exp: 7.14, high: 8.0, label: "硝化耗碱度系数", kind: "epistemic" },
     ],
   },
 
@@ -759,6 +761,7 @@ window.RAS_KNOWLEDGE = {
       maintenanceRate: 0.04,// 维护占直接费比例/年（v1.3.0 基数由总投资改为直接费）
       elecPrice: 0.72,     // 元/kWh（2025 工商业均价,省际 0.63–0.77）
       solidsDisposalPrice: 0.35, // 元/kg 干固 — 污泥（脱水后）外运/堆肥/沼气的处置单价（v1.7.0 P1-4）
+      nahco3Price: 1.6,      // 元/kg 工业级小苏打(NaHCO₃)：碱度补充投加单价，2023–2025 均价（O15 v1.21.0）
     },
     // 财务模型（v1.15.0 M11）：投资评估与融资假设（纯模型系数，用户可在表单覆盖 finance 输入）
     finance: {

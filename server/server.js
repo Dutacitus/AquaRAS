@@ -99,7 +99,7 @@ app.post("/api/ras/compute", computeLimiter, (req, res) => {
 
 // 健康检查
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok", version: "1.20.0", timestamp: new Date().toISOString() });
+  res.json({ status: "ok", version: "1.21.0", timestamp: new Date().toISOString() });
 });
 
 // 可选：静态文件服务（生产环境可直接用此后端 serve 前端 dist/）
@@ -114,7 +114,7 @@ if (process.env.SERVE_STATIC === "1") {
 
 // ---- 启动 ----
 app.listen(PORT, "0.0.0.0", () => {
-  logger.info(`AquaRAS 后端服务已启动`, { port: PORT, version: "1.20.0" });
+  logger.info(`AquaRAS 后端服务已启动`, { port: PORT, version: "1.21.0" });
   console.log(`[AquaRAS] 后端服务已启动 → http://localhost:${PORT}`);
   console.log(`[AquaRAS] API → http://localhost:${PORT}/api/ras/designs`);
   console.log(`[AquaRAS] 供应商库 → http://localhost:${PORT}/api/suppliers (含 hide/unhide)`);
