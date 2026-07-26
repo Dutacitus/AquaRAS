@@ -244,7 +244,7 @@
         <div class="wq-top"><span class="wq-name">${c.name}</span>
           <span class="wq-pill wq-${c.status}">${lab[c.status]}</span></div>
         <div class="wq-val">${c.value}<small>${c.unit}</small></div>
-        <div class="wq-lim">${SENSITIVE_WQ_LIMITS.has(c.key) ? "限值 (AquaRAS 设计阈值)" : `限值 ${c.limit} ${c.unit}`}</div>
+        ${SENSITIVE_WQ_LIMITS.has(c.key) ? "" : `<div class="wq-lim">限值 ${c.limit} ${c.unit}</div>`}
         <div class="wq-note">${c.note}</div>
       </div>`).join("");
     const head = wq.feasible
@@ -255,7 +255,7 @@
         <span class="badge wq-${wq.status}">${head}</span></div>
       <div class="wq-grid">${cards}</div>
       <div class="note" style="padding:6px 26px 0"><span class="ic">♻️</span>
-      <div>反硝化：${wq.denit.removal > 0 ? `脱氮率属 AquaRAS 商业机密` : "未启用反硝化（仅随补水交换）"}，NO₃-N 稳态 <b>${wq.no3N}</b> mg/L（以 N 计），需反硝化反应器容积约 <b>${wq.denit.volume}</b> m³（负荷 ${wq.denit.no3NLoadDaily} kg NO₃-N/天）。</div></div>
+      <div>反硝化：${wq.denit.removal > 0 ? `已启用反硝化（侧流脱氮）` : "未启用反硝化（仅随补水交换）"}，NO₃-N 稳态 <b>${wq.no3N}</b> mg/L（以 N 计），需反硝化反应器容积约 <b>${wq.denit.volume}</b> m³（负荷 ${wq.denit.no3NLoadDaily} kg NO₃-N/天）。</div></div>
       ${wq.bioGrowth && wq.bioGrowth.available ? `<div class="note" style="padding:6px 26px 0"><span class="ic">🐟</span>
       <div><b>鱼生长生物能学耦合</b>：热生长模型给出 SGR 上限 <b>${wq.bioGrowth.sgrTemp}%/d</b>（温度响应 ${wq.bioGrowth.tempResp}，最适 ${wq.bioGrowth.tempOpt}℃），最小养成 <b>${wq.bioGrowth.daysGrowMin}</b> 天/茬 → 生物最大 <b>${wq.bioGrowth.cyclesMax}</b> 茬/年、生物最大年产量 <b>${(wq.bioGrowth.annualMaxKg/1000).toFixed(1)}</b> t。设定 <b>${wq.bioGrowth.cyclesAssumed}</b> 茬 / 目标 <b>${(wq.bioGrowth.annualTargetKg/1000).toFixed(1)}</b> t → <b style="color:${wq.bioGrowth.status==='ok'?'#38bdf8':wq.bioGrowth.status==='warn'?'#f59e0b':'#f87171'}">${wq.bioGrowth.status==='ok'?'生物可行':wq.bioGrowth.status==='warn'?'临界/偏紧':'不可行'}</b>。这是"设计水温↔产量吞吐"的生物约束，与 HVAC 能耗存在权衡。</div></div>` : ""}
       <div style="padding:0 26px 26px"><div class="note">
@@ -535,7 +535,7 @@
         metricCard("年养殖茬次", c.cycles, "茬", `有效容积年产 ${c.yieldPerM3Year} kg/m³`),
         metricCard("实际产能", c.actualYield, "吨/年", "满足目标且有余量", "accent"),
         metricCard("宽深比 D:H", c.tankDH, "", `圆池旋流自清约束 ≤5`, c.tankShape && c.tankShape.dhRevised ? "brand" : undefined),
-        metricCard("单池停留时间", c.hrtMin, "min", `推荐停留时间见 AquaRAS 设计准则`, c.hrtStatus === "ok" ? undefined : "brand"),
+        metricCard("单池停留时间", c.hrtMin, "min", "", c.hrtStatus === "ok" ? undefined : "brand"),
         metricCard("日循环次数", c.turns, "次/日", `${c.turnsSource === "auto" ? (c.turnsCapped ? "负荷反算·封顶" : "污染负荷反算") : c.turnsSource === "custom" ? "用户自定义" : "系统默认"}`, c.turnsSource === "auto" ? "brand" : undefined),
       ])}
       <div style="padding:0 26px 6px"><div class="note ${c.hrtStatus === "ok" ? "" : "note-warn"}">
@@ -544,8 +544,8 @@
           <div class="tk-title">养殖池水力结构</div>
           <div class="tk-line">· <b>池型</b>：圆形"茶杯"池 <b>Ø${c.tankD}×${c.tankH}m</b>，宽深比 <b>${c.tankDH}</b>（≤5）。</div>
           <div class="tk-line">· <b>自清机制</b>：切向进水形成旋流(forced vortex)，二次流将残饵粪便向池心锥底汇集（中心坑深 ${c.coneDepth}m）富集，经中心底排一次性排出。</div>
-          <div class="tk-line">· <b>循环与停留</b>：日循环 <b>${c.turns} 次/日</b>（${(c.turnsSource === "auto" ? (c.turnsDriver === "co2" ? "由污染负荷反算（CO₂ 脱气主导）" : c.turnsDriver === "tss" ? "由污染负荷反算（悬浮物主导）" : c.turnsDriver === "hrt" ? `由良好刷新下限反算(HRT ${c.hrtTarget}min)` : "自动反算") : c.turnsSource === "custom" ? "用户自定义" : "知识库默认")}${c.turnsCapped ? "；⚠ 负荷超 HRT 包络上限，已封顶，建议提高补水率或增设处理单元" : ""}），单池水力停留 <b>${c.hrtMin} min</b>（推荐值见 AquaRAS 设计准则）${c.hrtStatus === "ok" ? "，溶氧/氨氮更新充分" : "，偏长/偏短，建议调整循环次数或分池"}。</div>
-          <div class="tk-line">· <b>流速与排水</b>：建议切向流速依据 AquaRAS 设计准则确定（自清动量 + 鱼福利）；推荐 Cornell 双排水——中心底排 5–20% 高浓度污物流直送微滤，侧排 80–95% 清洁水回生物滤池。</div>
+          <div class="tk-line">· <b>循环与停留</b>：日循环 <b>${c.turns} 次/日</b>（${(c.turnsSource === "auto" ? (c.turnsDriver === "co2" ? "由污染负荷反算（CO₂ 脱气主导）" : c.turnsDriver === "tss" ? "由污染负荷反算（悬浮物主导）" : c.turnsDriver === "hrt" ? `由良好刷新下限反算(HRT ${c.hrtTarget}min)` : "自动反算") : c.turnsSource === "custom" ? "用户自定义" : "知识库默认")}${c.turnsCapped ? "；⚠ 负荷超 HRT 包络上限，已封顶，建议提高补水率或增设处理单元" : ""}），单池水力停留 <b>${c.hrtMin} min</b>${c.hrtStatus === "ok" ? "，溶氧/氨氮更新充分" : "，偏长/偏短，建议调整循环次数或分池"}。</div>
+          <div class="tk-line">· <b>流速与排水</b>：建议切向流速（自清动量 + 鱼福利）；推荐 Cornell 双排水——中心底排 5–20% 高浓度污物流直送微滤，侧排 80–95% 清洁水回生物滤池。</div>
         </div></div></div>
       ${section("投喂与氮负荷", "Feed & N", [
         metricCard("饲料系数 FCR", f.fcr, "", "饲料/增重"),
@@ -578,8 +578,8 @@
         metricCard("年碳排放", d.environment.annualCarbonT, "tCO₂e/年", "全厂电力排放"),
       ])}
       ${section("生物滤池 (MBBR)", "Biofilter", [
-        metricCard("反应器容积", bf.reactorVol, "m³", `硝化负荷见 AquaRAS 设计准则（kg TAN/m³·d）`),
-        metricCard("含填料总容积", bf.totalVol, "m³", `填充率见 AquaRAS 设计准则`, "brand"),
+        metricCard("反应器容积", bf.reactorVol, "m³", ""),
+        metricCard("含填料总容积", bf.totalVol, "m³", "", "brand"),
         metricCard("滤池单元", bf.units, "座", `单座 ${bf.unitVol} m³`),
         metricCard("类型", bf.type, "", "移动床生物膜"),
       ])}
@@ -625,7 +625,7 @@
       ${renderTailwater(d)}
       <div style="padding:0 26px 26px"><div class="note">
         <span class="ic">⚠️</span>
-        <div><b>设计说明：</b>生物滤池硝化负荷已含水温折减与安全系数 ${d.inputs.sf}。需配置备用发电机、备用纯氧、在线监测（DO/pH/TAN/温度）与自动化控制，确保满足 AquaRAS 设计水质阈值（TAN、DO 等）。</div></div></div>`;
+        <div><b>设计说明：</b>生物滤池硝化负荷已含水温折减与安全系数 ${d.inputs.sf}。需配置备用发电机、备用纯氧、在线监测（DO/pH/TAN/温度）与自动化控制，确保满足设计水质阈值（TAN、DO 等）。</div></div></div>`;
     const twSel = document.getElementById("dischargeLevel");
     if (twSel) twSel.addEventListener("change", () => compute());
     const twTechSel = document.getElementById("tailwaterTech");
@@ -647,7 +647,7 @@
     const rows = [
       ["圆形养殖池", c.tankCount + " 个", `Ø${c.tankD} m × ${c.tankH} m（D:H ${c.tankDH}），锥底＋中心底排，有效 ${c.singleTankVol} m³`, "PP/玻璃钢/混凝土"],
       ["转鼓微滤机", so.units + " 台", `${so.screen} µm 筛网，单台 ${so.eachFlow} m³/h`, "不锈钢"],
-      ["MBBR 生物滤池", bf.units + " 座", `总 ${bf.totalVol} m³，填料为 AquaRAS 设计值`, "曝气+悬浮填料"],
+      ["MBBR 生物滤池", bf.units + " 座", `总 ${bf.totalVol} m³`, "曝气+悬浮填料"],
       ["增氧系统", "1 套", `供氧 ${ox.o2Supply} kg/h（${ox.type}）`, "氧气锥+LHO"],
       ["CO₂ 脱除塔", "1 座", `${ox.degasserType}`, "填料式"],
       ["循环水泵", "≥2 台", `${hy.recircFlowH} m³/h，一用一备`, "变频"],
@@ -658,7 +658,7 @@
     ];
     // —— 选配设备（仅在对应开关启用时显示）——
     if (d.waterQuality.denit.removal > 0) {
-      rows.splice(3, 0, ["反硝化反应器", "1 座", `容积 ${d.waterQuality.denit.volume} m³，脱氮率属 AquaRAS 商业机密（侧流脱氮）`, "缺氧+碳源投加"]);
+      rows.splice(3, 0, ["反硝化反应器", "1 座", `容积 ${d.waterQuality.denit.volume} m³（侧流脱氮）`, "缺氧+碳源投加"]);
     }
     if (d.inputs.uv !== false) {
       rows.splice(rows.findIndex(r => r[0] === "污泥处理"), 0, ["紫外消毒", "1 套", "30 mJ/cm²", "在线"]);
@@ -681,7 +681,7 @@
     const pv = d.economics && d.economics.pv;
     if (!pv || !pv.enabled) {
       return `<div class="note" style="padding:10px 26px 24px"><span class="ic">☀️</span>
-        <div>未启用光伏。在设计输入「光伏投资」中填写<b>光伏装机容量</b>或<b>光伏覆盖比例</b>即可接入光伏投资模块：自动计算年发电量、自发自用/余电上网、节省电费与回收期/IRR，并并入项目 CAPEX 与运营成本。光伏模型系数（造价 / 等效小时 / 运维单价等）经市场共识校准，具体数值属 AquaRAS 商业机密。</div></div>`;
+        <div>未启用光伏。在设计输入「光伏投资」中填写<b>光伏装机容量</b>或<b>光伏覆盖比例</b>即可接入光伏投资模块：自动计算年发电量、自发自用/余电上网、节省电费与回收期/IRR，并并入项目 CAPEX 与运营成本。光伏模型系数（造价 / 等效小时 / 运维单价等）经市场共识校准。</div></div>`;
     }
     const ec = E.rmb;
     const rows = [
@@ -744,7 +744,7 @@
         <tbody>${capRows}</tbody>
         <tfoot><tr><td>合计 CAPEX</td><td class="num">${ec(e.capexTotal)}</td></tr></tfoot></table></div>
       <div class="note" style="padding:4px 26px 0"><span class="ic">📐</span>
-      <div>总投资 = 直接费(设备+土建) + 间接费(EPCM / 调试 / 不可预见 / 其他，设封顶上限) + 可选土地费。规模因子 <b>${e.scaleFactor}</b>：单位投资随年产量呈亚线性变化（规模经济幂律），大规更省、小规更贵；各分项已按<b>固定/可变比例</b>拆分（规模因子仅作用于可变段）。选择地区后 CAPEX/电价/人工按<b>地区指数</b>调整。表中「直接费子项合计」「间接费子项合计」为各自分项小计（不含土地），二者合计即工程费；「合计 CAPEX」为计入土地后的总投资。具体费率与规模指数属 AquaRAS 商业机密。</div></div>
+      <div>总投资 = 直接费(设备+土建) + 间接费(EPCM / 调试 / 不可预见 / 其他，设封顶上限) + 可选土地费。规模因子 <b>${e.scaleFactor}</b>：单位投资随年产量呈亚线性变化（规模经济幂律），大规更省、小规更贵；各分项已按<b>固定/可变比例</b>拆分（规模因子仅作用于可变段）。选择地区后 CAPEX/电价/人工按<b>地区指数</b>调整。表中「直接费子项合计」「间接费子项合计」为各自分项小计（不含土地），二者合计即工程费；「合计 CAPEX」为计入土地后的总投资。</div></div>
       <div class="section-title" style="margin-top:8px">运营成本估算 (OPEX / 年)</div>
       <div class="table-wrap" style="padding:14px 26px 6px"><table class="data">
         <thead><tr><th>运营成本项</th><th class="num">金额 / 年</th></tr></thead>
@@ -802,7 +802,7 @@
       </div>
       <div id="sobolResult" style="padding:6px 26px 8px"></div>
       <div style="padding:0 26px 26px"><div class="note"><span class="ic">📌</span>
-      <div>经济参数为行业经验量级估算（人民币），实际受地区人工/地价/电价/苗种价格影响显著。饲料通常占 OPEX 的 70–80%。价格基准数据属 AquaRAS 商业机密，建议项目级复核。</div></div></div>`;
+      <div>经济参数为行业经验量级估算（人民币），实际受地区人工/地价/电价/苗种价格影响显著。饲料通常占 OPEX 的 70–80%。建议项目级复核。</div></div></div>`;
     renderSensitivity(d);
     const snSel = document.getElementById("snMetric");
     if (snSel) snSel.addEventListener("change", () => renderSensitivity(d));
@@ -900,7 +900,7 @@
     </section>
     <div class="doc-section">
       <h2>一、计算依据与标准体系</h2>
-      <p>计算遵循质量守恒原理与现行水产养殖工程设计相关规范（水质控制、尾水排放、建筑节能等），引用行业公开标准与文献。具体参数与公式属于 AquaRAS 商业机密，不对外公开。</p>
+      <p>计算遵循质量守恒原理与现行水产养殖工程设计相关规范（水质控制、尾水排放、建筑节能等），引用行业公开标准与文献。</p>
     </div>
     <div class="doc-section">
       <h2>二、核心计算逻辑（概览）</h2>
@@ -915,7 +915,7 @@
     </div>
     <div class="doc-section">
       <h2>三、保密声明</h2>
-      <p class="doc-cap">🔒 设备选型系数、经济模型参数、规模经济曲线与实现代码均为 AquaRAS 商业机密，不对普通用户披露。完整计算书与管理功能仅对管理员开放。</p>
+      <p class="doc-cap">🔒 完整计算书与管理功能仅对管理员开放。</p>
     </div>`;
   }
 
@@ -1086,7 +1086,7 @@
       <div class="doc-section">
         <h3>一、计算依据与标准体系</h3>
         <p class="doc-p">引擎以循环水养殖（RAS）工程的质量守恒原理为内核，基准参数综合自以下权威文献与行业规范（数值为设计基准，计算时结合安全系数与用户自定义微调）：</p>
-        <div class="doc-refs"><span>📚 计算所依据的规范与文献目录为 AquaRAS 商业机密，恕不公开。</span></div>
+        <div class="doc-refs"><span>📚 计算所依据的规范与文献目录未公开。</span></div>
       </div>
 
       <div class="doc-grid">
@@ -1184,7 +1184,7 @@
 
       <div class="doc-confidential">
         <div class="doc-lock">🔒 核心计算逻辑保密</div>
-        <p>本系统采用 <strong>AquaRAS 专有工艺计算引擎</strong>，其<strong>核心算法、设备选型系数、经济模型参数与实现代码均为商业机密，不在本文档中披露</strong>。本文档仅说明计算体系、所引用的行业/文献标准与工程方法论，用于帮助用户理解设计依据与结果边界。</p>
+        <p>本系统采用 <strong>AquaRAS 专有工艺计算引擎</strong>，其计算体系、设备选型与经济模型参数依据现行规范与工程经验设定；本文档仅说明计算体系、所引用的行业/文献标准与工程方法论，用于帮助用户理解设计依据与结果边界。</p>
         <p class="doc-cap"><strong>免责声明：本引擎计算数据仅供参考。</strong>本系统输出为工程量级估算，<strong>实际工程须由具备资质的设计单位结合场地条件、设备选型与水文/气候数据，并依据现行国家与行业规范深化设计与施工图</strong>。AquaRAS 不对直接采用估算结果造成的工程风险承担责任。</p>
         <p class="doc-cap"><strong>关于作者：</strong>水产专业硕士研究生，多年工厂化循环水（RAS）从业经验。</p>
       </div>
@@ -1599,14 +1599,14 @@
           ["年运营成本", E.rmb(d.economics.opexTotal)],
           ["单位鱼成本", d.economics.costPerKg + " 元/kg"],
         ])}
-        <h2>水质可行性校核</h2>${keyval(d.waterQuality.checks.map((c) => [c.name + " (" + c.status + ")", c.value + " " + c.unit + (SENSITIVE_WQ_LIMITS.has(c.key) ? " / 限值 (AquaRAS 设计阈值)" : " / 限值 " + c.limit)]))}
+        <h2>水质可行性校核</h2>${keyval(d.waterQuality.checks.map((c) => [c.name + " (" + c.status + ")", c.value + " " + c.unit + (SENSITIVE_WQ_LIMITS.has(c.key) ? "" : " / 限值 " + c.limit)]))}
         <h2>盈利与投资回报</h2>${keyval([["售价(元/kg)", d.economics.salePrice], ["年营业收入", E.rmb(d.economics.revenue)], ["年毛利", E.rmb(d.economics.grossProfit)], ["投资回收期", (d.economics.paybackYears != null ? d.economics.paybackYears.toFixed(1) + " 年" : "不可行")], ["年化 ROI", (d.economics.roi != null ? d.economics.roi + " %" : "—")]])}
         <h2>设计计算书（方法论）</h2>
-        <p style="font-size:13px;color:#475569">计算体系：质量守恒原理 + RAS 工程经验基准。水质控制目标、设备选型系数与经济模型参数均依据现行规范与工程经验设定，具体数值为 AquaRAS 商业机密，不在本报告披露。</p>
-        <p style="font-size:12.5px;color:#94a3b8;border-left:3px solid #0ea5e9;padding-left:10px">🔒 核心算法、设备选型系数、经济模型参数与实现代码为 AquaRAS 商业机密，不在本文档披露。本报告为工程量级估算，实际工程须由具备资质单位依据现行规范深化设计。</p>
+        <p style="font-size:13px;color:#475569">计算体系：质量守恒原理 + RAS 工程经验基准。水质控制目标、设备选型系数与经济模型参数均依据现行规范与工程经验设定，不在本报告披露。</p>
+        <p style="font-size:12.5px;color:#94a3b8;border-left:3px solid #0ea5e9;padding-left:10px">🔒 核心算法、设备选型系数、经济模型参数与实现代码不在本文档披露。本报告为工程量级估算，实际工程须由具备资质单位依据现行规范深化设计。</p>
         <h2>工艺流程图 (PFD)</h2><div style="border:1px solid #eee;border-radius:12px;padding:10px">${pfd}</div>
         <h2>管道仪表图 (P&ID)</h2><div style="border:1px solid #eee;border-radius:12px;padding:10px">${pid}</div>
-        <h2>参考文献</h2><p style="font-size:13px;color:#94a3b8">计算所依据的规范与文献目录为 AquaRAS 商业机密。</p>
+        <h2>参考文献</h2><p style="font-size:13px;color:#94a3b8">计算所依据的规范与文献目录未公开。</p>
         <p style="margin-top:30px;color:#94a3b8;font-size:12px">本报告由 AquaRAS 自动生成，结果为工程估算，实际工程需结合场地与规范深化。</p>
         </body></html>`);
       w.document.close();
