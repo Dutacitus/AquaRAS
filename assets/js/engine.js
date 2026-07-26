@@ -840,7 +840,7 @@ RAS.engine = (function () {
     const checks = [
       { key: "tan", name: "总氨氮 TAN", value: round(cTan, 2), unit: "mg/L", limit: tanHard, status: st(cTan, tanHard, tanHard * 1.5, true), note: "AOB 亚硝化 + 补水稀释" },
       { key: "no2", name: "亚硝态氮 NO₂", value: round(cNo2eff, 2), unit: "mg/L", limit: no2Hard, status: st(cNo2eff, no2Hard, no2Hard * 1.5, true), note: no2OxidizeFrac > 0 ? `NOB 硝化(NO₂→NO₃)${ozoneOn ? ` + 臭氧氧化削减 ${Math.round(no2OxidizeFrac * 100)}%` : ""}` : "NOB 硝化(NO₂→NO₃)，速率高于 AOB" },
-      { key: "salr", name: "生物滤池面积负荷 SALR", value: round(salr, 2), unit: "g TAN/m²·天", limit: `≤${salrMax}（经济 ${salrRef}）`, status: salrStatus, note: `填料体积 ${round(mediaVol, 1)} m³；TAN 日负荷 ${round(tanDaily * 1000, 0)} g/天（对照 Frontiers 2023 MBBR 经验）` },
+      { key: "salr", name: "生物滤池面积负荷 SALR", value: round(salr, 2), unit: "g TAN/m²·天", limit: `≤${salrMax}`, status: salrStatus, note: `填料体积 ${round(mediaVol, 1)} m³；TAN 日负荷 ${round(tanDaily * 1000, 0)} g/天` },
       { key: "no3", name: "硝态氮 NO₃-N", value: round(no3Nmg, 1), unit: "mg/L（以 N 计）", limit: 300, status: st(no3Nmg, 300, wq.no3SoftCap, true), note: denitRemoval > 0 ? "已启用反硝化（侧流脱氮），剩余随补水交换" : "仅随补水交换，需排换水或反硝化" },
       { key: "co2", name: "二氧化碳 CO₂", value: round(cCo2, 1), unit: "mg/L", limit: wq.co2Max * 2, status: st(cCo2, wq.co2Max * 2, wq.co2Max, true), note: `脱气塔脱除 ${round(co2Stripped, 1)} kg/天 + 开放水面天然挥发 ~${round(co2Natural, 1)} kg/天 + 补水稀释` },
       { key: "alk", name: "碱度(以CaCO₃计)", value: round(cAlkSys, 0), unit: "mg/L", limit: alkMin, status: (nahco3PerKgFish > 1.5 || cAlkSys < alkMin) ? "fail" : (nahco3PerKgFish > 0.8 || (doseM === 0 && cAlkSys < alkTarget)) ? "warn" : "ok", note: doseM > 0 ? `需投加 NaHCO₃ ${round(nahco3Day, 1)} kg/天(≈${round(nahco3PerKgFish, 3)} kg/kg鱼)` : "源水碱度充足，无需投加" },
@@ -854,7 +854,7 @@ RAS.engine = (function () {
       { key: "tankHydro", name: "养殖池水力结构", value: hrtMin, unit: "min 单池HRT",
         limit: `D:H ${tankDH}(≤${tankDHmax})；HRT 宜 ${tankHRTmin}–${tankHRTmax}min`,
         status: hrtStatus,
-        note: `单池 HRT ${hrtMin}min（推荐 ${tankHRTmin}–${tankHRTmax}min，${hrtStatus === "ok" ? "达标" : "偏离，建议调整循环次数或分池"}）；日循环 ${turns} 次/日（${turnsSource === "auto" ? (turnsDriver === "co2" ? "CO₂ 脱气主导" : turnsDriver === "tss" ? "悬浮物主导" : "负荷反算") : turnsSource === "custom" ? "用户自定义" : "系统默认"}${turnsCapped ? "，⚠ 已封顶 96 次/日" : ""}）。池型与自清机制详见「养殖池系统」说明。`,
+        note: `单池 HRT ${hrtMin}min（推荐 ${tankHRTmin}–${tankHRTmax}min，${hrtStatus === "ok" ? "达标" : "偏离，建议调整循环次数或分池"}）；日循环 ${turns} 次/日（${turnsSource === "auto" ? (turnsDriver === "co2" ? "CO₂ 脱气主导" : turnsDriver === "tss" ? "悬浮物主导" : "负荷反算") : turnsSource === "custom" ? "用户自定义" : "系统默认"}${turnsCapped ? "，⚠ 已封顶 96 次/日" : ""}）。池型与自清机制参数在「养殖池系统」设计中给出。`,
       },
     ];
 

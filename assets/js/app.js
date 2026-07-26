@@ -512,7 +512,7 @@
         <div style="font-size:12px;color:#cbd5e1;margin:8px 0 2px">投资回收期分布 (年)</div>
         <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:4px 6px">${hist(res.histPayback, "#f59e0b")}</div>
         <div class="note" style="margin-top:8px"><span class="ic">🎲</span>
-        <div>蒙特卡洛 <b>${res.N}</b> 次采样（三角分布）。<b>全口径</b>=模型系数+经营假设；<b>仅模型系数</b>(epistemic) 口径见各指标次级行（浅灰）。水质可行(全口径)：达标 <b>${res.waterQuality.okPct}%</b> / 预警 <b>${res.waterQuality.warnPct}%</b> / 超限 <b>${res.waterQuality.failPct}%</b>${res.waterQualityEpistemic ? `；仅模型系数口径达标 <b>${res.waterQualityEpistemic.okPct}%</b>` : ""}。分层后可知区间宽度多少来自"模型本身不确定"、多少来自"你的经营假设波动"。</div></div>
+        <div>蒙特卡洛 <b>${res.N}</b> 次采样（三角分布）。<b>全口径</b>=模型系数+经营假设；<b>仅模型系数</b>(epistemic) 口径列于各指标次级行（浅灰）。水质可行(全口径)：达标 <b>${res.waterQuality.okPct}%</b> / 预警 <b>${res.waterQuality.warnPct}%</b> / 超限 <b>${res.waterQuality.failPct}%</b>${res.waterQualityEpistemic ? `；仅模型系数口径达标 <b>${res.waterQualityEpistemic.okPct}%</b>` : ""}。分层后可知区间宽度多少来自"模型本身不确定"、多少来自"你的经营假设波动"。</div></div>
       </div>`;
   }
   function round2(v) { return typeof v === "number" ? Math.round(v * 100) / 100 : v; }
@@ -1045,7 +1045,7 @@
           <tr><td>光伏回收期</td><td class="num">${f(p.paybackYears, 2)} 年</td></tr>
           <tr><td>光伏 IRR</td><td class="num">${f(p.irr, 1)}%</td></tr>
         </tbody></table>
-        <p class="doc-cap">以上为当前设计输入下光伏模块实时输出；光伏 CAPEX 已并入项目总投资、节电/上网收入已并入运营账（见「经济估算」面板与盈利能力指标）。</p>
+        <p class="doc-cap">以上为当前设计输入下光伏模块实时输出；光伏 CAPEX 已并入项目总投资、节电/上网收入已并入运营账，并在「经济估算」面板与盈利能力指标中体现。</p>
       </div>`;
       }
     } catch (e) { pvLive = ""; }
@@ -1071,7 +1071,7 @@
           <tr><td>臭氧</td><td class="num">${oz ? f(oz.total / 10000, 1) + " 万元" : "未启用"}（${f(es.ozone, 2)} kW）</td></tr>
           <tr><td>主动消毒对数灭活</td><td class="num">${dis ? f(dis.log, 1) + " LOG（目标 " + f(dis.target, 1) + "，" + dis.status + "）" : "—"}</td></tr>
         </tbody></table>
-        <p class="doc-cap">以上为当前设计输入下三单元的实时 capex 与能耗；未启用单元对全部经济与水质指标中性。溶解有机碳 DOC 与消毒状态见「水质可行性校核」面板。</p>
+        <p class="doc-cap">以上为当前设计输入下三单元的实时 capex 与能耗；未启用单元对全部经济与水质指标中性。溶解有机碳 DOC 与消毒状态在「水质可行性校核」面板中展示。</p>
       </div>`;
       }
     } catch (e) { refineLive = ""; }
@@ -1079,7 +1079,7 @@
     host.innerHTML = `
       <div class="doc-hero">
         <h2 class="doc-title">设计计算书 · 计算标准与方法</h2>
-        <p class="doc-lead">本计算书说明 AquaRAS 工艺设计引擎所采用的<strong>计算标准体系</strong>、<strong>工程方法论</strong>与结果边界，帮助您理解设计依据。核心计算逻辑依法保密，详见文末声明。</p>
+        <p class="doc-lead">本计算书说明 AquaRAS 工艺设计引擎所采用的<strong>计算标准体系</strong>、<strong>工程方法论</strong>与结果边界，帮助您理解设计依据。核心计算逻辑依法保密。</p>
       </div>
 
       <div class="doc-section">
@@ -1104,8 +1104,8 @@
         <div class="doc-card">
           <h4>③ 投资估算基准 (CAPEX)</h4>
           <table class="data doc-table"><thead><tr><th>投资项</th><th class="num">单价</th><th>单位</th><th class="src">来源/年份（校准时效）</th></tr></thead><tbody>${capRows}</tbody></table>
-          <p class="doc-cap">直接费按养殖水体（土建按面积）估算，详见「经济估算」中各投资项的一级分解。总投资另含 <b>间接费</b>（EPCM 12% + 调试 4% + 不可预见 6% + 其他 3% = 直接费 25%，封顶上限）与可选 <b>土地费</b>；并应用 <b>规模经济（分段曲线）</b>：单位投资随年产量呈亚线性变化，但按产能档位采用不同规模指数（&lt;30t 更陡、&gt;1000t 趋缓，下限 0.55×、上限 2.5×），并在 30/300/1000t 档位边界做平滑过渡（消除投资跳变），比单一 0.6 次幂常数更贴合工程实际。本表为参考规模下的基准单价。</p>
-          <p class="doc-cap">⏱️ <b>校准时效（v1.18.3 优化9）</b>：各单价数据来源与校准年份见右侧「来源/年份」列；设备/土建价格随通胀与供应链波动，建议<b>年度重校准</b>，并在 knowledge.economics.capexCalibration 中更新来源与置信度，便于审计溯源。</p>
+          <p class="doc-cap">直接费按养殖水体（土建按面积）估算，各投资项的一级分解在「经济估算」中列示。总投资另含 <b>间接费</b>（EPCM 12% + 调试 4% + 不可预见 6% + 其他 3% = 直接费 25%，封顶上限）与可选 <b>土地费</b>；并应用 <b>规模经济（分段曲线）</b>：单位投资随年产量呈亚线性变化，但按产能档位采用不同规模指数（&lt;30t 更陡、&gt;1000t 趋缓，下限 0.55×、上限 2.5×），并在 30/300/1000t 档位边界做平滑过渡（消除投资跳变），比单一 0.6 次幂常数更贴合工程实际。本表为参考规模下的基准单价。</p>
+          <p class="doc-cap">⏱️ <b>校准时效（v1.18.3 优化9）</b>：右侧「来源/年份」列列明各单价数据来源与校准年份；设备/土建价格随通胀与供应链波动，建议<b>年度重校准</b>，并在 knowledge.economics.capexCalibration 中更新来源与置信度，便于审计溯源。</p>
           <p class="doc-cap"><b>规模因子解读：</b>规模因子 = 当前规模单位产能投资 ÷ 参考规模单位投资的倍数。&gt;1 表示小规不经济（单位投资更高），&lt;1 表示大规有规模经济（单位投资更低），=1 即为参考规模。</p>
           <p class="doc-cap">公式：<code>规模因子 = (参考规模 ÷ 年产量) ^ (1 − 指数)</code>，按产量档位取指数——&lt;30t 用 0.55（最陡）、30–300t 用 0.72、300–1000t 用 0.82、&gt;1000t 用 0.88（趋缓）。结果夹在 [0.55, 2.5]：单位投资最多比基准低 45% 或高 2.5×，防极端规模失真。</p>
           <table class="data doc-table"><thead><tr><th>年产量</th><th class="num">规模因子</th><th>单位投资为基准</th></tr></thead><tbody>
