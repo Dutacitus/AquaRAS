@@ -410,6 +410,14 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
 .note, .wq-note { overflow-wrap: anywhere; }
 .note-warn { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.45); color: var(--text); }
 .note-warn b { color: #f59e0b; }
+/* 预算反算横幅 */
+.budget-note.ok { background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.45); color: var(--text); }
+.budget-note.ok b { color: #10b981; }
+.budget-note.fail { background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.45); color: var(--text); }
+.budget-note.fail b { color: #ef4444; }
+.budget-note.hidden { display: none; }
+.budget-note .sub { display: block; margin-top: 6px; font-size: 12.5px; color: var(--text-soft); }
+.disabled-input { opacity: 0.5; cursor: not-allowed; }
 
 /* ---------- Sobol 主因子分析 ---------- */
 .sobol-card { margin: 14px 0; padding: 16px 18px; border-radius: var(--radius-sm);

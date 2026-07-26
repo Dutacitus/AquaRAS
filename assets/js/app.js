@@ -196,6 +196,8 @@
       uv: document.getElementById("uv") ? document.getElementById("uv").checked : true,
       foamFrac: document.getElementById("foamFrac") ? document.getElementById("foamFrac").checked : false,
       ozone: document.getElementById("ozone") ? document.getElementById("ozone").checked : false,
+      // v1.25.0 预算反算：留空(NULL)=不限，按目标产量正向计算；填写正值=反算最大产能
+      budgetCap: (() => { const el = document.getElementById("budget"); const v = parseFloat(el.value); return (el.value.trim() && !isNaN(v) && v > 0) ? v : null; })(),
     };
   }
   function renderAll(d) {
@@ -210,8 +212,65 @@
     setHero("hsSpecies", d.species.name);
   }
   function compute() {
-    currentDesign = E.compute(readInputs());
-    renderAll(currentDesign);
+    const inputs = readInputs();
+    const bc = inputs.budgetCap;
+    if (bc != null) {
+      // 预算反算模式：给定预算上限，反算最大可建产能（目标 weight 不可自定义）
+      const res = E.optimize({
+        speciesKey: inputs.speciesKey,
+        designTemp: inputs.designTemp,
+        constraints: { maxBudget: bc },
+        objective: "maxCapacity",
+      });
+      renderBudgetResult(res, bc);
+      currentDesign = res.ok ? res.best : res.baseline;
+      renderAll(currentDesign);
+    } else {
+      clearBudgetBanner();
+      currentDesign = E.compute(inputs);
+      renderAll(currentDesign);
+    }
+  }
+  function renderBudgetResult(res, bc) {
+    const banner = document.getElementById("budgetBanner");
+    if (!banner) return;
+    if (res.ok) {
+      const used = res.best.economics.capexTotal / 10000;
+      const remain = bc - used;
+      const floor = res.floorCapex != null ? res.floorCapex : null;
+      banner.className = "note budget-note ok";
+      banner.innerHTML = `<span class="ic">🎯</span><div>
+        <b>预算反算模式 · 最大产能：</b>预算 <b>${bc} 万元</b> → 最大可建产能 <b>${(res.best._raw.annual / 1000)} 吨/年</b>；
+        已用 CAPEX <b>${used.toFixed(1)} 万元</b>，余量 <b>${remain.toFixed(1)} 万元</b>。
+        ${floor != null ? `资金地板 ≈ <b>${floor.toFixed(1)} 万元</b>（最小可行规模投资下限）。` : ""}
+        <span class="sub">预算模式下目标年产量不可自定义；清空预算上限即恢复按产能正向设计。</span></div>`;
+    } else {
+      const floor = res.floorCapex != null ? res.floorCapex.toFixed(1) : "—";
+      banner.className = "note budget-note fail";
+      banner.innerHTML = `<span class="ic">🚫</span><div>
+        <b>预算不足：</b>在 <b>${bc} 万元</b> 预算下无可行方案。资金地板 ≈ <b>${floor} 万元</b>（最小可行规模的投资下限）——请提高预算或放宽约束。
+        <span class="sub">下方为参考基线（产能 ${(res.baseline._raw.annual / 1000)} 吨），仅供对照，不代表可落地方案。</span></div>`;
+    }
+  }
+  function clearBudgetBanner() {
+    const banner = document.getElementById("budgetBanner");
+    if (banner) { banner.className = "note budget-note hidden"; banner.innerHTML = ""; }
+  }
+  /* 预算反算模式：填写预算上限时锁定目标年产量输入 */
+  function initBudgetMode() {
+    const budgetEl = document.getElementById("budget");
+    const annualEl = document.getElementById("annualTons");
+    if (!budgetEl || !annualEl) return;
+    const sync = () => {
+      const v = parseFloat(budgetEl.value);
+      const on = budgetEl.value.trim() !== "" && !isNaN(v) && v > 0;
+      annualEl.disabled = on;
+      annualEl.classList.toggle("disabled-input", on);
+      const hint = annualEl.parentElement.querySelector(".hint");
+      if (hint) hint.textContent = on ? "预算反算模式下不可自定义（已锁定）" : "商品鱼上市量（活重）";
+    };
+    budgetEl.addEventListener("input", sync);
+    sync();
   }
 
   /* ---------------- 渲染：工艺参数 ---------------- */
@@ -2416,7 +2475,7 @@
     const sv = document.getElementById("sysVersion");
     if (sv && K && K.meta) sv.textContent = K.meta.version;   // 首页版本号跟随系统版本（knowledge.meta.version）
     initTheme(); initSpecies(); initRegionChips(); initTabs(); initMagnetic();
-    initModelControls(); initExport(); initOptimizer(); initLibrary(); initLinking(); initSuppliers(); initKnowledge();
+    initModelControls(); initExport(); initOptimizer(); initLibrary(); initLinking(); initSuppliers(); initKnowledge(); initBudgetMode();
     // 统一管理员锁按钮
     const adminLockBtn = document.getElementById("adminLockBtn");
     if (adminLockBtn) adminLockBtn.addEventListener("click", toggleAdmin);
