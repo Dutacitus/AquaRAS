@@ -234,8 +234,7 @@
       <div class="metrics">${items.join("")}</div>`;
   }
   /* 水质可行性校核区块（稳态质量平衡结果 + OK/WARN/FAIL 徽章） */
-  // 敏感阈值：限值取自 AquaRAS 校准（K.waterQuality / K.process / K.biofilter），仅向管理员视图完整披露
-  const SENSITIVE_WQ_LIMITS = new Set(["tan", "no2", "do", "co2", "alk", "ph", "tss", "doc", "nh3", "disinfection", "salr"]);
+  // 水质控制限值（阈值）为行业通用设计标准，向用户公开披露
   function renderWQSection(wq) {
     if (!wq) return "";
     const lab = { ok: "达标", warn: "预警", fail: "超限" };
@@ -244,7 +243,7 @@
         <div class="wq-top"><span class="wq-name">${c.name}</span>
           <span class="wq-pill wq-${c.status}">${lab[c.status]}</span></div>
         <div class="wq-val">${c.value}<small>${c.unit}</small></div>
-        ${SENSITIVE_WQ_LIMITS.has(c.key) ? "" : `<div class="wq-lim">限值 ${c.limit} ${c.unit}</div>`}
+        <div class="wq-lim">限值 ${c.limit} ${c.unit}</div>
         <div class="wq-note">${c.note}</div>
       </div>`).join("");
     const head = wq.feasible
@@ -534,7 +533,7 @@
         metricCard("放养密度", c.density, "kg/m³", "设计生物量密度"),
         metricCard("年养殖茬次", c.cycles, "茬", `有效容积年产 ${c.yieldPerM3Year} kg/m³`),
         metricCard("实际产能", c.actualYield, "吨/年", "满足目标且有余量", "accent"),
-        metricCard("宽深比 D:H", c.tankDH, "", `圆池旋流自清约束 ≤5`, c.tankShape && c.tankShape.dhRevised ? "brand" : undefined),
+        metricCard("宽深比 D:H", c.tankDH, "", `圆池旋流自清约束`, c.tankShape && c.tankShape.dhRevised ? "brand" : undefined),
         metricCard("单池停留时间", c.hrtMin, "min", "", c.hrtStatus === "ok" ? undefined : "brand"),
         metricCard("日循环次数", c.turns, "次/日", `${c.turnsSource === "auto" ? (c.turnsCapped ? "负荷反算·封顶" : "污染负荷反算") : c.turnsSource === "custom" ? "用户自定义" : "系统默认"}`, c.turnsSource === "auto" ? "brand" : undefined),
       ])}
@@ -542,9 +541,9 @@
         <span class="ic">🌀</span>
         <div>
           <div class="tk-title">养殖池水力结构</div>
-          <div class="tk-line">· <b>池型</b>：圆形"茶杯"池 <b>Ø${c.tankD}×${c.tankH}m</b>，宽深比 <b>${c.tankDH}</b>（≤5）。</div>
+          <div class="tk-line">· <b>池型</b>：圆形"茶杯"池 <b>Ø${c.tankD}×${c.tankH}m</b>，宽深比 <b>${c.tankDH}</b>。</div>
           <div class="tk-line">· <b>自清机制</b>：切向进水形成旋流(forced vortex)，二次流将残饵粪便向池心锥底汇集（中心坑深 ${c.coneDepth}m）富集，经中心底排一次性排出。</div>
-          <div class="tk-line">· <b>循环与停留</b>：日循环 <b>${c.turns} 次/日</b>（${(c.turnsSource === "auto" ? (c.turnsDriver === "co2" ? "由污染负荷反算（CO₂ 脱气主导）" : c.turnsDriver === "tss" ? "由污染负荷反算（悬浮物主导）" : c.turnsDriver === "hrt" ? `由良好刷新下限反算(HRT ${c.hrtTarget}min)` : "自动反算") : c.turnsSource === "custom" ? "用户自定义" : "知识库默认")}${c.turnsCapped ? "；⚠ 负荷超 HRT 包络上限，已封顶，建议提高补水率或增设处理单元" : ""}），单池水力停留 <b>${c.hrtMin} min</b>${c.hrtStatus === "ok" ? "，溶氧/氨氮更新充分" : "，偏长/偏短，建议调整循环次数或分池"}。</div>
+          <div class="tk-line">· <b>循环与停留</b>：日循环 <b>${c.turns} 次/日</b>（${(c.turnsSource === "auto" ? (c.turnsDriver === "co2" ? "由污染负荷反算（CO₂ 脱气主导）" : c.turnsDriver === "tss" ? "由污染负荷反算（悬浮物主导）" : c.turnsDriver === "hrt" ? `由良好刷新下限反算` : "自动反算") : c.turnsSource === "custom" ? "用户自定义" : "知识库默认")}${c.turnsCapped ? "；⚠ 负荷超 HRT 包络上限，已封顶，建议提高补水率或增设处理单元" : ""}），单池水力停留 <b>${c.hrtMin} min</b>${c.hrtStatus === "ok" ? "，溶氧/氨氮更新充分" : "，偏长/偏短，建议调整循环次数或分池"}。</div>
           <div class="tk-line">· <b>流速与排水</b>：建议切向流速（自清动量 + 鱼福利）；推荐 Cornell 双排水——中心底排 5–20% 高浓度污物流直送微滤，侧排 80–95% 清洁水回生物滤池。</div>
         </div></div></div>
       ${section("投喂与氮负荷", "Feed & N", [
@@ -1599,7 +1598,7 @@
           ["年运营成本", E.rmb(d.economics.opexTotal)],
           ["单位鱼成本", d.economics.costPerKg + " 元/kg"],
         ])}
-        <h2>水质可行性校核</h2>${keyval(d.waterQuality.checks.map((c) => [c.name + " (" + c.status + ")", c.value + " " + c.unit + (SENSITIVE_WQ_LIMITS.has(c.key) ? "" : " / 限值 " + c.limit)]))}
+        <h2>水质可行性校核</h2>${keyval(d.waterQuality.checks.map((c) => [c.name + " (" + c.status + ")", c.value + " " + c.unit + " / 限值 " + c.limit]))}
         <h2>盈利与投资回报</h2>${keyval([["售价(元/kg)", d.economics.salePrice], ["年营业收入", E.rmb(d.economics.revenue)], ["年毛利", E.rmb(d.economics.grossProfit)], ["投资回收期", (d.economics.paybackYears != null ? d.economics.paybackYears.toFixed(1) + " 年" : "不可行")], ["年化 ROI", (d.economics.roi != null ? d.economics.roi + " %" : "—")]])}
         <h2>设计计算书（方法论）</h2>
         <p style="font-size:13px;color:#475569">计算体系：质量守恒原理 + RAS 工程经验基准。水质控制目标、设备选型系数与经济模型参数均依据现行规范与工程经验设定，不在本报告披露。</p>
