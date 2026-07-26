@@ -129,6 +129,11 @@
           <span class="hint">商品鱼上市量（活重）</span>
         </div>
         <div class="field">
+          <label>预算上限 <span class="unit">(万元，可选)</span></label>
+          <input type="number" id="budget" min="0" step="1" placeholder="留空=按目标产量计算" />
+          <span class="hint">设定后进入「预算反算最大产能」模式，目标年产量自动锁定；留空=常规设计</span>
+        </div>
+        <div class="field">
           <label>设计放养密度 <span class="unit">(kg/m³)</span></label>
           <input type="number" id="density" step="1" placeholder="按品种默认" />
           <span class="hint">集约化 RAS 典型 35–70</span>
@@ -243,6 +248,7 @@
         </div>
         <button type="submit" class="btn-primary magnetic" id="computeBtn">⚙ 生成工艺设计方案</button>
       </form>
+      <div id="budgetBanner" class="note budget-note hidden"></div>
       <div class="note">
         <span class="ic">💡</span>
         <div><b>设计逻辑：</b>输入产能目标后，引擎按质量守恒推导养殖池容积、水循环量、生物滤池(MBBR)、增氧、CO₂脱除、固废处理等全套参数，并生成可交互 3D 车间模型。参数基准来自 RAS 工程文献与行业经验（见文档参考文献）。</div>

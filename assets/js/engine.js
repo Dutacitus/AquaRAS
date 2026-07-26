@@ -1199,6 +1199,7 @@ RAS.engine = (function () {
     };
 
     let candidates = [];
+    let floorCapex = Infinity; // 资金地板：最小 WQ 可行方案的 CAPEX(元)，忽略预算/面积/能耗约束
 
     if (obj === "maxCapacity") {
       // 给定预算(或面积/能耗)，搜索可承受的最大年产量
@@ -1206,6 +1207,9 @@ RAS.engine = (function () {
       const turns = 12;
       for (let p = 10; p <= 2000; p += 10) {
         const d = compute({ speciesKey: opts.speciesKey, annualTons: p, designTemp: opts.designTemp });
+        // 记录最小 WQ 可行 CAPEX（资金地板），供 UI 提示"最小可行投资下限"
+        const wqOk = (opts.requireWqOk === false) || !(d.waterQuality && d.waterQuality.feasible === false);
+        if (wqOk && d.economics.capexTotal < floorCapex) floorCapex = d.economics.capexTotal;
         if (!feasible(d)) continue;
         candidates.push({ d, cost: d.economics.capexTotal, energy: d.energy.energyIntensity,
           area: d.building.buildingArea, vars: { annualTons: p, density: dens, turns } });
@@ -1250,7 +1254,9 @@ RAS.engine = (function () {
       if (c.maxBudget) reasons.push(`预算≤${c.maxBudget}万元`);
       if (c.maxArea) reasons.push(`面积≤${c.maxArea}m²`);
       if (c.maxEnergy) reasons.push(`能耗≤${c.maxEnergy}kWh/kg`);
-      return { ok: false, baseline, reason: "无满足约束的方案，请放宽 " + (reasons.join(" / ") || "约束") };
+      const res = { ok: false, baseline, reason: "无满足约束的方案，请放宽 " + (reasons.join(" / ") || "约束") };
+      if (isFinite(floorCapex)) res.floorCapex = floorCapex / 10000; // 转万元
+      return res;
     }
 
     // 成本-能耗 Pareto 前沿：按成本升序扫描，能耗取历史最优即非支配集（O(n log n)）
@@ -1306,6 +1312,7 @@ RAS.engine = (function () {
         costPerKg: c.d.economics.costPerKg, payback: c.d.economics.paybackYears,
       })),
       cloud,
+      floorCapex: isFinite(floorCapex) ? floorCapex / 10000 : null, // 资金地板(万元)
       count: candidates.length, paretoCount: pareto.length,
     };
   }

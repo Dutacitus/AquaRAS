@@ -1,7 +1,7 @@
 /* AquaRAS 公开知识子集（仅含引擎计算所需数值系数；校准来源/参考文献/置信度等商业机密见服务端私有文件） */
 window.RAS_KNOWLEDGE = {
   "meta": {
-    "version": "1.24.0",
+    "version": "1.25.0",
     "title": "RAS 工艺设计知识库",
     "dataAsOf": "2026",
     "confidence": "中"
