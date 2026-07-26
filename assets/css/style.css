@@ -620,34 +620,37 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
 .link-btn:hover { background: var(--brand-soft); border-color: var(--brand); }
 
 /* —— 设计计算书 —— */
-.doc-hero { padding: 24px 26px 4px; }
-.doc-title { font-size: 22px; margin: 0 0 8px; letter-spacing: .3px; }
-.doc-lead { margin: 0; color: var(--text-soft); line-height: 1.7; max-width: 880px; text-align: justify; }
-.doc-section { padding: 18px 26px 0; }
-.doc-section h3 { font-size: 17px; margin: 0 0 10px; color: var(--brand-2); }
-.doc-p { color: var(--text-soft); line-height: 1.75; max-width: 900px; margin: 0 0 12px; text-align: justify; }
+.doc-hero { padding: 20px 22px 8px; }
+.doc-title { font-size: 20px; margin: 0 0 8px; letter-spacing: .2px; }
+.doc-lead { margin: 0; font-size: 14px; color: var(--text-soft); line-height: 1.65; max-width: 880px; text-align: justify; }
+.doc-section { padding: 14px 22px 0; }
+.doc-section h3 { font-size: 16px; margin: 0 0 8px; color: var(--brand-2); letter-spacing: .2px; }
+.doc-p { font-size: 14px; color: var(--text-soft); line-height: 1.7; max-width: 900px; margin: 0 0 10px; text-align: justify; }
+.doc-list { margin: 0 0 4px; padding-left: 20px; max-width: 900px; color: var(--text-soft); line-height: 1.7; font-size: 14px; }
+.doc-list li { margin: 0 0 7px; text-align: justify; }
+.doc-list li b { color: var(--text); }
 .doc-refs { display: flex; flex-direction: column; gap: 6px; max-width: 900px; }
 .doc-refs span { font-size: 12.5px; color: var(--text-faint); padding: 6px 10px;
   background: var(--card-soft); border: 1px solid var(--border-soft); border-radius: 8px; }
-.doc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 14px 26px 0; }
+.doc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 12px 22px 0; }
 .doc-card { background: var(--card-soft); border: 1px solid var(--border-soft);
-  border-radius: 14px; padding: 16px 18px; }
-.doc-card h4 { margin: 0 0 10px; font-size: 14.5px; color: var(--text); }
+  border-radius: 14px; padding: 14px 16px; }
+.doc-card h4 { margin: 0 0 8px; font-size: 14px; color: var(--text); }
 .doc-table { margin: 0; }
-.doc-table th, .doc-table td { padding: 7px 10px; font-size: 13px; }
-.doc-cap { font-size: 11.5px; color: var(--text-faint); margin: 10px 0 0; line-height: 1.5; text-align: justify; }
-.doc-steps { list-style: none; margin: 12px 0 0; padding: 0; max-width: 900px;
-  display: flex; flex-direction: column; gap: 10px; }
+.doc-table th, .doc-table td { padding: 6px 10px; font-size: 13px; }
+.doc-cap { font-size: 12px; color: var(--text-faint); margin: 8px 0 0; line-height: 1.5; text-align: justify; }
+.doc-steps { list-style: none; margin: 10px 0 0; padding: 0; max-width: 900px;
+  display: flex; flex-direction: column; gap: 8px; }
 .doc-steps li { display: flex; gap: 12px; align-items: flex-start;
   background: var(--card-soft); border: 1px solid var(--border-soft);
-  border-radius: 12px; padding: 12px 14px; line-height: 1.6; }
-.doc-step-n { flex: 0 0 26px; height: 26px; border-radius: 50%;
+  border-radius: 12px; padding: 11px 14px; line-height: 1.55; }
+.doc-step-n { flex: 0 0 24px; height: 24px; border-radius: 50%;
   background: linear-gradient(135deg, var(--brand), var(--brand-2));
   color: #fff; display: flex; align-items: center; justify-content: center;
-  font-size: 13px; font-weight: 700; }
+  font-size: 12.5px; font-weight: 700; }
 .doc-steps li b { color: var(--text); }
 .doc-steps li div { color: var(--text-soft); font-size: 13.5px; text-align: justify; }
-.doc-confidential { margin: 18px 26px 26px; padding: 18px 20px;
+.doc-confidential { margin: 16px 22px 22px; padding: 16px 18px;
   border: 1px solid var(--border-strong); border-radius: 14px;
   background: color-mix(in srgb, var(--accent) 8%, var(--card-soft));
   border-left: 4px solid var(--accent); }
