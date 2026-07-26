@@ -379,12 +379,29 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
 
 /* ---------- Notes / callout ---------- */
 .note {
-  display: flex; gap: 12px; padding: 16px 18px; border-radius: var(--radius-sm);
+  display: flex; gap: 12px; padding: 14px 18px; border-radius: var(--radius-sm);
   background: var(--brand-soft); border: 1px solid var(--brand-soft);
-  font-size: 13.5px; color: var(--text-soft); margin-top: 16px; text-align: justify;
+  font-size: 13.5px; color: var(--text-soft); line-height: 1.65;
+  margin: 6px 26px 14px; text-align: justify;
 }
 .note b { color: var(--text); }
-.note .ic { font-size: 18px; }
+.note .ic { font-size: 18px; flex: 0 0 auto; }
+/* 水质区下方元信息卡片：紧凑键值布局 */
+.note.wq-meta { margin: 6px 26px 14px; padding: 14px 18px; align-items: flex-start; }
+@media (max-width: 720px) {
+  .note, .note.wq-meta { margin-left: 14px; margin-right: 14px; }
+}
+.note.wq-meta .note-body { flex: 1; min-width: 0; }
+.note.wq-meta .note-title { font-weight: 700; font-size: 14px; color: var(--text); margin-bottom: 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.note.wq-meta .note-kvs { display: flex; flex-wrap: wrap; gap: 10px 18px; }
+.note.wq-meta .note-kv { display: flex; flex-direction: column; gap: 2px; min-width: 86px; }
+.note.wq-meta .note-kv span { font-size: 12px; color: var(--text-faint); }
+.note.wq-meta .note-kv b { font-size: 14px; color: var(--text); font-weight: 700; }
+.note.wq-meta .note-kv small { font-size: 11.5px; color: var(--text-soft); }
+.note.wq-meta .note-foot { margin-top: 10px; font-size: 12.5px; color: var(--text-soft); line-height: 1.55; }
+@media (max-width: 720px) {
+  .note.wq-meta .note-kv { min-width: 78px; }
+}
 /* 养殖池水力结构等说明的多行排版 */
 .tk-title { font-weight: 700; color: var(--text); margin-bottom: 2px; }
 .tk-line { margin: 7px 0; line-height: 1.65; overflow-wrap: anywhere; }

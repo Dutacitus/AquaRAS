@@ -253,13 +253,53 @@
       <div class="section-title">水质可行性校核
         <span class="badge wq-${wq.status}">${head}</span></div>
       <div class="wq-grid">${cards}</div>
-      <div class="note" style="padding:6px 26px 0"><span class="ic">♻️</span>
-      <div>反硝化：${wq.denit.removal > 0 ? `已启用反硝化（侧流脱氮）` : "未启用反硝化（仅随补水交换）"}，NO₃-N 稳态 <b>${wq.no3N}</b> mg/L（以 N 计），需反硝化反应器容积约 <b>${wq.denit.volume}</b> m³（负荷 ${wq.denit.no3NLoadDaily} kg NO₃-N/天）。</div></div>
-      ${wq.bioGrowth && wq.bioGrowth.available ? `<div class="note" style="padding:6px 26px 0"><span class="ic">🐟</span>
-      <div><b>鱼生长生物能学耦合</b>：热生长模型给出 SGR 上限 <b>${wq.bioGrowth.sgrTemp}%/d</b>（温度响应 ${wq.bioGrowth.tempResp}，最适 ${wq.bioGrowth.tempOpt}℃），最小养成 <b>${wq.bioGrowth.daysGrowMin}</b> 天/茬 → 生物最大 <b>${wq.bioGrowth.cyclesMax}</b> 茬/年、生物最大年产量 <b>${(wq.bioGrowth.annualMaxKg/1000).toFixed(1)}</b> t。设定 <b>${wq.bioGrowth.cyclesAssumed}</b> 茬 / 目标 <b>${(wq.bioGrowth.annualTargetKg/1000).toFixed(1)}</b> t → <b style="color:${wq.bioGrowth.status==='ok'?'#38bdf8':wq.bioGrowth.status==='warn'?'#f59e0b':'#f87171'}">${wq.bioGrowth.status==='ok'?'生物可行':wq.bioGrowth.status==='warn'?'临界/偏紧':'不可行'}</b>。这是"设计水温↔产量吞吐"的生物约束，与 HVAC 能耗存在权衡。</div></div>` : ""}
-      <div style="padding:0 26px 26px"><div class="note">
-        <span class="ic">🔬</span>
-        <div>稳态质量平衡校核：基于两段硝化（AOB/NOB）+ 反硝化 + 脱气塔 + 微滤机一阶去除，并叠加补水稀释与水源背景浓度，推算系统浓度，供设计可行性判断。溶氧按供氧能力（覆盖鱼代谢 + 硝化耗氧，余量 ${wq.o2Margin}%）闭环判定池内可达 <b>${wq.o2Achieved}</b> mg/L${wq.o2Deficit > 0.1 ? `（缺口 ${wq.o2Deficit} mg/L，供氧不足）` : ""}；数值为工程估算，运行需在线监测 DO/pH/TAN/CO₂ 并预留余量。</div></div></div>`;
+      <div style="padding:0">
+        <div class="note wq-meta">
+          <span class="ic">♻️</span>
+          <div class="note-body">
+            <div class="note-title">反硝化${wq.denit.removal > 0 ? " · 已启用侧流脱氮" : " · 未启用（仅随补水交换）"}</div>
+            <div class="note-kvs">
+              <div class="note-kv"><span>NO₃-N 稳态</span><b>${wq.no3N}</b><small>mg/L（以N计）</small></div>
+              <div class="note-kv"><span>反应器容积</span><b>${wq.denit.volume}</b><small>m³</small></div>
+              <div class="note-kv"><span>日负荷</span><b>${wq.denit.no3NLoadDaily}</b><small>kg NO₃-N/天</small></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      ${wq.bioGrowth && wq.bioGrowth.available ? `
+      <div style="padding:0">
+        <div class="note wq-meta">
+          <span class="ic">🐟</span>
+          <div class="note-body">
+            <div class="note-title">鱼生长生物能学耦合 <span class="badge wq-${wq.bioGrowth.status}">${wq.bioGrowth.status === "ok" ? "生物可行" : wq.bioGrowth.status === "warn" ? "临界/偏紧" : "不可行"}</span></div>
+            <div class="note-kvs">
+              <div class="note-kv"><span>SGR 上限</span><b>${wq.bioGrowth.sgrTemp}</b><small>%/d</small></div>
+              <div class="note-kv"><span>温度响应</span><b>${wq.bioGrowth.tempResp}</b></div>
+              <div class="note-kv"><span>最适温度</span><b>${wq.bioGrowth.tempOpt}</b><small>℃</small></div>
+              <div class="note-kv"><span>最小养成</span><b>${wq.bioGrowth.daysGrowMin}</b><small>天/茬</small></div>
+              <div class="note-kv"><span>生物最大</span><b>${wq.bioGrowth.cyclesMax}</b><small>茬/年</small></div>
+              <div class="note-kv"><span>生物最大年产量</span><b>${(wq.bioGrowth.annualMaxKg / 1000).toFixed(1)}</b><small>t</small></div>
+              <div class="note-kv"><span>设定 / 目标</span><b>${wq.bioGrowth.cyclesAssumed} / ${(wq.bioGrowth.annualTargetKg / 1000).toFixed(1)}</b><small>茬 / t</small></div>
+            </div>
+            <div class="note-foot">“设计水温 ↔ 产量吞吐”的生物约束，与 HVAC 能耗存在权衡。</div>
+          </div>
+        </div>
+      </div>` : ""}
+      <div style="padding:0">
+        <div class="note wq-meta">
+          <span class="ic">🔬</span>
+          <div class="note-body">
+            <div class="note-title">稳态质量平衡校核</div>
+            <div class="note-kvs">
+              <div class="note-kv"><span>模型</span><b style="font-size:12.5px;font-weight:600">两段硝化 + 反硝化 + 脱气塔 + 微滤机</b></div>
+              <div class="note-kv"><span>DO 可达</span><b>${wq.o2Achieved}</b><small>mg/L</small></div>
+              <div class="note-kv"><span>溶氧余量</span><b>${wq.o2Margin}</b><small>%</small></div>
+              ${wq.o2Deficit > 0.1 ? `<div class="note-kv"><span>DO 缺口</span><b style="color:#f87171">${wq.o2Deficit}</b><small>mg/L，供氧不足</small></div>` : ""}
+            </div>
+            <div class="note-foot">数值为工程估算，运行需在线监测 DO/pH/TAN/CO₂ 并预留余量。</div>
+          </div>
+        </div>
+      </div>`;
   }
   /* 尾水排放合规区块（v1.13.8，对照 DB44/2462-2024 五项限值 + 受纳水域等级选择） */
   function renderTailwater(d) {
@@ -283,7 +323,7 @@
     const tnRaw = tt.cTnRaw, tnPol = tt.cTnPol, tnDrop = (tt.removal && Math.round(tt.removal.tn * 100)) || 0;
     const treatNote = techKey === "none"
       ? `<div class="muted" style="font-size:12px;padding:4px 26px 14px">未设末端处理：排放口浓度 = 系统循环水浓度（TN ${tnRaw} mg/L）。选上方工艺可对排放口做二次削减，多数可使 TN 降至 DB44 限值内。</div>`
-      : `<div class="note" style="padding:8px 26px 14px"><span class="ic">♻️</span><div>尾水处理单元 <b>${tt.name}</b>：总氮 ${tnRaw} → <b>${tnPol}</b> mg/L（去除 ${tnDrop}%）；总磷 ${tt.cTpRaw} → ${tt.cTpPol}、COD ${tt.cCodRaw} → ${tt.cCodPol}、SS ${tt.cTssRaw} → ${tt.cTssPol} mg/L。单元投资 <b>${Math.round(tt.capex).toLocaleString("zh-CN")} 元</b>、年运行 <b>${Math.round(tt.opexYr).toLocaleString("zh-CN")} 元</b>、占地约 <b>${tt.footprint} m²</b>（处理流量 ${tt.treatedM3d} m³/d）。</div></div>`;
+      : `<div class="note"><span class="ic">♻️</span><div>尾水处理单元 <b>${tt.name}</b>：总氮 ${tnRaw} → <b>${tnPol}</b> mg/L（去除 ${tnDrop}%）；总磷 ${tt.cTpRaw} → ${tt.cTpPol}、COD ${tt.cCodRaw} → ${tt.cCodPol}、SS ${tt.cTssRaw} → ${tt.cTssPol} mg/L。单元投资 <b>${Math.round(tt.capex).toLocaleString("zh-CN")} 元</b>、年运行 <b>${Math.round(tt.opexYr).toLocaleString("zh-CN")} 元</b>、占地约 <b>${tt.footprint} m²</b>（处理流量 ${tt.treatedM3d} m³/d）。</div></div>`;
     const concl = tw.allPass
       ? (techKey === "none" ? "当前设计排放口浓度满足标准，可依法排放。" : `经 <b>${tt.name}</b> 处理后排放口浓度满足标准，可依法排放。`)
       : (techKey === "none" ? "⚠️ 部分指标超出标准，需增加尾水处理（如强化脱氮除磷、增设尾水净化塘/湿地）或重新认定受纳水域等级。" : `⚠️ 经 <b>${tt.name}</b> 处理后仍有指标超限，建议升级工艺（如多级生物净化组合）或重新认定受纳水域等级。`);
@@ -304,7 +344,7 @@
       </div>
       <div class="wq-grid">${cards}</div>
       ${treatNote}
-      <div class="note" style="padding:8px 26px 20px"><span class="ic">🏞️</span>
+      <div class="note"><span class="ic">🏞️</span>
       <div>${tw.waterType === "seawater" ? "海水" : "淡水"}养殖尾水按 <b>${tw.level === 1 ? "一级" : "二级"}</b> 限值判定：pH ${tw.limit.phLow}–${tw.limit.phHigh}、悬浮物 ≤${tw.limit.ss}、COD(Mn) ≤${tw.limit.cod}、总氮 ≤${tw.limit.tn}、总磷 ≤${tw.limit.tp} mg/L。${concl}本判定基于稳态质量平衡推算的排放口浓度（与系统循环水同浓度，末端处理后按处理效率二次削减），供合规性预判；正式排放须按标准方法采样监测。</div></div>`;
   }
   /* 敏感度（龙卷风图）：基于 engine.sensitivity 的 ±% 扰动结果渲染水平条带 */
@@ -366,12 +406,12 @@
         + `<text x="${(x + bw / 2).toFixed(1)}" y="${H - 7}" font-size="9" fill="#94a3b8" text-anchor="middle">${months[i]}</text>`;
     }).join("");
     return `
-      <div style="padding:0 26px 6px">
-        <div style="font-size:13px;color:#cbd5e1;margin:6px 0 4px">季节性温控剖面（bin method · 12 月双工况）</div>
-        <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:8px 10px">
+      <div style="padding:0 0 6px">
+        <div style="font-size:13px;color:#cbd5e1;margin:6px 26px 4px">季节性温控剖面（bin method · 12 月双工况）</div>
+        <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:8px 10px;margin:0 26px">
           <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="xMidYMid meet" style="display:block">${bars}</svg>
         </div>
-        <div class="note" style="margin-top:6px"><span class="ic">🌡️</span>
+        <div class="note"><span class="ic">🌡️</span>
         <div>制热 <b>${(en.hvacHeatingKwh / 1000).toFixed(0)}</b> MWh / 制冷 <b>${(en.hvacCoolingKwh / 1000).toFixed(0)}</b> MWh（年合计 <b>${(en.hvacAnnualKwh / 1000).toFixed(0)}</b> MWh），${(en.hvacMode === "cool" ? "制冷主导" : "加热主导")}；无地区时退化为单点估算。柱高∝当月平均功率，橙=制热、蓝=制冷、灰=中性（无需控温）。</div></div>
       </div>`;
   }
@@ -405,9 +445,9 @@
     }).join("");
     const legend = sp.map((x) => `<span style="display:inline-flex;align-items:center;gap:5px;margin-right:12px;font-size:12.5px"><span style="width:10px;height:10px;border-radius:2px;background:${x.c};display:inline-block"></span>${x.label} ${(x.v / total * 100).toFixed(0)}%</span>`).join("");
     return `
-      <div style="padding:0 26px 6px">
-        <div style="font-size:13px;color:#cbd5e1;margin:6px 0 4px">能耗分项构成（五类占比）</div>
-        <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">
+      <div style="padding:0 0 6px">
+        <div style="font-size:13px;color:#cbd5e1;margin:6px 26px 4px">能耗分项构成（五类占比）</div>
+        <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin:0 26px">
           <svg viewBox="0 0 ${W} ${H}" width="130" height="130" style="flex:0 0 auto">${arcs}
             <text x="${cx}" y="${cy - 4}" text-anchor="middle" font-size="15" fill="#e2e8f0" font-weight="bold">${en.totalPower}</text>
             <text x="${cx}" y="${cy + 12}" text-anchor="middle" font-size="9" fill="#94a3b8">kW 总功率</text></svg>
@@ -453,16 +493,16 @@
     const cx = sx(annT), cy = sy(sfFor(annT));
     const xticks = [10, 100, 300, 1000, 2000].map((t) => `<text x="${sx(t).toFixed(1)}" y="${H - 10}" font-size="9" fill="#94a3b8" text-anchor="middle">${t}t</text>`).join("");
     return `
-      <div style="padding:0 26px 6px">
-        <div style="font-size:13px;color:#cbd5e1;margin:6px 0 4px">规模经济曲线（分段幂律，单位投资因子 vs 年产量）</div>
-        <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:8px 10px">
+      <div style="padding:0 0 6px">
+        <div style="font-size:13px;color:#cbd5e1;margin:6px 26px 4px">规模经济曲线（分段幂律，单位投资因子 vs 年产量）</div>
+        <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:8px 10px;margin:0 26px">
           <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="xMidYMid meet" style="display:block">
             <path d="${line}" fill="none" stroke="#38bdf8" stroke-width="2"/>
             <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4" fill="#f59e0b"><title>当前 ${annT}t → ${sfFor(annT)}</title></circle>
             ${xticks}
           </svg>
         </div>
-        <div class="note" style="margin-top:6px"><span class="ic">📉</span>
+        <div class="note"><span class="ic">📉</span>
         <div>分段曲线：小规(&lt;30t)单位投资最高(因子≈${sfFor(10)})，随规模上升快速下降，大规(300→1000t)趋平收敛(≈${sfFor(300)}~${sfFor(1000)})；当前 <b>${annT}t</b> 对应因子 <b>${sfFor(annT)}</b>。极端规模夹在 [${cm.scaleCeil}, ${cm.scaleFloor}] 防失真。</div></div>
       </div>`;
   }
@@ -511,7 +551,7 @@
         <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:4px 6px">${hist(res.histCost, "#38bdf8")}</div>
         <div style="font-size:12px;color:#cbd5e1;margin:8px 0 2px">投资回收期分布 (年)</div>
         <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:4px 6px">${hist(res.histPayback, "#f59e0b")}</div>
-        <div class="note" style="margin-top:8px"><span class="ic">🎲</span>
+        <div class="note"><span class="ic">🎲</span>
         <div>蒙特卡洛 <b>${res.N}</b> 次采样（三角分布）。<b>全口径</b>=模型系数+经营假设；<b>仅模型系数</b>(epistemic) 口径列于各指标次级行（浅灰）。水质可行(全口径)：达标 <b>${res.waterQuality.okPct}%</b> / 预警 <b>${res.waterQuality.warnPct}%</b> / 超限 <b>${res.waterQuality.failPct}%</b>${res.waterQualityEpistemic ? `；仅模型系数口径达标 <b>${res.waterQualityEpistemic.okPct}%</b>` : ""}。分层后可知区间宽度多少来自"模型本身不确定"、多少来自"你的经营假设波动"。</div></div>
       </div>`;
   }
@@ -522,7 +562,7 @@
     const host = document.getElementById("panel-params");
     host.className = "panel active glass";
     host.innerHTML = `
-      <div style="padding:24px 26px 4px"><div class="note" style="margin-top:0">
+      <div style="padding:24px 0 4px"><div class="note">
         <span class="ic">🐟</span>
         <div><b>${d.species.name} (${d.species.latin})</b> · 目标 ${d._raw.annual/1000} 吨/年 · 设计水温 ${d.inputs.temp}℃ ·
         实际设计产能 <b>${c.actualYield} 吨/年</b></div></div></div>
@@ -537,7 +577,7 @@
         metricCard("单池停留时间", c.hrtMin, "min", "", c.hrtStatus === "ok" ? undefined : "brand"),
         metricCard("日循环次数", c.turns, "次/日", `${c.turnsSource === "auto" ? (c.turnsCapped ? "负荷反算·封顶" : "污染负荷反算") : c.turnsSource === "custom" ? "用户自定义" : "系统默认"}`, c.turnsSource === "auto" ? "brand" : undefined),
       ])}
-      <div style="padding:0 26px 6px"><div class="note ${c.hrtStatus === "ok" ? "" : "note-warn"}">
+      <div style="padding:0 0 6px"><div class="note ${c.hrtStatus === "ok" ? "" : "note-warn"}">
         <span class="ic">🌀</span>
         <div>
           <div class="tk-title">养殖池水力结构</div>
@@ -568,7 +608,7 @@
         metricCard("年反冲洗/雾损", Math.round((hy.drumBackwashVolYr + hy.degasserMistVolYr) * 10) / 10, "m³/年", "不返还损耗"),
         metricCard("消耗性水足迹", hy.waterConsumption, "m³/kg", "蒸发+污泥+雾损", "accent"),
       ])}
-      <div style="padding:0 26px 6px"><div class="note ${hy.waterCovered ? "" : "note-warn"}">
+      <div style="padding:0 0 6px"><div class="note ${hy.waterCovered ? "" : "note-warn"}">
         <span class="ic">💧</span>
         <div>水足迹真水平衡：年取水 <b>${hy.makeupVolYr.toLocaleString()}</b> m³ = 蒸发 <b>${hy.evapVolYr.toLocaleString()}</b> + 排污 <b>${hy.bleedVolYr.toLocaleString()}</b> + 污泥带水 <b>${hy.sludgeWaterVolYr.toLocaleString()}</b> + 反冲洗/雾损 <b>${(hy.drumBackwashVolYr + hy.degasserMistVolYr).toLocaleString()}</b> m³。${hy.waterCovered ? "补水率覆盖全部损耗，池面水位稳定。" : "⚠️ 补水率不足以覆盖蒸发+污泥+雾损，池面将下降，需提高补水率。"}</div></div></div>
       ${section("环境足迹 (Footprint)", "Environment", [
@@ -613,7 +653,7 @@
       ])}
       ${renderHvacSeason(en, d.inputs.temp)}
       ${renderEnergySplit(en)}
-      ${isAdmin ? renderScaleCurve(d._raw.annual / 1000) : `<div class="note" style="padding:0 26px 8px"><span class="ic">📉</span><div>规模经济曲线为 AquaRAS 内部标定，反映了单位投资随养殖规模下降的工程经验关系。</div></div>`}
+      ${isAdmin ? renderScaleCurve(d._raw.annual / 1000) : `<div class="note"><span class="ic">📉</span><div>规模经济曲线为 AquaRAS 内部标定，反映了单位投资随养殖规模下降的工程经验关系。</div></div>`}
       ${section("建筑规模", "Building", [
         metricCard("养殖区占地", b.tankFootprint, "m²", "含通道"),
         metricCard("设备区", b.equipArea, "m²", "滤池/泵房"),
@@ -622,7 +662,7 @@
       ])}
       ${renderWQSection(d.waterQuality)}
       ${renderTailwater(d)}
-      <div style="padding:0 26px 26px"><div class="note">
+      <div style="padding:0"><div class="note">
         <span class="ic">⚠️</span>
         <div><b>设计说明：</b>生物滤池硝化负荷已含水温折减与安全系数 ${d.inputs.sf}。需配置备用发电机、备用纯氧、在线监测（DO/pH/TAN/温度）与自动化控制，确保满足设计水质阈值（TAN、DO 等）。</div></div></div>`;
     const twSel = document.getElementById("dischargeLevel");
@@ -679,7 +719,7 @@
   function renderPVPanel(d) {
     const pv = d.economics && d.economics.pv;
     if (!pv || !pv.enabled) {
-      return `<div class="note" style="padding:10px 26px 24px"><span class="ic">☀️</span>
+      return `<div class="note"><span class="ic">☀️</span>
         <div>未启用光伏。在设计输入「光伏投资」中填写<b>光伏装机容量</b>或<b>光伏覆盖比例</b>即可接入光伏投资模块：自动计算年发电量、自发自用/余电上网、节省电费与回收期/IRR，并并入项目 CAPEX 与运营成本。光伏模型系数（造价 / 等效小时 / 运维单价等）经市场共识校准。</div></div>`;
     }
     const ec = E.rmb;
@@ -702,7 +742,7 @@
         <thead><tr><th>光伏指标</th><th class="num">数值</th><th>说明</th></tr></thead>
         <tbody>${rows.map(r => `<tr><td>${r[0]}</td><td class="num">${r[1]} ${r[2]}</td><td class="muted" style="font-size:12.5px">${r[3]}</td></tr>`).join("")}</tbody>
       </table></div>
-      <div class="note" style="padding:6px 26px 24px"><span class="ic">☀️</span>
+      <div class="note"><span class="ic">☀️</span>
         <div>光伏为<b>独立投资视角</b>：回收期/IRR 仅衡量光伏+储能自身（25 年寿命、年衰减 0.5%），不依赖项目融资口径。其 capex 已并入项目总投资、节省电费已冲减运营成本、上网收入已计入营收，故项目级盈利能力指标已自动包含光伏贡献。屋顶可用面积需另行勘测。</div></div>`;
   }
   function renderEcon(d) {
@@ -742,7 +782,7 @@
         <thead><tr><th>投资项（含子项分解）</th><th class="num">金额</th></tr></thead>
         <tbody>${capRows}</tbody>
         <tfoot><tr><td>合计 CAPEX</td><td class="num">${ec(e.capexTotal)}</td></tr></tfoot></table></div>
-      <div class="note" style="padding:4px 26px 0"><span class="ic">📐</span>
+      <div class="note"><span class="ic">📐</span>
       <div>总投资 = 直接费(设备+土建) + 间接费(EPCM / 调试 / 不可预见 / 其他，设封顶上限) + 可选土地费。规模因子 <b>${e.scaleFactor}</b>：单位投资随年产量呈亚线性变化（规模经济幂律），大规更省、小规更贵；各分项已按<b>固定/可变比例</b>拆分（规模因子仅作用于可变段）。选择地区后 CAPEX/电价/人工按<b>地区指数</b>调整。表中「直接费子项合计」「间接费子项合计」为各自分项小计（不含土地），二者合计即工程费；「合计 CAPEX」为计入土地后的总投资。</div></div>
       <div class="section-title" style="margin-top:8px">运营成本估算 (OPEX / 年)</div>
       <div class="table-wrap" style="padding:14px 26px 6px"><table class="data">
@@ -754,7 +794,7 @@
         <thead><tr><th>设备项</th><th class="num">CAPEX</th><th class="num">年维护费</th><th class="num">寿命</th><th class="num">重置准备/年</th></tr></thead>
         <tbody>${(e.maintBreakdown || []).map((m) => `<tr><td>${m.label}</td><td class="num">${ec(m.capex)}</td><td class="num">${ec(m.annual)}</td><td class="num">${m.life} 年</td><td class="num">${ec(m.reserve)}</td></tr>`).join("")}</tbody>
         <tfoot><tr><td>维护费合计</td><td class="num">—</td><td class="num">${ec(e.opexMaint)}</td><td class="num">—</td><td class="num">—</td></tr></tfoot></table></div>
-      <div class="note" style="padding:4px 26px 0"><span class="ic">🔧</span>
+      <div class="note"><span class="ic">🔧</span>
       <div>各设备按自身年维护率与寿命分摊维护费与重置准备（重置准备 = CAPEX / 寿命，用于设备更换资金规划），比单一总率更贴近实际：高价易耗件（泵/增氧/固废）维护费更高、寿命更短；土建/池体寿命长、维护低。维护费合计即 OPEX 中的「维护」项。</div></div>
       <div class="metrics" style="padding:14px 26px 26px">
         ${metricCard("单位鱼生产成本", e.costPerKg, "元/kg", "仅运营成本", "brand")}
@@ -785,7 +825,7 @@
           </select>
         </div>
         <div id="snChart"></div>
-        <div class="note" style="margin-top:10px"><span class="ic">🎯</span>
+        <div class="note"><span class="ic">🎯</span>
         <div>龙卷风图：固定其他因素，将每个驱动参数在基线 <b>±20%</b>（补水率 ±50%）间扰动，观察所选指标的变化幅度。条带越宽，该参数对结果越敏感——绿色为改善方向、红色为恶化方向。</div></div>
       </div>
       <div class="section-title" style="margin-top:18px">参数不确定性 · 蒙特卡洛区间</div>
@@ -800,7 +840,7 @@
         <span class="muted" style="font-size:12px">Saltelli 方差分解：量化 8 个模型系数对各指标的一阶(S)与总阶(ST)贡献，ST−S 即交互效应，定位真正驱动结果方差的主导因子</span>
       </div>
       <div id="sobolResult" style="padding:6px 26px 8px"></div>
-      <div style="padding:0 26px 26px"><div class="note"><span class="ic">📌</span>
+      <div style="padding:0"><div class="note"><span class="ic">📌</span>
       <div>经济参数为行业经验量级估算（人民币），实际受地区人工/地价/电价/苗种价格影响显著。饲料通常占 OPEX 的 70–80%。建议项目级复核。</div></div></div>`;
     renderSensitivity(d);
     const snSel = document.getElementById("snMetric");
@@ -854,7 +894,7 @@
     }
     const metricLabel = { costPerKg: "单位成本", energyIntensity: "比能耗", capexTotal: "总投资", grossProfit: "年毛利", paybackYears: "回收期", marginRate: "毛利率" };
     const METRIC_ORDER = ["costPerKg", "energyIntensity", "capexTotal", "grossProfit", "paybackYears", "marginRate"];
-    let html = `<div class="note" style="margin:6px 0 12px"><span class="ic">🧮</span><div>基于 Saltelli (2010) 方差分解，N=${res.N}（seed=${res.seed} 可复现）。<b>ST</b> 为总阶指数（含交互），ST−S 为该因子的交互贡献；各指标 ΣST≈1 表示分解闭合。抽样同时覆盖 <b>模型系数</b>（知识库不确定性参数）与 <b>用户可自定义输入</b>（饲料系数/生产水价/电价/鱼价，围绕当前值 ±band 采样），故主导因子现已含用户经营假设。</div></div>`;
+    let html = `<div class="note"><span class="ic">🧮</span><div>基于 Saltelli (2010) 方差分解，N=${res.N}（seed=${res.seed} 可复现）。<b>ST</b> 为总阶指数（含交互），ST−S 为该因子的交互贡献；各指标 ΣST≈1 表示分解闭合。抽样同时覆盖 <b>模型系数</b>（知识库不确定性参数）与 <b>用户可自定义输入</b>（饲料系数/生产水价/电价/鱼价，围绕当前值 ±band 采样），故主导因子现已含用户经营假设。</div></div>`;
     METRIC_ORDER.forEach((mk) => {
       const m = res.metrics[mk];
       if (!m) return;
@@ -1239,7 +1279,7 @@
   function renderOptResult(res) {
     const host = document.getElementById("optResult");
     if (!res.ok) {
-      host.innerHTML = `<div class="note" style="margin:14px 26px 26px"><span class="ic">🚫</span>
+      host.innerHTML = `<div class="note"><span class="ic">🚫</span>
         <div><b>未找到可行方案：</b>${res.reason}。基线方案 CAPEX ${E.rmb(res.baseline.economics.capexTotal)}、面积 ${res.baseline.building.buildingArea} m²、比能耗 ${res.baseline.energy.energyIntensity} kWh/kg，可作为放宽参考。</div></div>`;
       return;
     }
@@ -1269,7 +1309,7 @@
       <div class="table-wrap" style="padding:14px 26px 26px"><table class="data">
         <thead><tr><th>#</th><th>产能</th><th>CAPEX</th><th>单位成本</th><th>比能耗</th><th>面积</th><th>FCR</th><th>安全系数</th><th>回收期</th></tr></thead>
         <tbody>${topRows}</tbody></table></div>
-      <div style="padding:0 26px 26px"><div class="note"><span class="ic">💡</span>
+      <div style="padding:0"><div class="note"><span class="ic">💡</span>
       <div>寻优基于网格搜索：在品种经验区间内遍历决策变量（含密度/循环/池径/补水/<b>FCR/安全系数</b>，能耗目标另纳入<b>设定水温与地区气候</b>），按约束过滤后取目标最优。下方 <b>成本-能耗 Pareto 前沿</b> 给出所有「无法在不恶化另一指标时优化」的折中解，供决策权衡。生产目标固定时，<b>最低成本</b>与<b>最低能耗</b>通常对应不同的密度/循环/温度/地区组合。</div></div></div>`;
   }
 
@@ -1320,7 +1360,7 @@
           <text x="${(W / 2)}" y="${(H - 10)}" class="pareto-axis-label" text-anchor="middle">CAPEX (万元)</text>
           <text x="16" y="${(H / 2)}" class="pareto-axis-label" text-anchor="middle" transform="rotate(-90 16 ${H / 2})">比能耗 (kWh/kg)</text>
         </svg>
-        <div class="note" style="margin-top:8px"><span class="ic">📈</span>
+        <div class="note"><span class="ic">📈</span>
         <div>${noteTxt}</div></div>
       </div>
       <div class="section-title" style="margin-top:8px">Pareto 前沿候选</div>
@@ -1393,7 +1433,7 @@
     const host = document.getElementById("libList");
     const items = libItems;
     if (!items.length) {
-      host.innerHTML = `<div class="note" style="margin:8px 0"><span class="ic">📭</span><div>暂无方案。输入名称后点「保存当前方案」。云端模式需先填写 API 地址并选「云端」。</div></div>`;
+      host.innerHTML = `<div class="note"><span class="ic">📭</span><div>暂无方案。输入名称后点「保存当前方案」。云端模式需先填写 API 地址并选「云端」。</div></div>`;
       document.getElementById("libCompare").innerHTML = "";
       return;
     }
