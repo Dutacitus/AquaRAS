@@ -7,13 +7,28 @@
 window.RAS = window.RAS || {};
 
 RAS.pid = (function () {
+  // 估算文本像素宽度（CJK 全宽、ASCII 半宽），用于判断是否需压缩以贴合方框
+  function estWidth(s, fs) {
+    let w = 0;
+    for (const ch of String(s)) {
+      const c = ch.codePointAt(0);
+      w += c > 0x2e80 ? fs : (c === 0x20 ? fs * 0.3 : fs * 0.55);
+    }
+    return w;
+  }
+  function fitLen(s, fs, maxW) {
+    const ew = estWidth(s, fs);
+    return ew > maxW ? Math.max(24, Math.round(maxW)) : 0;
+  }
   function equip(x, y, w, h, tag, title, sub, cls, key) {
+    const tLen = fitLen(title, 14, w - 16);
+    const sLen = fitLen(sub, 11.5, w - 12);
     return `
       <g class="pid-node ${cls || ""}" data-key="${key || ""}">
         <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="14" class="pid-box" filter="url(#pidShadow)"/>
         <text x="${x + w / 2}" y="${y + 20}" class="pid-tag">${tag}</text>
-        <text x="${x + w / 2}" y="${y + h / 2 + 6}" class="pid-title">${title}</text>
-        <text x="${x + w / 2}" y="${y + h / 2 + 24}" class="pid-sub">${sub}</text>
+        <text x="${x + w / 2}" y="${y + h / 2 + 6}" class="pid-title"${tLen ? ` textLength="${tLen}" lengthAdjust="spacingAndGlyphs"` : ""}>${title}</text>
+        <text x="${x + w / 2}" y="${y + h / 2 + 24}" class="pid-sub"${sLen ? ` textLength="${sLen}" lengthAdjust="spacingAndGlyphs"` : ""}>${sub}</text>
       </g>`;
   }
   // 仪表：labelPos 'bottom'(默认) 或 'right'(标签右侧，避免与下方气泡重叠)
@@ -37,11 +52,12 @@ RAS.pid = (function () {
   function bus(x1, x2, y) {
     return `<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" class="pid-bus"/>`;
   }
-  function pipe(x1, y1, x2, y2, label) {
+  function pipe(x1, y1, x2, y2, label, labelY) {
     const mx = (x1 + x2) / 2;
+    const ly = labelY !== undefined ? labelY : Math.min(y1, y2) - 7;
     return `<g class="pid-pipe"><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="pid-line"/>
       <polygon points="${x2},${y2} ${x2 - 9},${y2 - 5} ${x2 - 9},${y2 + 5}" class="pid-head"/>
-      ${label ? `<text x="${mx}" y="${y1 - 7}" class="pid-flow-label">${label}</text>` : ""}</g>`;
+      ${label ? `<text x="${mx}" y="${ly}" class="pid-flow-label">${label}</text>` : ""}</g>`;
   }
   function valve(cx, cy, tag) {
     return `<g class="pid-valve">
@@ -96,6 +112,8 @@ RAS.pid = (function () {
 
     const yBus = 472;                     // 信号总线 y
     const dcsX = 300, dcsY = 512, dcsW = W - 300 - 80, dcsH = 70;
+    const dcsLine1 = `控制回路：LIC 液位→FV-01 · AIC 溶氧→氧染 · TIC 温度→HE-01 · FIC 流量→P-01 · AIC 硝酸氮→碳源投加(DN-01)`;
+    const dcsLine2 = `联锁：LSH-01 高液位停泵 · DO 低于 ${d.species.doMin} 报警 · 备用纯氧 / 发电机自启`;
     const railX = 52, railBusX = 106;     // 仪表轨中心 & 轨内竖母线 x
     const dcsEntryX = 340;                // 总线进入 DCS 的 x
     const instYs = [104, 158, 212, 266, 320, 374, 428, 484];
@@ -126,7 +144,7 @@ RAS.pid = (function () {
     const mainEquips = U.map((u, i) => equip(xs[i], eqY, eqW, eqH, u.tag, u.label, u.sub, u.cls, u.k)).join("\n      ");
 
     // ── 主管路 ──
-    let mainPipes = pipe(xs[0] + eqW, cy, xs[1], cy, Q + " m³/h") + "\n      ";
+    let mainPipes = pipe(xs[0] + eqW, cy, xs[1], cy, Q + " m³/h", eqY - 12) + "\n      ";
     for (let i = 1; i < n - 1; i++) {
       mainPipes += pipe(xs[i] + eqW, cy, xs[i + 1], cy) + "\n      ";
     }
@@ -168,7 +186,7 @@ RAS.pid = (function () {
       <!-- 主管路 -->
       ${mainPipes}
       <!-- 回水管(闭合正交环) -->
-      ${pipe(lastCol, yRet, xs[0] + eqW, yRet, "净化回水")}
+      ${pipe(lastCol, yRet, xs[0] + eqW, yRet, "净化回水", yRet + 52)}
       <path d="M ${lastColCx} ${eqY + eqH} L ${lastColCx} ${yRet} L ${xs[0] + eqW / 2} ${yRet} L ${xs[0] + eqW / 2} ${eqY + eqH}" class="pid-line pid-return"/>
 
       <!-- 换热器(回水管上) -->
@@ -190,25 +208,25 @@ RAS.pid = (function () {
         <line x1="${dnPipe1X}" y1="${yRet}" x2="${dnPipe1X}" y2="420" class="pid-line"/>
         <polygon points="${dnPipe1X},420 ${dnPipe1X - 5},410 ${dnPipe1X + 5},410" class="pid-head"/>
       </g>
-      <text x="${dnPipe1X + 10}" y="376" class="pid-flow-label denit-txt">侧流</text>
+      <text x="${dnPipe1X + 10}" y="392" class="pid-flow-label denit-txt">侧流</text>
       <g class="pid-pipe pid-denit">
         <line x1="${dnPipe2X}" y1="420" x2="${dnPipe2X}" y2="${yRet}" class="pid-line"/>
         <polygon points="${dnPipe2X},${yRet} ${dnPipe2X - 5},${yRet + 10} ${dnPipe2X + 5},${yRet + 10}" class="pid-head"/>
       </g>
-      <text x="${dnPipe2X + 10}" y="376" class="pid-flow-label denit-txt">回注</text>` : ""}
+      <text x="${dnPipe2X + 10}" y="392" class="pid-flow-label denit-txt">回注</text>` : ""}
 
       <!-- 集中控制系统 -->
       <g class="pid-dcs" filter="url(#pidShadow)">
         <rect x="${dcsX}" y="${dcsY}" width="${dcsW}" height="${dcsH}" rx="14" class="pid-box c8"/>
         <text x="${dcsX + 18}" y="${dcsY + 24}" class="pid-title left">集中控制系统 (PLC / DCS)</text>
-        <text x="${dcsX + 18}" y="${dcsY + 44}" class="pid-sub left">控制回路：LIC 液位→FV-01 · AIC 溶氧→氧锥 · TIC 温度→HE-01 · FIC 流量→P-01 · AIC 硝酸氮→碳源投加(DN-01)</text>
-        <text x="${dcsX + 18}" y="${dcsY + 62}" class="pid-sub left">联锁：LSH-01 高液位停泵 · DO 低于 ${d.species.doMin} 报警 · 备用纯氧 / 发电机自启</text>
+        <text x="${dcsX + 18}" y="${dcsY + 44}" class="pid-sub left"${fitLen(dcsLine1, 11.5, dcsW - 40) ? ` textLength="${fitLen(dcsLine1, 11.5, dcsW - 40)}" lengthAdjust="spacingAndGlyphs"` : ""}>${dcsLine1}</text>
+        <text x="${dcsX + 18}" y="${dcsY + 62}" class="pid-sub left"${fitLen(dcsLine2, 11.5, dcsW - 40) ? ` textLength="${fitLen(dcsLine2, 11.5, dcsW - 40)}" lengthAdjust="spacingAndGlyphs"` : ""}>${dcsLine2}</text>
       </g>
       <!-- 控制信号(DCS→FV-01，正交阶梯) -->
       ${ortho([[dcsX + dcsW - 40, dcsY], [dcsX + dcsW - 40, 372], [lastColCx, 372]], "pid-control")}
 
       <!-- 图例 -->
-      <g class="pid-legend" transform="translate(${dcsX}, ${H - 30})">
+      <g class="pid-legend" transform="translate(${dcsX}, ${H - 36})">
         <circle cx="8" cy="-8" r="9" class="pid-bubble"/><text x="22" y="-4" class="pid-sub">仪表测点</text>
         <rect x="120" y="-16" width="14" height="14" rx="3" class="pid-box c8"/><text x="140" y="-4" class="pid-sub">控制系统</text>
         <rect x="230" y="-16" width="14" height="14" rx="3" class="pid-valve-box" transform="rotate(45 237 -9)"/><text x="250" y="-4" class="pid-sub">控制阀</text>

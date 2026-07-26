@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AquaRAS · 工厂化循环水养殖工艺设计系统</title>
   <link rel="stylesheet" href="assets/css/style.css" />
+  <!-- Brand / Favicon -->
+  <link rel="icon" type="image/svg+xml" href="brand/logo.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="brand/favicon-32.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="brand/apple-touch-icon.png" />
 </head>
 <body>
   <div class="wrap">
@@ -33,7 +37,7 @@
         <span class="hero-aurora a1"></span>
         <span class="hero-aurora a2"></span>
         <span class="hero-aurora a3"></span>
-        <svg class="hero-circuit" viewBox="0 0 1200 600" preserveAspectRatio="xMidYMid slice">
+        <svg class="hero-circuit" viewBox="0 0 1200 600" preserveAspectRatio="xMidYMid meet">
           <defs>
             <linearGradient id="hcFlow" x1="0" y1="0" x2="1" y2="1">
               <stop offset="0%" stop-color="var(--brand)" />
@@ -76,7 +80,7 @@
       </div>
 
       <div class="hero-inner">
-        <div class="hero-eyebrow"><span class="pulse"></span>参数化 RAS 工艺设计引擎 · v<span id="sysVersion">1.5.2</span></div>
+        <div class="hero-eyebrow"><span class="pulse"></span>参数化 RAS 工艺设计引擎 · v<span id="sysVersion">1.24.0</span></div>
         <h1 class="hero-title">工厂化循环水养殖<br /><span class="grad">智能工艺设计系统</span></h1>
         <p class="hero-sub">输入产能目标，引擎按质量守恒自动推导养殖池、生物滤池 (MBBR)、纯氧增氧、CO₂ 脱除、固废处理等全套参数，并实时生成可交互 3D 车间模型。</p>
         <div class="hero-cta-row">
@@ -106,6 +110,9 @@
       <button class="tab" data-tab="pid">🛠 P&ID 仪表</button>
       <button class="tab" data-tab="opt">🧮 智能寻优</button>
       <button class="tab" data-tab="lib">🗂 方案库</button>
+      <button class="tab" data-tab="suppliers" data-admin-only="edit">📋 供应商库</button>
+      <button class="tab" data-tab="knowledge" data-admin-only="full">🧠 知识库</button>
+      <button id="adminLockBtn" class="admin-lock-btn nav-lock-btn" title="管理员登录">🔒</button>
     </nav>
 
     <!-- ===== Input Panel ===== -->
@@ -138,8 +145,8 @@
         </div>
         <div class="field">
           <label>日循环次数 <span class="unit">(turns/天)</span></label>
-          <input type="number" id="turns" value="12" min="4" max="40" step="1" />
-          <span class="hint">系统总水量日循环次数</span>
+          <input type="number" id="turns" value="" min="4" max="96" step="1" placeholder="自动(负荷反算)" />
+          <span class="hint">留空=按污染负荷自动反算最佳值；填写则自定义覆盖（HRT 包络 16–96）</span>
         </div>
         <div class="field">
           <label>补水率 <span class="unit">(% 循环量)</span></label>
@@ -194,13 +201,30 @@
           <input type="number" id="laborPerYear" step="5000" min="0" placeholder="默认 130000" />
           <span class="hint">单人年综合用工成本</span>
         </div>
-        <div class="subhead">水质精制与消毒单元（可选）</div>
-        <div class="layer-toggles" style="padding:4px 0 2px;">
-          <label><input type="checkbox" id="uv" checked /> 紫外消毒 UV <span class="unit">(默认开)</span></label>
-          <label><input type="checkbox" id="foamFrac" /> 泡沫分离（蛋白分离器）</label>
-          <label><input type="checkbox" id="ozone" /> 臭氧氧化 + 消毒</label>
+        <div class="subhead">水质精制与消毒单元（可选，可任意组合 · 默认仅 UV 开启）</div>
+        <div class="option-list">
+          <label class="option-row">
+            <input type="checkbox" id="uv" checked />
+            <span class="option-body">
+              <span class="option-main">紫外消毒 UV <span class="unit">(默认开)</span></span>
+              <span class="option-desc">提供基础生物安保（对数灭活）</span>
+            </span>
+          </label>
+          <label class="option-row">
+            <input type="checkbox" id="foamFrac" />
+            <span class="option-body">
+              <span class="option-main">泡沫分离（蛋白分离器）</span>
+              <span class="option-desc">去除溶解有机碳 DOC 与细颗粒</span>
+            </span>
+          </label>
+          <label class="option-row">
+            <input type="checkbox" id="ozone" />
+            <span class="option-body">
+              <span class="option-main">臭氧氧化 + 消毒</span>
+              <span class="option-desc">氧化 DOC + 消毒 + 将 NO₂ 氧化为 NO₃</span>
+            </span>
+          </label>
         </div>
-        <span class="hint">UV 提供基础生物安保（对数灭活）；泡沫分离去除溶解有机碳 DOC 与细颗粒；臭氧氧化 DOC + 消毒 + 将 NO₂ 氧化为 NO₃。可任意组合，默认仅 UV 开启。</span>
         <div class="subhead">光伏投资（可选，降低电费支出）</div>
         <div class="field">
           <label>光伏装机容量 <span class="unit">(kWp)</span></label>
@@ -327,6 +351,52 @@
         <button id="libExport" class="toggle-btn magnetic">⬇ 导出 JSON</button>
         <button id="libImportBtn" class="toggle-btn magnetic">⬆ 导入 JSON</button>
         <input id="libImport" type="file" accept="application/json" class="hidden" />
+      </div>
+    </section>
+
+    <!-- ===== Supplier Library Panel ===== -->
+    <section class="panel glass" id="panel-suppliers">
+      <div class="supplier-toolbar">
+        <div class="supplier-categories" id="supplierCats">
+          <button class="chip on" data-cat="">全部</button>
+        </div>
+        <div class="supplier-search">
+          <input id="supplierKeyword" class="text-input" placeholder="搜索供应商名称 / 品牌 / 产品..." />
+        </div>
+        <button id="adminAddBtn" class="admin-add-btn" style="display:none">＋ 新增供应商</button>
+      </div>
+      <div class="supplier-grid" id="supplierGrid">
+        <div class="supplier-loading">加载中...</div>
+      </div>
+    </section>
+
+    <!-- ===== Knowledge Base Panel ===== -->
+    <section class="panel glass" id="panel-knowledge">
+      <div class="kb-header">
+        <select id="kbCategorySel" class="kb-cat-select">
+          <option value="">-- 选择知识库类别 --</option>
+        </select>
+        <div class="kb-header-actions">
+          <button id="kbResetBtn" class="kb-reset-btn" style="display:none" title="重置该类别所有覆盖值为默认">↺ 重置默认</button>
+          <button id="kbSaveBtn" class="kb-save-btn" style="display:none">💾 保存更改</button>
+          <span id="kbOverridesBadge" class="kb-badge" style="display:none"></span>
+        </div>
+      </div>
+      <div class="kb-hint" id="kbHint">请先选择左侧知识库类别，查看和编辑参数</div>
+      <div class="kb-hint kb-lock-hint" id="kbLockHint" style="display:none">🔒 请先解锁以查看和编辑知识库参数</div>
+      <div class="kb-table-wrap" id="kbTableWrap" style="display:none">
+        <table class="kb-table" id="kbTable">
+          <thead><tr>
+            <th>参数路径</th><th>默认值</th><th>覆盖值</th><th>备注</th>
+          </tr></thead>
+          <tbody id="kbTableBody"></tbody>
+        </table>
+      </div>
+      <div class="kb-audit-section" id="kbAuditSection" style="display:none">
+        <h4 class="kb-audit-title" onclick="document.getElementById('kbAuditList').classList.toggle('open')">
+          📜 变更记录 <span style="font-weight:400;font-size:.7rem">（点击展开）</span>
+        </h4>
+        <div class="kb-audit-list" id="kbAuditList"></div>
       </div>
     </section>
 

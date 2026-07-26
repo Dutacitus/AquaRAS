@@ -76,14 +76,27 @@ window.RAS = window.RAS || {};
   class CloudStore {
     constructor(baseUrl) { this.base = (baseUrl || "").replace(/\/+$/, ""); }
     _url(p) { return this.base + p; }
+    _adminToken() { return (typeof localStorage !== "undefined" ? localStorage.getItem("ras_admin_token") : null) || ""; }
     async _req(method, path, body) {
       const opt = { method, headers: { Accept: "application/json" } };
+      // 写操作需附管理员 Token
+      const adminToken = this._adminToken();
+      if (adminToken) {
+        opt.headers["x-admin-token"] = adminToken;
+      }
       if (body !== undefined) {
         opt.headers["Content-Type"] = "application/json";
         opt.body = JSON.stringify(body);
       }
       const res = await fetch(this._url(path), opt);
-      if (!res.ok) throw new Error("HTTP " + res.status);
+      if (!res.ok) {
+        // 401 提示未授权
+        if (res.status === 401) {
+          const d = await res.json().catch(() => ({}));
+          throw new Error(d.error || "需要管理员权限，请先在供应商管理页面解锁");
+        }
+        throw new Error("HTTP " + res.status);
+      }
       return res.json();
     }
     async list() {
@@ -111,7 +124,7 @@ window.RAS = window.RAS || {};
     summarize,
     fromApi,
     toPayload,
-    getBase: () => (localStorage.getItem(LS_BASE) || "").trim(),
+    getBase: () => (localStorage.getItem(LS_BASE) || "http://localhost:3000").trim(),
     setBase: (v) => localStorage.setItem(LS_BASE, (v || "").trim()),
     getMode: () => localStorage.getItem(LS_MODE) || "local",
     setMode: (v) => localStorage.setItem(LS_MODE, v),

@@ -45,6 +45,8 @@
     document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
     document.getElementById("panel-" + name).classList.add("active");
     if (name === "model") ensureModel();
+    if (name === "suppliers") { ensureSuppliers(); }
+    if (name === "knowledge") { ensureKnowledge(); }
   }
   function initTabs() {
     document.querySelectorAll("#tabs .tab").forEach((tab) => {
@@ -173,7 +175,7 @@
       targetDensity: document.getElementById("density").value ? num("density") : null,
       cycles: document.getElementById("cycles").value ? num("cycles") : null,
       fcr: document.getElementById("fcr").value ? num("fcr") : null,
-      recircTurns: num("turns", 12),
+      recircTurns: document.getElementById("turns").value ? num("turns") : null,
       makeupRate: num("makeup", 1) / 100,
       designTemp: document.getElementById("designTemp").value ? num("designTemp") : null,
       ambientTemp: document.getElementById("ambient").value ? num("ambient", 15) : 15,
@@ -214,14 +216,25 @@
 
   /* ---------------- 渲染：工艺参数 ---------------- */
   function metricCard(k, v, unit, sub, cls) {
+    const valStr = String(v ?? "");
+    const dispVal = valStr === "" ? "—" : v;
+    const isNumeric = /^-?[\d\s.,]+$/.test(valStr.replace(/\s/g, "")) && /\d/.test(valStr);
+    const fullText = valStr + (unit || "");
+    let fs = 27;
+    if (fullText.length > 16) fs = 15;
+    else if (fullText.length > 11) fs = 18;
+    else if (fullText.length > 7) fs = 22;
+    const wrapCls = isNumeric ? "v-nowrap" : "v-wrap";
+    const fsStyle = fs < 27 ? ` style="font-size:${fs}px"` : "";
     return `<div class="metric ${cls || ""}"><div class="k">${k}</div>
-      <div class="v">${v}${unit ? `<small>${unit}</small>` : ""}</div>${sub ? `<div class="sub">${sub}</div>` : ""}</div>`;
+      <div class="v ${wrapCls}"${fsStyle}>${v}${unit ? `<small>${unit}</small>` : ""}</div>${sub ? `<div class="sub">${sub}</div>` : ""}</div>`;
   }
   function section(title, badge, items) {
     return `<div class="section-title">${title}${badge ? `<span class="badge">${badge}</span>` : ""}</div>
       <div class="metrics">${items.join("")}</div>`;
   }
   /* 水质可行性校核区块（稳态质量平衡结果 + OK/WARN/FAIL 徽章） */
+  // 水质控制限值（阈值）为行业通用设计标准，向用户公开披露
   function renderWQSection(wq) {
     if (!wq) return "";
     const lab = { ok: "达标", warn: "预警", fail: "超限" };
@@ -240,11 +253,53 @@
       <div class="section-title">水质可行性校核
         <span class="badge wq-${wq.status}">${head}</span></div>
       <div class="wq-grid">${cards}</div>
-      <div class="note" style="padding:6px 26px 0"><span class="ic">♻️</span>
-      <div>反硝化：脱氮率 <b>${Math.round(wq.denit.removal * 100)}%</b>，NO₃-N 稳态 <b>${wq.no3N}</b> mg/L（以 N 计），需反硝化反应器容积约 <b>${wq.denit.volume}</b> m³（负荷 ${wq.denit.no3NLoadDaily} kg NO₃-N/天）。</div></div>
-      <div style="padding:0 26px 26px"><div class="note">
-        <span class="ic">🔬</span>
-        <div>稳态质量平衡校核：基于两段硝化（AOB/NOB）+ 反硝化 + 脱气塔 + 微滤机一阶去除，并叠加补水稀释与水源背景浓度，推算系统浓度，供设计可行性判断。溶氧按供氧能力（覆盖鱼代谢 + 硝化耗氧，余量 ${wq.o2Margin}%）闭环判定池内可达 <b>${wq.o2Achieved}</b> mg/L${wq.o2Deficit > 0.1 ? `（缺口 ${wq.o2Deficit} mg/L，供氧不足）` : ""}；数值为工程估算，运行需在线监测 DO/pH/TAN/CO₂ 并预留余量。</div></div></div>`;
+      <div style="padding:0">
+        <div class="note wq-meta">
+          <span class="ic">♻️</span>
+          <div class="note-body">
+            <div class="note-title">反硝化${wq.denit.removal > 0 ? " · 已启用侧流脱氮" : " · 未启用（仅随补水交换）"}</div>
+            <div class="note-kvs">
+              <div class="note-kv"><span>NO₃-N 稳态</span><b>${wq.no3N}</b><small>mg/L（以N计）</small></div>
+              <div class="note-kv"><span>反应器容积</span><b>${wq.denit.volume}</b><small>m³</small></div>
+              <div class="note-kv"><span>日负荷</span><b>${wq.denit.no3NLoadDaily}</b><small>kg NO₃-N/天</small></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      ${wq.bioGrowth && wq.bioGrowth.available ? `
+      <div style="padding:0">
+        <div class="note wq-meta">
+          <span class="ic">🐟</span>
+          <div class="note-body">
+            <div class="note-title">鱼生长生物能学耦合 <span class="badge wq-${wq.bioGrowth.status}">${wq.bioGrowth.status === "ok" ? "生物可行" : wq.bioGrowth.status === "warn" ? "临界/偏紧" : "不可行"}</span></div>
+            <div class="note-kvs">
+              <div class="note-kv"><span>SGR 上限</span><b>${wq.bioGrowth.sgrTemp}</b><small>%/d</small></div>
+              <div class="note-kv"><span>温度响应</span><b>${wq.bioGrowth.tempResp}</b></div>
+              <div class="note-kv"><span>最适温度</span><b>${wq.bioGrowth.tempOpt}</b><small>℃</small></div>
+              <div class="note-kv"><span>最小养成</span><b>${wq.bioGrowth.daysGrowMin}</b><small>天/茬</small></div>
+              <div class="note-kv"><span>生物最大</span><b>${wq.bioGrowth.cyclesMax}</b><small>茬/年</small></div>
+              <div class="note-kv"><span>生物最大年产量</span><b>${(wq.bioGrowth.annualMaxKg / 1000).toFixed(1)}</b><small>t</small></div>
+              <div class="note-kv"><span>设定 / 目标</span><b>${wq.bioGrowth.cyclesAssumed} / ${(wq.bioGrowth.annualTargetKg / 1000).toFixed(1)}</b><small>茬 / t</small></div>
+            </div>
+            <div class="note-foot">“设计水温 ↔ 产量吞吐”的生物约束，与 HVAC 能耗存在权衡。</div>
+          </div>
+        </div>
+      </div>` : ""}
+      <div style="padding:0">
+        <div class="note wq-meta">
+          <span class="ic">🔬</span>
+          <div class="note-body">
+            <div class="note-title">稳态质量平衡校核</div>
+            <div class="note-kvs">
+              <div class="note-kv"><span>模型</span><b style="font-size:12.5px;font-weight:600">两段硝化 + 反硝化 + 脱气塔 + 微滤机</b></div>
+              <div class="note-kv"><span>DO 可达</span><b>${wq.o2Achieved}</b><small>mg/L</small></div>
+              <div class="note-kv"><span>溶氧余量</span><b>${wq.o2Margin}</b><small>%</small></div>
+              ${wq.o2Deficit > 0.1 ? `<div class="note-kv"><span>DO 缺口</span><b style="color:#f87171">${wq.o2Deficit}</b><small>mg/L，供氧不足</small></div>` : ""}
+            </div>
+            <div class="note-foot">数值为工程估算，运行需在线监测 DO/pH/TAN/CO₂ 并预留余量。</div>
+          </div>
+        </div>
+      </div>`;
   }
   /* 尾水排放合规区块（v1.13.8，对照 DB44/2462-2024 五项限值 + 受纳水域等级选择） */
   function renderTailwater(d) {
@@ -268,7 +323,7 @@
     const tnRaw = tt.cTnRaw, tnPol = tt.cTnPol, tnDrop = (tt.removal && Math.round(tt.removal.tn * 100)) || 0;
     const treatNote = techKey === "none"
       ? `<div class="muted" style="font-size:12px;padding:4px 26px 14px">未设末端处理：排放口浓度 = 系统循环水浓度（TN ${tnRaw} mg/L）。选上方工艺可对排放口做二次削减，多数可使 TN 降至 DB44 限值内。</div>`
-      : `<div class="note" style="padding:8px 26px 14px"><span class="ic">♻️</span><div>尾水处理单元 <b>${tt.name}</b>：总氮 ${tnRaw} → <b>${tnPol}</b> mg/L（去除 ${tnDrop}%）；总磷 ${tt.cTpRaw} → ${tt.cTpPol}、COD ${tt.cCodRaw} → ${tt.cCodPol}、SS ${tt.cTssRaw} → ${tt.cTssPol} mg/L。单元投资 <b>${Math.round(tt.capex).toLocaleString("zh-CN")} 元</b>、年运行 <b>${Math.round(tt.opexYr).toLocaleString("zh-CN")} 元</b>、占地约 <b>${tt.footprint} m²</b>（处理流量 ${tt.treatedM3d} m³/d）。</div></div>`;
+      : `<div class="note"><span class="ic">♻️</span><div>尾水处理单元 <b>${tt.name}</b>：总氮 ${tnRaw} → <b>${tnPol}</b> mg/L（去除 ${tnDrop}%）；总磷 ${tt.cTpRaw} → ${tt.cTpPol}、COD ${tt.cCodRaw} → ${tt.cCodPol}、SS ${tt.cTssRaw} → ${tt.cTssPol} mg/L。单元投资 <b>${Math.round(tt.capex).toLocaleString("zh-CN")} 元</b>、年运行 <b>${Math.round(tt.opexYr).toLocaleString("zh-CN")} 元</b>、占地约 <b>${tt.footprint} m²</b>（处理流量 ${tt.treatedM3d} m³/d）。</div></div>`;
     const concl = tw.allPass
       ? (techKey === "none" ? "当前设计排放口浓度满足标准，可依法排放。" : `经 <b>${tt.name}</b> 处理后排放口浓度满足标准，可依法排放。`)
       : (techKey === "none" ? "⚠️ 部分指标超出标准，需增加尾水处理（如强化脱氮除磷、增设尾水净化塘/湿地）或重新认定受纳水域等级。" : `⚠️ 经 <b>${tt.name}</b> 处理后仍有指标超限，建议升级工艺（如多级生物净化组合）或重新认定受纳水域等级。`);
@@ -289,7 +344,7 @@
       </div>
       <div class="wq-grid">${cards}</div>
       ${treatNote}
-      <div class="note" style="padding:8px 26px 20px"><span class="ic">🏞️</span>
+      <div class="note"><span class="ic">🏞️</span>
       <div>${tw.waterType === "seawater" ? "海水" : "淡水"}养殖尾水按 <b>${tw.level === 1 ? "一级" : "二级"}</b> 限值判定：pH ${tw.limit.phLow}–${tw.limit.phHigh}、悬浮物 ≤${tw.limit.ss}、COD(Mn) ≤${tw.limit.cod}、总氮 ≤${tw.limit.tn}、总磷 ≤${tw.limit.tp} mg/L。${concl}本判定基于稳态质量平衡推算的排放口浓度（与系统循环水同浓度，末端处理后按处理效率二次削减），供合规性预判；正式排放须按标准方法采样监测。</div></div>`;
   }
   /* 敏感度（龙卷风图）：基于 engine.sensitivity 的 ±% 扰动结果渲染水平条带 */
@@ -351,12 +406,12 @@
         + `<text x="${(x + bw / 2).toFixed(1)}" y="${H - 7}" font-size="9" fill="#94a3b8" text-anchor="middle">${months[i]}</text>`;
     }).join("");
     return `
-      <div style="padding:0 26px 6px">
-        <div style="font-size:13px;color:#cbd5e1;margin:6px 0 4px">季节性温控剖面（bin method · 12 月双工况）</div>
-        <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:8px 10px">
+      <div style="padding:0 0 6px">
+        <div style="font-size:13px;color:#cbd5e1;margin:6px 26px 4px">季节性温控剖面（bin method · 12 月双工况）</div>
+        <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:8px 10px;margin:0 26px">
           <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="xMidYMid meet" style="display:block">${bars}</svg>
         </div>
-        <div class="note" style="margin-top:6px"><span class="ic">🌡️</span>
+        <div class="note"><span class="ic">🌡️</span>
         <div>制热 <b>${(en.hvacHeatingKwh / 1000).toFixed(0)}</b> MWh / 制冷 <b>${(en.hvacCoolingKwh / 1000).toFixed(0)}</b> MWh（年合计 <b>${(en.hvacAnnualKwh / 1000).toFixed(0)}</b> MWh），${(en.hvacMode === "cool" ? "制冷主导" : "加热主导")}；无地区时退化为单点估算。柱高∝当月平均功率，橙=制热、蓝=制冷、灰=中性（无需控温）。</div></div>
       </div>`;
   }
@@ -390,9 +445,9 @@
     }).join("");
     const legend = sp.map((x) => `<span style="display:inline-flex;align-items:center;gap:5px;margin-right:12px;font-size:12.5px"><span style="width:10px;height:10px;border-radius:2px;background:${x.c};display:inline-block"></span>${x.label} ${(x.v / total * 100).toFixed(0)}%</span>`).join("");
     return `
-      <div style="padding:0 26px 6px">
-        <div style="font-size:13px;color:#cbd5e1;margin:6px 0 4px">能耗分项构成（五类占比）</div>
-        <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">
+      <div style="padding:0 0 6px">
+        <div style="font-size:13px;color:#cbd5e1;margin:6px 26px 4px">能耗分项构成（五类占比）</div>
+        <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin:0 26px">
           <svg viewBox="0 0 ${W} ${H}" width="130" height="130" style="flex:0 0 auto">${arcs}
             <text x="${cx}" y="${cy - 4}" text-anchor="middle" font-size="15" fill="#e2e8f0" font-weight="bold">${en.totalPower}</text>
             <text x="${cx}" y="${cy + 12}" text-anchor="middle" font-size="9" fill="#94a3b8">kW 总功率</text></svg>
@@ -438,16 +493,16 @@
     const cx = sx(annT), cy = sy(sfFor(annT));
     const xticks = [10, 100, 300, 1000, 2000].map((t) => `<text x="${sx(t).toFixed(1)}" y="${H - 10}" font-size="9" fill="#94a3b8" text-anchor="middle">${t}t</text>`).join("");
     return `
-      <div style="padding:0 26px 6px">
-        <div style="font-size:13px;color:#cbd5e1;margin:6px 0 4px">规模经济曲线（分段幂律，单位投资因子 vs 年产量）</div>
-        <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:8px 10px">
+      <div style="padding:0 0 6px">
+        <div style="font-size:13px;color:#cbd5e1;margin:6px 26px 4px">规模经济曲线（分段幂律，单位投资因子 vs 年产量）</div>
+        <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:8px 10px;margin:0 26px">
           <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="xMidYMid meet" style="display:block">
             <path d="${line}" fill="none" stroke="#38bdf8" stroke-width="2"/>
             <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4" fill="#f59e0b"><title>当前 ${annT}t → ${sfFor(annT)}</title></circle>
             ${xticks}
           </svg>
         </div>
-        <div class="note" style="margin-top:6px"><span class="ic">📉</span>
+        <div class="note"><span class="ic">📉</span>
         <div>分段曲线：小规(&lt;30t)单位投资最高(因子≈${sfFor(10)})，随规模上升快速下降，大规(300→1000t)趋平收敛(≈${sfFor(300)}~${sfFor(1000)})；当前 <b>${annT}t</b> 对应因子 <b>${sfFor(annT)}</b>。极端规模夹在 [${cm.scaleCeil}, ${cm.scaleFloor}] 防失真。</div></div>
       </div>`;
   }
@@ -455,13 +510,23 @@
   function renderMonteCarlo(res) {
     const box = document.getElementById("mcResult");
     if (!box) return;
-    const row = (label, o, unit) => `
-      <div style="display:grid;grid-template-columns:1.1fr 1fr 1fr 1fr;gap:6px;padding:4px 0;font-size:12.5px;border-bottom:1px solid rgba(255,255,255,.06)">
-        <span style="color:#cbd5e1">${label}</span>
-        <span style="color:#94a3b8">P10 <b style="color:#e2e8f0">${o.p10}</b>${unit}</span>
-        <span style="color:#94a3b8">P50 <b style="color:#38bdf8">${o.p50}</b>${unit}</span>
-        <span style="color:#94a3b8">P90 <b style="color:#f59e0b">${o.p90}</b>${unit}</span>
+    const row = (label, o, unit) => {
+      if (!o || typeof o.p50 !== "number") return "";
+      const epi = o.epi && typeof o.epi.p50 === "number";
+      return `
+      <div style="padding:4px 0;font-size:12.5px;border-bottom:1px solid rgba(255,255,255,.06)">
+        <div style="display:grid;grid-template-columns:1.1fr 1fr 1fr 1fr;gap:6px">
+          <span style="color:#cbd5e1">${label}</span>
+          <span style="color:#94a3b8">P10 <b style="color:#e2e8f0">${o.p10}</b>${unit}</span>
+          <span style="color:#94a3b8">P50 <b style="color:#38bdf8">${o.p50}</b>${unit}</span>
+          <span style="color:#94a3b8">P90 <b style="color:#f59e0b">${o.p90}</b>${unit}</span>
+        </div>
+        ${epi ? `<div style="display:grid;grid-template-columns:1.1fr 3fr;gap:6px;margin-top:2px">
+          <span style="color:#64748b;font-size:11px">仅模型系数</span>
+          <span style="color:#64748b;font-size:11px">P50 ${o.epi.p50}${unit} · 区间 ${o.epi.p10}–${o.epi.p90}</span>
+        </div>` : ""}
       </div>`;
+    };
     const hist = (data, color) => {
       if (!data || !data.length) return "";
       const maxN = Math.max.apply(null, data.map((d) => d.n)) || 1;
@@ -486,8 +551,8 @@
         <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:4px 6px">${hist(res.histCost, "#38bdf8")}</div>
         <div style="font-size:12px;color:#cbd5e1;margin:8px 0 2px">投资回收期分布 (年)</div>
         <div style="background:rgba(255,255,255,.03);border-radius:8px;padding:4px 6px">${hist(res.histPayback, "#f59e0b")}</div>
-        <div class="note" style="margin-top:8px"><span class="ic">🎲</span>
-        <div>蒙特卡洛 <b>${res.N}</b> 次采样（三角分布，系数 ±区间）。水质可行口径：达标 <b>${res.waterQuality.okPct}%</b> / 预警 <b>${res.waterQuality.warnPct}%</b> / 超限 <b>${res.waterQuality.failPct}%</b>。结果从单点升级为区间，供决策参考。</div></div>
+        <div class="note"><span class="ic">🎲</span>
+        <div>蒙特卡洛 <b>${res.N}</b> 次采样（三角分布）。<b>全口径</b>=模型系数+经营假设；<b>仅模型系数</b>(epistemic) 口径列于各指标次级行（浅灰）。水质可行(全口径)：达标 <b>${res.waterQuality.okPct}%</b> / 预警 <b>${res.waterQuality.warnPct}%</b> / 超限 <b>${res.waterQuality.failPct}%</b>${res.waterQualityEpistemic ? `；仅模型系数口径达标 <b>${res.waterQualityEpistemic.okPct}%</b>` : ""}。分层后可知区间宽度多少来自"模型本身不确定"、多少来自"你的经营假设波动"。</div></div>
       </div>`;
   }
   function round2(v) { return typeof v === "number" ? Math.round(v * 100) / 100 : v; }
@@ -497,7 +562,7 @@
     const host = document.getElementById("panel-params");
     host.className = "panel active glass";
     host.innerHTML = `
-      <div style="padding:24px 26px 4px"><div class="note" style="margin-top:0">
+      <div style="padding:24px 0 4px"><div class="note">
         <span class="ic">🐟</span>
         <div><b>${d.species.name} (${d.species.latin})</b> · 目标 ${d._raw.annual/1000} 吨/年 · 设计水温 ${d.inputs.temp}℃ ·
         实际设计产能 <b>${c.actualYield} 吨/年</b></div></div></div>
@@ -506,9 +571,21 @@
         metricCard("单池尺寸", `Ø${c.tankD}`, `×${c.tankH}m`, `有效 ${c.singleTankVol} m³`),
         metricCard("总养殖水体", c.totalTankVol, "m³", `有效容积合计`, "brand"),
         metricCard("放养密度", c.density, "kg/m³", "设计生物量密度"),
-        metricCard("年养殖茬次", c.cycles, "茬", `单位体积年产 ${c.yieldPerM3Year} kg/m³`),
+        metricCard("年养殖茬次", c.cycles, "茬", `有效容积年产 ${c.yieldPerM3Year} kg/m³`),
         metricCard("实际产能", c.actualYield, "吨/年", "满足目标且有余量", "accent"),
+        metricCard("宽深比 D:H", c.tankDH, "", `圆池旋流自清约束`, c.tankShape && c.tankShape.dhRevised ? "brand" : undefined),
+        metricCard("单池停留时间", c.hrtMin, "min", "", c.hrtStatus === "ok" ? undefined : "brand"),
+        metricCard("日循环次数", c.turns, "次/日", `${c.turnsSource === "auto" ? (c.turnsCapped ? "负荷反算·封顶" : "污染负荷反算") : c.turnsSource === "custom" ? "用户自定义" : "系统默认"}`, c.turnsSource === "auto" ? "brand" : undefined),
       ])}
+      <div style="padding:0 0 6px"><div class="note ${c.hrtStatus === "ok" ? "" : "note-warn"}">
+        <span class="ic">🌀</span>
+        <div>
+          <div class="tk-title">养殖池水力结构</div>
+          <div class="tk-line">· <b>池型</b>：圆形"茶杯"池 <b>Ø${c.tankD}×${c.tankH}m</b>，宽深比 <b>${c.tankDH}</b>。</div>
+          <div class="tk-line">· <b>自清机制</b>：切向进水形成旋流(forced vortex)，二次流将残饵粪便向池心锥底汇集（中心坑深 ${c.coneDepth}m）富集，经中心底排一次性排出。</div>
+          <div class="tk-line">· <b>循环与停留</b>：日循环 <b>${c.turns} 次/日</b>（${(c.turnsSource === "auto" ? (c.turnsDriver === "co2" ? "由污染负荷反算（CO₂ 脱气主导）" : c.turnsDriver === "tss" ? "由污染负荷反算（悬浮物主导）" : c.turnsDriver === "hrt" ? `由良好刷新下限反算` : "自动反算") : c.turnsSource === "custom" ? "用户自定义" : "知识库默认")}${c.turnsCapped ? "；⚠ 负荷超 HRT 包络上限，已封顶，建议提高补水率或增设处理单元" : ""}），单池水力停留 <b>${c.hrtMin} min</b>${c.hrtStatus === "ok" ? "，溶氧/氨氮更新充分" : "，偏长/偏短，建议调整循环次数或分池"}。</div>
+          <div class="tk-line">· <b>流速与排水</b>：建议切向流速（自清动量 + 鱼福利）；推荐 Cornell 双排水——中心底排 5–20% 高浓度污物流直送微滤，侧排 80–95% 清洁水回生物滤池。</div>
+        </div></div></div>
       ${section("投喂与氮负荷", "Feed & N", [
         metricCard("饲料系数 FCR", f.fcr, "", "饲料/增重"),
         metricCard("年饲料量", (f.annualFeed/1000).toFixed(1), "吨", "全周期投喂总量"),
@@ -531,7 +608,7 @@
         metricCard("年反冲洗/雾损", Math.round((hy.drumBackwashVolYr + hy.degasserMistVolYr) * 10) / 10, "m³/年", "不返还损耗"),
         metricCard("消耗性水足迹", hy.waterConsumption, "m³/kg", "蒸发+污泥+雾损", "accent"),
       ])}
-      <div style="padding:0 26px 6px"><div class="note ${hy.waterCovered ? "" : "note-warn"}">
+      <div style="padding:0 0 6px"><div class="note ${hy.waterCovered ? "" : "note-warn"}">
         <span class="ic">💧</span>
         <div>水足迹真水平衡：年取水 <b>${hy.makeupVolYr.toLocaleString()}</b> m³ = 蒸发 <b>${hy.evapVolYr.toLocaleString()}</b> + 排污 <b>${hy.bleedVolYr.toLocaleString()}</b> + 污泥带水 <b>${hy.sludgeWaterVolYr.toLocaleString()}</b> + 反冲洗/雾损 <b>${(hy.drumBackwashVolYr + hy.degasserMistVolYr).toLocaleString()}</b> m³。${hy.waterCovered ? "补水率覆盖全部损耗，池面水位稳定。" : "⚠️ 补水率不足以覆盖蒸发+污泥+雾损，池面将下降，需提高补水率。"}</div></div></div>
       ${section("环境足迹 (Footprint)", "Environment", [
@@ -540,8 +617,8 @@
         metricCard("年碳排放", d.environment.annualCarbonT, "tCO₂e/年", "全厂电力排放"),
       ])}
       ${section("生物滤池 (MBBR)", "Biofilter", [
-        metricCard("反应器容积", bf.reactorVol, "m³", `硝化负荷 ${bf.rate} kg TAN/m³·d`),
-        metricCard("含填料总容积", bf.totalVol, "m³", `填充率 ${bf.mediaFill*100}%`, "brand"),
+        metricCard("反应器容积", bf.reactorVol, "m³", ""),
+        metricCard("含填料总容积", bf.totalVol, "m³", "", "brand"),
         metricCard("滤池单元", bf.units, "座", `单座 ${bf.unitVol} m³`),
         metricCard("类型", bf.type, "", "移动床生物膜"),
       ])}
@@ -576,7 +653,7 @@
       ])}
       ${renderHvacSeason(en, d.inputs.temp)}
       ${renderEnergySplit(en)}
-      ${renderScaleCurve(d._raw.annual / 1000)}
+      ${isAdmin ? renderScaleCurve(d._raw.annual / 1000) : `<div class="note"><span class="ic">📉</span><div>规模经济曲线为 AquaRAS 内部标定，反映了单位投资随养殖规模下降的工程经验关系。</div></div>`}
       ${section("建筑规模", "Building", [
         metricCard("养殖区占地", b.tankFootprint, "m²", "含通道"),
         metricCard("设备区", b.equipArea, "m²", "滤池/泵房"),
@@ -585,9 +662,9 @@
       ])}
       ${renderWQSection(d.waterQuality)}
       ${renderTailwater(d)}
-      <div style="padding:0 26px 26px"><div class="note">
+      <div style="padding:0"><div class="note">
         <span class="ic">⚠️</span>
-        <div><b>设计说明：</b>生物滤池硝化负荷已含水温折减与安全系数 ${d.inputs.sf}。需配置备用发电机、备用纯氧、在线监测（DO/pH/TAN/温度）与自动化控制，确保水质阈值 ${K.waterQuality.tanMax} mg/L TAN、DO>${K.waterQuality.doMin} mg/L。</div></div></div>`;
+        <div><b>设计说明：</b>生物滤池硝化负荷已含水温折减与安全系数 ${d.inputs.sf}。需配置备用发电机、备用纯氧、在线监测（DO/pH/TAN/温度）与自动化控制，确保满足设计水质阈值（TAN、DO 等）。</div></div></div>`;
     const twSel = document.getElementById("dischargeLevel");
     if (twSel) twSel.addEventListener("change", () => compute());
     const twTechSel = document.getElementById("tailwaterTech");
@@ -607,9 +684,9 @@
     host.className = "panel active glass";
     const c = d.culture, bf = d.biofilter, so = d.solids, ox = d.oxygen, hy = d.hydraulics;
     const rows = [
-      ["圆形养殖池", c.tankCount + " 个", `Ø${c.tankD} m × ${c.tankH} m，有效 ${c.singleTankVol} m³`, "PP/玻璃钢/混凝土"],
+      ["圆形养殖池", c.tankCount + " 个", `Ø${c.tankD} m × ${c.tankH} m（D:H ${c.tankDH}），锥底＋中心底排，有效 ${c.singleTankVol} m³`, "PP/玻璃钢/混凝土"],
       ["转鼓微滤机", so.units + " 台", `${so.screen} µm 筛网，单台 ${so.eachFlow} m³/h`, "不锈钢"],
-      ["MBBR 生物滤池", bf.units + " 座", `总 ${bf.totalVol} m³，填料 ${bf.mediaFill*100}%`, "曝气+悬浮填料"],
+      ["MBBR 生物滤池", bf.units + " 座", `总 ${bf.totalVol} m³`, "曝气+悬浮填料"],
       ["增氧系统", "1 套", `供氧 ${ox.o2Supply} kg/h（${ox.type}）`, "氧气锥+LHO"],
       ["CO₂ 脱除塔", "1 座", `${ox.degasserType}`, "填料式"],
       ["循环水泵", "≥2 台", `${hy.recircFlowH} m³/h，一用一备`, "变频"],
@@ -620,7 +697,7 @@
     ];
     // —— 选配设备（仅在对应开关启用时显示）——
     if (d.waterQuality.denit.removal > 0) {
-      rows.splice(3, 0, ["反硝化反应器", "1 座", `容积 ${d.waterQuality.denit.volume} m³，脱氮率 ${Math.round(d.waterQuality.denit.removal*100)}%（侧流脱氮）`, "缺氧+碳源投加"]);
+      rows.splice(3, 0, ["反硝化反应器", "1 座", `容积 ${d.waterQuality.denit.volume} m³（侧流脱氮）`, "缺氧+碳源投加"]);
     }
     if (d.inputs.uv !== false) {
       rows.splice(rows.findIndex(r => r[0] === "污泥处理"), 0, ["紫外消毒", "1 套", "30 mJ/cm²", "在线"]);
@@ -632,7 +709,7 @@
       rows.push(["臭氧氧化系统", "1 套", `投加量 0.02 g O₃/m³，接触消毒+NO₂氧化，含尾气破坏`, "不锈钢/耐臭氧"]);
     }
     host.innerHTML = `
-      <div class="section-title" style="padding:24px 26px 0">设备清单 (BOM)</div>
+      <div class="section-title" style="margin-top:24px">设备清单 (BOM)</div>
       <div class="table-wrap" style="padding:14px 26px 26px"><table class="data">
         <thead><tr><th>设备 / 单元</th><th class="num">数量</th><th>规格参数</th><th>材质 / 备注</th></tr></thead>
         <tbody>${rows.map(r => `<tr><td><b>${r[0]}</b></td><td class="num">${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join("")}</tbody>
@@ -642,14 +719,14 @@
   function renderPVPanel(d) {
     const pv = d.economics && d.economics.pv;
     if (!pv || !pv.enabled) {
-      return `<div class="note" style="padding:10px 26px 24px"><span class="ic">☀️</span>
-        <div>未启用光伏。在设计输入「光伏投资」中填写<b>光伏装机容量</b>或<b>光伏覆盖比例</b>即可接入光伏投资模块：自动计算年发电量、自发自用/余电上网、节省电费与回收期/IRR，并并入项目 CAPEX 与运营成本。模型系数（造价 3.65 元/W、等效小时 1100h、运维 0.06 元/kWh）来自 2026 中国工商业分布式光伏共识。</div></div>`;
+      return `<div class="note"><span class="ic">☀️</span>
+        <div>未启用光伏。在设计输入「光伏投资」中填写<b>光伏装机容量</b>或<b>光伏覆盖比例</b>即可接入光伏投资模块：自动计算年发电量、自发自用/余电上网、节省电费与回收期/IRR，并并入项目 CAPEX 与运营成本。光伏模型系数（造价 / 等效小时 / 运维单价等）经市场共识校准。</div></div>`;
     }
     const ec = E.rmb;
     const rows = [
       ["装机容量", pv.kWp, "kWp", "光伏阵列峰值"],
       ["储能配置", pv.batteryKWh, "kWh", pv.batteryKWh > 0 ? "提升自用率" : "未配储"],
-      ["年发电量", (pv.annualGenKwh / 1000).toFixed(0), "MWh", "等效小时 1100h"],
+      ["年发电量", (pv.annualGenKwh / 1000).toFixed(0), "MWh", "等效小时"],
       ["自发自用", (pv.selfKwh / 1000).toFixed(0), "MWh", "自用率 " + (pv.selfUseRatio * 100).toFixed(1) + "%"],
       ["余电上网", (pv.exportKwh / 1000).toFixed(0), "MWh", "上网电价 0.35 元/kWh"],
     ];
@@ -665,7 +742,7 @@
         <thead><tr><th>光伏指标</th><th class="num">数值</th><th>说明</th></tr></thead>
         <tbody>${rows.map(r => `<tr><td>${r[0]}</td><td class="num">${r[1]} ${r[2]}</td><td class="muted" style="font-size:12.5px">${r[3]}</td></tr>`).join("")}</tbody>
       </table></div>
-      <div class="note" style="padding:6px 26px 24px"><span class="ic">☀️</span>
+      <div class="note"><span class="ic">☀️</span>
         <div>光伏为<b>独立投资视角</b>：回收期/IRR 仅衡量光伏+储能自身（25 年寿命、年衰减 0.5%），不依赖项目融资口径。其 capex 已并入项目总投资、节省电费已冲减运营成本、上网收入已计入营收，故项目级盈利能力指标已自动包含光伏贡献。屋顶可用面积需另行勘测。</div></div>`;
   }
   function renderEcon(d) {
@@ -696,28 +773,28 @@
     }).join("");
     const opRows = [
       ["饲料", e.opexFeed], ["苗种", e.opexFinger], ["电费", e.opexElec],
-      ["水费", e.opexWater], ["固废处置", e.opexSolids], ["人工 (" + e.laborCount + " 人)", e.opexLabor], ["维护", e.opexMaint],
+      ["水费", e.opexWater], ["固废处置", e.opexSolids], ["碱度投加(NaHCO₃)", e.opexAlk], ["人工 (" + e.laborCount + " 人)", e.opexLabor], ["维护", e.opexMaint],
     ];
     host.innerHTML = `
-      <div class="section-title" style="padding:24px 26px 0;justify-content:space-between">投资估算 (CAPEX) · 各投资项可展开
+      <div class="section-title" style="margin-top:24px;justify-content:space-between">投资估算 (CAPEX) · 各投资项可展开
         <button type="button" class="link-btn" id="capToggleAll">展开全部</button></div>
       <div class="table-wrap" style="padding:14px 26px 6px"><table class="data">
         <thead><tr><th>投资项（含子项分解）</th><th class="num">金额</th></tr></thead>
         <tbody>${capRows}</tbody>
         <tfoot><tr><td>合计 CAPEX</td><td class="num">${ec(e.capexTotal)}</td></tr></tfoot></table></div>
-      <div class="note" style="padding:4px 26px 0"><span class="ic">📐</span>
-      <div>总投资 = 直接费(设备+土建) + 间接费(EPCM 12% + 调试 4% + 不可预见 6% + 其他 3% = 直接费 25%，封顶上限) + 可选土地费。规模因子 <b>${e.scaleFactor}</b>：单位投资随年产量呈亚线性变化（六 tenths 法则），大规更省、小规更贵；各分项已按<b>固定/可变比例</b>拆分（规模因子仅作用于可变段）。选择地区后 CAPEX/电价/人工按<b>地区指数</b>调整。表中「直接费子项合计」「间接费子项合计」为各自分项小计（不含土地），二者合计即工程费；「合计 CAPEX」为计入土地后的总投资。</div></div>
-      <div class="section-title" style="padding:8px 26px 0">运营成本估算 (OPEX / 年)</div>
+      <div class="note"><span class="ic">📐</span>
+      <div>总投资 = 直接费(设备+土建) + 间接费(EPCM / 调试 / 不可预见 / 其他，设封顶上限) + 可选土地费。规模因子 <b>${e.scaleFactor}</b>：单位投资随年产量呈亚线性变化（规模经济幂律），大规更省、小规更贵；各分项已按<b>固定/可变比例</b>拆分（规模因子仅作用于可变段）。选择地区后 CAPEX/电价/人工按<b>地区指数</b>调整。表中「直接费子项合计」「间接费子项合计」为各自分项小计（不含土地），二者合计即工程费；「合计 CAPEX」为计入土地后的总投资。</div></div>
+      <div class="section-title" style="margin-top:8px">运营成本估算 (OPEX / 年)</div>
       <div class="table-wrap" style="padding:14px 26px 6px"><table class="data">
         <thead><tr><th>运营成本项</th><th class="num">金额 / 年</th></tr></thead>
         <tbody>${opRows.map(r => `<tr><td>${r[0]}</td><td class="num">${ec(r[1])}</td></tr>`).join("")}</tbody>
         <tfoot><tr><td>合计 OPEX</td><td class="num">${ec(e.opexTotal)}</td></tr></tfoot></table></div>
-      <div class="section-title" style="padding:8px 26px 0">设备维护费分项（按设备寿命）</div>
+      <div class="section-title" style="margin-top:8px">设备维护费分项（按设备寿命）</div>
       <div class="table-wrap" style="padding:14px 26px 6px"><table class="data">
         <thead><tr><th>设备项</th><th class="num">CAPEX</th><th class="num">年维护费</th><th class="num">寿命</th><th class="num">重置准备/年</th></tr></thead>
         <tbody>${(e.maintBreakdown || []).map((m) => `<tr><td>${m.label}</td><td class="num">${ec(m.capex)}</td><td class="num">${ec(m.annual)}</td><td class="num">${m.life} 年</td><td class="num">${ec(m.reserve)}</td></tr>`).join("")}</tbody>
         <tfoot><tr><td>维护费合计</td><td class="num">—</td><td class="num">${ec(e.opexMaint)}</td><td class="num">—</td><td class="num">—</td></tr></tfoot></table></div>
-      <div class="note" style="padding:4px 26px 0"><span class="ic">🔧</span>
+      <div class="note"><span class="ic">🔧</span>
       <div>各设备按自身年维护率与寿命分摊维护费与重置准备（重置准备 = CAPEX / 寿命，用于设备更换资金规划），比单一总率更贴近实际：高价易耗件（泵/增氧/固废）维护费更高、寿命更短；土建/池体寿命长、维护低。维护费合计即 OPEX 中的「维护」项。</div></div>
       <div class="metrics" style="padding:14px 26px 26px">
         ${metricCard("单位鱼生产成本", e.costPerKg, "元/kg", "仅运营成本", "brand")}
@@ -726,7 +803,7 @@
         ${metricCard("规模因子", e.scaleFactor, "×", "单位投资因子", "accent")}
         ${metricCard("出塘尾数", e.harvestNum.toLocaleString(), "尾", "按商品规格")}
       </div>
-      <div class="section-title" style="padding:8px 26px 0">盈利能力与投资回报</div>
+      <div class="section-title" style="margin-top:8px">盈利能力与投资回报</div>
       <div class="metrics" style="padding:14px 26px 26px">
         ${metricCard("年营业收入", (e.revenue/10000).toFixed(1), "万元", "售价 "+e.salePrice+" 元/kg", "brand")}
         ${metricCard("年毛利", (e.grossProfit/10000).toFixed(1), "万元", "营收−运营", e.grossProfit>=0?"accent":"")}
@@ -735,9 +812,9 @@
         ${metricCard("年化 ROI", e.roi!=null?e.roi:"—", "%", "毛利/CAPEX")}
         ${metricCard("毛利率", e.marginRate!=null?e.marginRate:"—", "%", "毛利/营收")}
       </div>
-      <div class="section-title" style="padding:18px 26px 0">光伏投资分析 (PV)</div>
+      <div class="section-title" style="margin-top:18px">光伏投资分析 (PV)</div>
       ${renderPVPanel(d)}
-      <div class="section-title" style="padding:8px 26px 0">敏感度分析 (What-if · ±20%)</div>
+      <div class="section-title" style="margin-top:8px">敏感度分析 (What-if · ±20%)</div>
       <div class="sn-wrap" style="padding:14px 26px 8px">
         <div class="sn-ctrl">
           <label>分析指标</label>
@@ -748,23 +825,23 @@
           </select>
         </div>
         <div id="snChart"></div>
-        <div class="note" style="margin-top:10px"><span class="ic">🎯</span>
+        <div class="note"><span class="ic">🎯</span>
         <div>龙卷风图：固定其他因素，将每个驱动参数在基线 <b>±20%</b>（补水率 ±50%）间扰动，观察所选指标的变化幅度。条带越宽，该参数对结果越敏感——绿色为改善方向、红色为恶化方向。</div></div>
       </div>
-      <div class="section-title" style="padding:18px 26px 0">参数不确定性 · 蒙特卡洛区间</div>
+      <div class="section-title" style="margin-top:18px">参数不确定性 · 蒙特卡洛区间</div>
       <div style="padding:10px 26px 0;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <button id="mcRun" class="btn-lux">运行蒙特卡洛（2000 次）</button>
         <span class="muted" style="font-size:12px">对 MBBR 硝化速率 / 热泵 COP / 补水率等模型系数做三角分布抽样，输出成本与回收期 P10–P90 区间</span>
       </div>
       <div id="mcResult" style="padding:6px 26px 8px"></div>
-      <div class="section-title" style="padding:18px 26px 0">参数不确定性 · Sobol 主因子分析</div>
+      <div class="section-title" style="margin-top:18px">参数不确定性 · Sobol 主因子分析</div>
       <div style="padding:10px 26px 0;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <button id="sobolRun" class="btn-lux">运行 Sobol 主因子（N=1024）</button>
         <span class="muted" style="font-size:12px">Saltelli 方差分解：量化 8 个模型系数对各指标的一阶(S)与总阶(ST)贡献，ST−S 即交互效应，定位真正驱动结果方差的主导因子</span>
       </div>
       <div id="sobolResult" style="padding:6px 26px 8px"></div>
-      <div style="padding:0 26px 26px"><div class="note"><span class="ic">📌</span>
-      <div>经济参数为行业经验量级估算（人民币），实际受地区人工/地价/电价/苗种价格影响显著。饲料通常占 OPEX 的 70–80%。价格数据截至 <b>${K.economics.priceMeta.asOf}</b>（置信度：<b>${K.economics.priceMeta.confidence}</b>），建议项目级复核。</div></div></div>`;
+      <div style="padding:0"><div class="note"><span class="ic">📌</span>
+      <div>经济参数为行业经验量级估算（人民币），实际受地区人工/地价/电价/苗种价格影响显著。饲料通常占 OPEX 的 70–80%。建议项目级复核。</div></div></div>`;
     renderSensitivity(d);
     const snSel = document.getElementById("snMetric");
     if (snSel) snSel.addEventListener("change", () => renderSensitivity(d));
@@ -817,7 +894,7 @@
     }
     const metricLabel = { costPerKg: "单位成本", energyIntensity: "比能耗", capexTotal: "总投资", grossProfit: "年毛利", paybackYears: "回收期", marginRate: "毛利率" };
     const METRIC_ORDER = ["costPerKg", "energyIntensity", "capexTotal", "grossProfit", "paybackYears", "marginRate"];
-    let html = `<div class="note" style="margin:6px 0 12px"><span class="ic">🧮</span><div>基于 Saltelli (2010) 方差分解，N=${res.N}（seed=${res.seed} 可复现）。<b>ST</b> 为总阶指数（含交互），ST−S 为该因子的交互贡献；各指标 ΣST≈1 表示分解闭合。抽样同时覆盖 <b>模型系数</b>（知识库不确定性参数）与 <b>用户可自定义输入</b>（饲料系数/生产水价/电价/鱼价，围绕当前值 ±band 采样），故主导因子现已含用户经营假设。</div></div>`;
+    let html = `<div class="note"><span class="ic">🧮</span><div>基于 Saltelli (2010) 方差分解，N=${res.N}（seed=${res.seed} 可复现）。<b>ST</b> 为总阶指数（含交互），ST−S 为该因子的交互贡献；各指标 ΣST≈1 表示分解闭合。抽样同时覆盖 <b>模型系数</b>（知识库不确定性参数）与 <b>用户可自定义输入</b>（饲料系数/生产水价/电价/鱼价，围绕当前值 ±band 采样），故主导因子现已含用户经营假设。</div></div>`;
     METRIC_ORDER.forEach((mk) => {
       const m = res.metrics[mk];
       if (!m) return;
@@ -845,6 +922,7 @@
         });
         html += `</div>`;
         html += `<div class="sobol-foot muted">ΣST=${m.stSum}（闭合性检查，越接近 1 越可信）</div>`;
+        if (m.kindShare) html += `<div class="sobol-foot" style="margin-top:3px">方差来源：<b style="color:#38bdf8">模型系数 ${Math.round(m.kindShare.epistemic * 100)}%</b> · <b style="color:#f59e0b">经营假设 ${Math.round(m.kindShare.aleatory * 100)}%</b>（按 ST 汇总，O16）</div>`;
       }
       html += `</div>`;
     });
@@ -852,10 +930,55 @@
   }
 
   /* ---------------- 渲染：设计计算书（计算标准 + 方法论 + 核心逻辑保密） ---------------- */
-  function renderDoc() {
+  // 普通用户可见的方法论概览（脱敏：不含任何系数、公式与参考文献）
+  function renderDocOverview() {
+    return `
+    <div class="doc-hero">
+      <h2 class="doc-title">设计计算书 · 方法论概览</h2>
+      <p class="doc-lead">本工具基于 RAS（循环水养殖）工程经验体系，对工艺与投资的工程量级进行自动估算。</p>
+    </div>
+    <div class="doc-section">
+      <h3>一、计算依据与标准体系</h3>
+      <p class="doc-p">计算遵循质量守恒原理与现行水产养殖工程设计相关规范（水质控制、尾水排放、建筑节能等），引用行业公开标准与文献。</p>
+    </div>
+    <div class="doc-section">
+      <h3>二、核心计算逻辑（概览）</h3>
+      <ul class="doc-list">
+        <li><b>质量平衡</b>：依据投喂与饲料转化率推演氮磷负荷，校核水质可行性；</li>
+        <li><b>单元设备</b>：按养殖水体与负荷匹配生物滤池、微滤机、增氧、脱气、UV/臭氧等；</li>
+        <li><b>水力学</b>：循环流量与回用率按质量平衡与系统设计确定；</li>
+        <li><b>温控与能耗</b>：按地区气候与双工况策略估算供热/制冷负荷与装机功率；</li>
+        <li><b>经济模型</b>：CAPEX 按单位水体投资估算并计入规模经济与间接费；OPEX 含饲料/苗种/水/电/人工/固废；输出单位鱼成本、回收期与 ROI；</li>
+        <li><b>不确定性</b>：以蒙特卡洛方法给出成本/能耗/毛利的 P10–P90 区间。</li>
+      </ul>
+    </div>
+    <div class="doc-section">
+      <h3>三、保密声明</h3>
+      <p class="doc-cap">🔒 完整计算书与管理功能仅对管理员开放。</p>
+    </div>`;
+  }
+
+  async function renderDoc() {
     const host = document.getElementById("panel-doc");
     if (!host) return;
     host.className = "panel glass";
+
+    // 普通用户：仅展示方法论概览（脱敏，不含任何系数/公式/参考文献）
+    if (!isAdmin) {
+      host.innerHTML = renderDocOverview();
+      return;
+    }
+
+    // 管理员：拉取完整知识库（含私有 IP 叙述）后渲染
+    let D = window.RAS_KNOWLEDGE;
+    if (!D || !D.references || !D.meta || !D.meta.note) {
+      try {
+        const tk = localStorage.getItem("ras_admin_token") || "";
+        const res = await fetch(cloud.getBase() + "/api/knowledge/full", tk ? { headers: { "x-admin-token": tk } } : {});
+        if (res.ok) D = await res.json();
+      } catch (e) { /* 失败则退回当前知识库 */ }
+    }
+    const K = D || window.RAS_KNOWLEDGE;
     const wq = K.waterQuality, eq = K.equipment, ec = K.economics;
     const sp = K.species[document.getElementById("species").value];
     const wqRows = [
@@ -962,7 +1085,7 @@
           <tr><td>光伏回收期</td><td class="num">${f(p.paybackYears, 2)} 年</td></tr>
           <tr><td>光伏 IRR</td><td class="num">${f(p.irr, 1)}%</td></tr>
         </tbody></table>
-        <p class="doc-cap">以上为当前设计输入下光伏模块实时输出；光伏 CAPEX 已并入项目总投资、节电/上网收入已并入运营账（见「经济估算」面板与盈利能力指标）。</p>
+        <p class="doc-cap">以上为当前设计输入下光伏模块实时输出；光伏 CAPEX 已并入项目总投资、节电/上网收入已并入运营账，并在「经济估算」面板与盈利能力指标中体现。</p>
       </div>`;
       }
     } catch (e) { pvLive = ""; }
@@ -988,7 +1111,7 @@
           <tr><td>臭氧</td><td class="num">${oz ? f(oz.total / 10000, 1) + " 万元" : "未启用"}（${f(es.ozone, 2)} kW）</td></tr>
           <tr><td>主动消毒对数灭活</td><td class="num">${dis ? f(dis.log, 1) + " LOG（目标 " + f(dis.target, 1) + "，" + dis.status + "）" : "—"}</td></tr>
         </tbody></table>
-        <p class="doc-cap">以上为当前设计输入下三单元的实时 capex 与能耗；未启用单元对全部经济与水质指标中性。溶解有机碳 DOC 与消毒状态见「水质可行性校核」面板。</p>
+        <p class="doc-cap">以上为当前设计输入下三单元的实时 capex 与能耗；未启用单元对全部经济与水质指标中性。溶解有机碳 DOC 与消毒状态在「水质可行性校核」面板中展示。</p>
       </div>`;
       }
     } catch (e) { refineLive = ""; }
@@ -996,13 +1119,13 @@
     host.innerHTML = `
       <div class="doc-hero">
         <h2 class="doc-title">设计计算书 · 计算标准与方法</h2>
-        <p class="doc-lead">本计算书说明 AquaRAS 工艺设计引擎所采用的<strong>计算标准体系</strong>、<strong>工程方法论</strong>与结果边界，帮助您理解设计依据。核心计算逻辑依法保密，详见文末声明。</p>
+        <p class="doc-lead">本计算书说明 AquaRAS 工艺设计引擎所采用的<strong>计算标准体系</strong>、<strong>工程方法论</strong>与结果边界，帮助您理解设计依据。核心计算逻辑依法保密。</p>
       </div>
 
       <div class="doc-section">
         <h3>一、计算依据与标准体系</h3>
         <p class="doc-p">引擎以循环水养殖（RAS）工程的质量守恒原理为内核，基准参数综合自以下权威文献与行业规范（数值为设计基准，计算时结合安全系数与用户自定义微调）：</p>
-        <div class="doc-refs">${K.references.map(r => `<span>📚 ${r}</span>`).join("")}</div>
+        <div class="doc-refs"><span>📚 计算所依据的规范与文献目录未公开。</span></div>
       </div>
 
       <div class="doc-grid">
@@ -1021,9 +1144,9 @@
         <div class="doc-card">
           <h4>③ 投资估算基准 (CAPEX)</h4>
           <table class="data doc-table"><thead><tr><th>投资项</th><th class="num">单价</th><th>单位</th><th class="src">来源/年份（校准时效）</th></tr></thead><tbody>${capRows}</tbody></table>
-          <p class="doc-cap">直接费按养殖水体（土建按面积）估算，详见「经济估算」中各投资项的一级分解。总投资另含 <b>间接费</b>（EPCM 12% + 调试 4% + 不可预见 6% + 其他 3% = 直接费 25%，封顶上限）与可选 <b>土地费</b>；并应用 <b>规模经济（分段曲线）</b>：单位投资随年产量呈亚线性变化，但按产能档位采用不同规模指数（&lt;30t 更陡、&gt;1000t 趋缓，下限 0.55×、上限 2.5×），并在 30/300/1000t 档位边界做 ±scaleSmoothWidth 平滑过渡（v1.18.2，消除投资跳变），比单一 0.6 次幂常数更贴合工程实际（参考规模 ${K.economics.capexModel.refAnnualTons} t/年）。本表为参考规模下的基准单价。</p>
-          <p class="doc-cap">⏱️ <b>校准时效（v1.18.3 优化9）</b>：各单价数据来源与校准年份见右侧「来源/年份」列；设备/土建价格随通胀与供应链波动，建议<b>年度重校准</b>，并在 knowledge.economics.capexCalibration 中更新来源与置信度，便于审计溯源。</p>
-          <p class="doc-cap"><b>规模因子解读：</b>规模因子 = 当前规模单位产能投资 ÷ 参考规模（${K.economics.capexModel.refAnnualTons} t/年）单位投资的倍数。&gt;1 表示小规不经济（单位投资更高），&lt;1 表示大规有规模经济（单位投资更低），=1 即为参考规模。</p>
+          <p class="doc-cap">直接费按养殖水体（土建按面积）估算，各投资项的一级分解在「经济估算」中列示。总投资另含 <b>间接费</b>（EPCM 12% + 调试 4% + 不可预见 6% + 其他 3% = 直接费 25%，封顶上限）与可选 <b>土地费</b>；并应用 <b>规模经济（分段曲线）</b>：单位投资随年产量呈亚线性变化，但按产能档位采用不同规模指数（&lt;30t 更陡、&gt;1000t 趋缓，下限 0.55×、上限 2.5×），并在 30/300/1000t 档位边界做平滑过渡（消除投资跳变），比单一 0.6 次幂常数更贴合工程实际。本表为参考规模下的基准单价。</p>
+          <p class="doc-cap">⏱️ <b>校准时效（v1.18.3 优化9）</b>：右侧「来源/年份」列列明各单价数据来源与校准年份；设备/土建价格随通胀与供应链波动，建议<b>年度重校准</b>，并在 knowledge.economics.capexCalibration 中更新来源与置信度，便于审计溯源。</p>
+          <p class="doc-cap"><b>规模因子解读：</b>规模因子 = 当前规模单位产能投资 ÷ 参考规模单位投资的倍数。&gt;1 表示小规不经济（单位投资更高），&lt;1 表示大规有规模经济（单位投资更低），=1 即为参考规模。</p>
           <p class="doc-cap">公式：<code>规模因子 = (参考规模 ÷ 年产量) ^ (1 − 指数)</code>，按产量档位取指数——&lt;30t 用 0.55（最陡）、30–300t 用 0.72、300–1000t 用 0.82、&gt;1000t 用 0.88（趋缓）。结果夹在 [0.55, 2.5]：单位投资最多比基准低 45% 或高 2.5×，防极端规模失真。</p>
           <table class="data doc-table"><thead><tr><th>年产量</th><th class="num">规模因子</th><th>单位投资为基准</th></tr></thead><tbody>
             <tr><td>&le;30 t</td><td class="num">2.50×</td><td>250%（封顶）</td></tr>
@@ -1076,10 +1199,10 @@
         <h3>五、光伏投资分析方法</h3>
         <p class="doc-p">光伏为可选模块，用于评估"自发自用 + 余电上网"对运营电费与项目经济性的改善。核心计算链路：</p>
         <ol class="doc-steps">
-          <li><b>装机定容</b>：用户指定 <code>pvKWp</code>(kWp)，或按 <code>pvFraction × 年用电量</code> 自动定容（年用电量来自第七节能耗估算）。</li>
-          <li><b>发电与自用</b>：年发电量 = kWp × 等效满发小时；基础自用率默认 80%（RAS 24/7 平负载、白天匹配高），配储能可提升自用率（封顶 95%）；余电上网。</li>
-          <li><b>经济并入</b>：净电网电费 = (总电量 − 光伏自用) × 电价；上网收入 = 余电 × 上网价；光伏 CAPEX(含储能) 并入项目总投资、光伏运维并入运营账——故项目 CAPEX / OPEX / 营收 / NPV / IRR 已自动含光伏贡献。</li>
-          <li><b>独立视角</b>：另以 25 年寿命、组件年衰减(0.5%) 给出光伏自身的回收期与 IRR（二分法求解 NPV=0 的折现率），便于单独评估光伏投资吸引力，不依赖项目融资口径。</li>
+          <li><div><b>装机定容</b>：用户指定 <code>pvKWp</code>(kWp)，或按 <code>pvFraction × 年用电量</code> 自动定容（年用电量来自第七节能耗估算）。</div></li>
+          <li><div><b>发电与自用</b>：年发电量 = kWp × 等效满发小时；基础自用率默认 80%（RAS 24/7 平负载、白天匹配高），配储能可提升自用率（封顶 95%）；余电上网。</div></li>
+          <li><div><b>经济并入</b>：净电网电费 = (总电量 − 光伏自用) × 电价；上网收入 = 余电 × 上网价；光伏 CAPEX(含储能) 并入项目总投资、光伏运维并入运营账——故项目 CAPEX / OPEX / 营收 / NPV / IRR 已自动含光伏贡献。</div></li>
+          <li><div><b>独立视角</b>：另以 25 年寿命、组件年衰减(0.5%) 给出光伏自身的回收期与 IRR（二分法求解 NPV=0 的折现率），便于单独评估光伏投资吸引力，不依赖项目融资口径。</div></li>
         </ol>
         <p class="doc-cap">模型系数来自 2026 中国工商业分布式光伏共识（系统造价 3.5–3.8 元/W、等效小时 1100h、上网价 0.30–0.40 元/kWh、运维 0.06 元/kWh），无国家 FIT 补贴依赖；未启用时对所有经济指标完全中性。决策建议：优先利用厂房屋顶平铺（不占土地、就近消纳），先勘测屋顶可用面积与遮挡，再据年用电量定容；储能仅在峰谷价差大或自用率偏低时经济。</p>
         ${pvLive}
@@ -1089,10 +1212,10 @@
         <h3>六、可选水质精制与消毒单元（泡沫分离 / 臭氧 / UV）</h3>
         <p class="doc-p">三套单元均为<strong>可选叠加项</strong>，用于提升水质透明度（降低 DOC）、强化生物安保（病原灭活）与氧化副产物（NO₂→NO₃）。其计算模型：</p>
         <ol class="doc-steps">
-          <li><b>泡沫分离（蛋白分离器）</b>：侧流约 25% 循环量经射流曝气/文丘里产生上升泡沫，吸附去除溶解有机碳 DOC（设计去除率约 45%）与微滤机残留细颗粒/胶体；浓缩液为附加有机污泥，计入固废处置。capex 按养殖水体计（含机组/侧流泵/射流器），能耗为侧流泵+气比能耗。</li>
-          <li><b>臭氧氧化+消毒</b>：臭氧发生器（配氧气源）投加 0.01–0.05 g O₃/m³，将 NO₂ 氧化为 NO₃（降低 NOB 负荷与 NO₂ 累积风险）、协同氧化 DOC，并提供对数灭活(LOG)主动消毒；未配泡沫分离时需独立接触柱+尾气破坏单元（作接触/破坏）。capex 与能耗均并入投资与运营账。</li>
-          <li><b>UV 紫外消毒</b>：按 30 mJ/cm² 设计剂量对循环水进行对数灭活，作为基础生物安保（<strong>默认开启</strong>）；能耗按循环流量比能耗计入总能耗（此前仅计 capex、本版补齐能耗口径）。</li>
-          <li><b>稳态联动</b>：DOC 稳态 = 日 DOC 产生量 ÷（生物滤池本底去除 + 泡沫分离 + 臭氧 串联去除后的有效流量 + 补水稀释）；消毒 LOG 取 UV 与臭氧较强者；任一单元开启即计入对应 capex / 能耗 / 维护费，未开启则完全中性。</li>
+          <li><div><b>泡沫分离（蛋白分离器）</b>：侧流约 25% 循环量经射流曝气/文丘里产生上升泡沫，吸附去除溶解有机碳 DOC（设计去除率约 45%）与微滤机残留细颗粒/胶体；浓缩液为附加有机污泥，计入固废处置。capex 按养殖水体计（含机组/侧流泵/射流器），能耗为侧流泵+气比能耗。</div></li>
+          <li><div><b>臭氧氧化+消毒</b>：臭氧发生器（配氧气源）投加 0.01–0.05 g O₃/m³，将 NO₂ 氧化为 NO₃（降低 NOB 负荷与 NO₂ 累积风险）、协同氧化 DOC，并提供对数灭活(LOG)主动消毒；未配泡沫分离时需独立接触柱+尾气破坏单元（作接触/破坏）。capex 与能耗均并入投资与运营账。</div></li>
+          <li><div><b>UV 紫外消毒</b>：按 30 mJ/cm² 设计剂量对循环水进行对数灭活，作为基础生物安保（<strong>默认开启</strong>）；能耗按循环流量比能耗计入总能耗（此前仅计 capex、本版补齐能耗口径）。</div></li>
+          <li><div><b>稳态联动</b>：DOC 稳态 = 日 DOC 产生量 ÷（生物滤池本底去除 + 泡沫分离 + 臭氧 串联去除后的有效流量 + 补水稀释）；消毒 LOG 取 UV 与臭氧较强者；任一单元开启即计入对应 capex / 能耗 / 维护费，未开启则完全中性。</div></li>
         </ol>
         <p class="doc-cap">模型系数来自 RAS 单元过程文献（泡沫分离 DOC 去除 0.3–0.6、臭氧剂量与 LOG 灭活区间、UV 剂量–LOG 关系）与工程经验；未启用时不改变任何默认水质/经济结论。决策建议：常规淡水 RAS 以 UV 为基础生物安保即可；对苗种、冷水高值品种或病害压力大的系统，叠加泡沫分离（降 DOC、稳水色）与臭氧（强消毒、氧化 NO₂）可显著降低生物安保风险。</p>
         ${refineLive}
@@ -1100,7 +1223,7 @@
 
       <div class="doc-confidential">
         <div class="doc-lock">🔒 核心计算逻辑保密</div>
-        <p>本系统采用 <strong>AquaRAS 专有工艺计算引擎</strong>，其<strong>核心算法、设备选型系数、经济模型参数与实现代码均为商业机密，不在本文档中披露</strong>。本文档仅说明计算体系、所引用的行业/文献标准与工程方法论，用于帮助用户理解设计依据与结果边界。</p>
+        <p>本系统采用 <strong>AquaRAS 专有工艺计算引擎</strong>，其计算体系、设备选型与经济模型参数依据现行规范与工程经验设定；本文档仅说明计算体系、所引用的行业/文献标准与工程方法论，用于帮助用户理解设计依据与结果边界。</p>
         <p class="doc-cap"><strong>免责声明：本引擎计算数据仅供参考。</strong>本系统输出为工程量级估算，<strong>实际工程须由具备资质的设计单位结合场地条件、设备选型与水文/气候数据，并依据现行国家与行业规范深化设计与施工图</strong>。AquaRAS 不对直接采用估算结果造成的工程风险承担责任。</p>
         <p class="doc-cap"><strong>关于作者：</strong>水产专业硕士研究生，多年工厂化循环水（RAS）从业经验。</p>
       </div>
@@ -1156,7 +1279,7 @@
   function renderOptResult(res) {
     const host = document.getElementById("optResult");
     if (!res.ok) {
-      host.innerHTML = `<div class="note" style="margin:14px 26px 26px"><span class="ic">🚫</span>
+      host.innerHTML = `<div class="note"><span class="ic">🚫</span>
         <div><b>未找到可行方案：</b>${res.reason}。基线方案 CAPEX ${E.rmb(res.baseline.economics.capexTotal)}、面积 ${res.baseline.building.buildingArea} m²、比能耗 ${res.baseline.energy.energyIntensity} kWh/kg，可作为放宽参考。</div></div>`;
       return;
     }
@@ -1171,7 +1294,7 @@
       <td>${i+1}</td><td>${t.yield} t</td><td>${E.rmb(t.capEx)}</td><td>${t.costPerKg} 元/kg</td>
       <td>${t.energy} kWh/kg</td><td>${Math.round(t.area)} m²</td><td>${t.vars.fcr}</td><td>${t.vars.sf}</td><td>${t.payback!=null?t.payback.toFixed(1):"—"} 年</td></tr>`).join("");
     host.innerHTML = `
-      <div class="section-title" style="padding:18px 26px 0">最优方案（共搜索 ${res.count} 个可行解）</div>
+      <div class="section-title" style="margin-top:18px">最优方案（共搜索 ${res.count} 个可行解）</div>
       <div class="metrics" style="padding:14px 26px">
         ${metricCard("决策变量", "—", "", varTxt)}
         ${metricCard("总投资 CAPEX", (b.economics.capexTotal/10000).toFixed(1), "万元", `Δ ${dCapex>=0?"+":""}${(dCapex/10000).toFixed(1)} 万元`, "brand")}
@@ -1182,11 +1305,11 @@
         ${metricCard("回收期", b.economics.paybackYears!=null?b.economics.paybackYears.toFixed(1):"—", "年", "含盈利估算")}
       </div>
       ${renderPareto(res)}
-      <div class="section-title" style="padding:8px 26px 0">候选方案 Top 6</div>
+      <div class="section-title" style="margin-top:8px">候选方案 Top 6</div>
       <div class="table-wrap" style="padding:14px 26px 26px"><table class="data">
         <thead><tr><th>#</th><th>产能</th><th>CAPEX</th><th>单位成本</th><th>比能耗</th><th>面积</th><th>FCR</th><th>安全系数</th><th>回收期</th></tr></thead>
         <tbody>${topRows}</tbody></table></div>
-      <div style="padding:0 26px 26px"><div class="note"><span class="ic">💡</span>
+      <div style="padding:0"><div class="note"><span class="ic">💡</span>
       <div>寻优基于网格搜索：在品种经验区间内遍历决策变量（含密度/循环/池径/补水/<b>FCR/安全系数</b>，能耗目标另纳入<b>设定水温与地区气候</b>），按约束过滤后取目标最优。下方 <b>成本-能耗 Pareto 前沿</b> 给出所有「无法在不恶化另一指标时优化」的折中解，供决策权衡。生产目标固定时，<b>最低成本</b>与<b>最低能耗</b>通常对应不同的密度/循环/温度/地区组合。</div></div></div>`;
   }
 
@@ -1221,7 +1344,7 @@
       <td>${p.costPerKg}</td><td>${Math.round(p.area)}</td><td>${p.fcr}</td><td>${p.sf}</td>
       <td>${p.payback != null ? p.payback.toFixed(1) : "—"} 年</td></tr>`).join("");
     return `
-      <div class="section-title" style="padding:18px 26px 0">成本-能耗 Pareto 前沿（${res.paretoCount} 个非支配解 / 共 ${res.count} 可行解）</div>
+      <div class="section-title" style="margin-top:18px">成本-能耗 Pareto 前沿（${res.paretoCount} 个非支配解 / 共 ${res.count} 可行解）</div>
       <div class="pareto-wrap" style="padding:14px 26px">
         <svg viewBox="0 0 ${W} ${H}" class="pareto-svg" preserveAspectRatio="xMidYMid meet">
           <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" class="pareto-axis"/>
@@ -1237,10 +1360,10 @@
           <text x="${(W / 2)}" y="${(H - 10)}" class="pareto-axis-label" text-anchor="middle">CAPEX (万元)</text>
           <text x="16" y="${(H / 2)}" class="pareto-axis-label" text-anchor="middle" transform="rotate(-90 16 ${H / 2})">比能耗 (kWh/kg)</text>
         </svg>
-        <div class="note" style="margin-top:8px"><span class="ic">📈</span>
+        <div class="note"><span class="ic">📈</span>
         <div>${noteTxt}</div></div>
       </div>
-      <div class="section-title" style="padding:8px 26px 0">Pareto 前沿候选</div>
+      <div class="section-title" style="margin-top:8px">Pareto 前沿候选</div>
       <div class="table-wrap" style="padding:14px 26px 26px"><table class="data">
         <thead><tr><th>#</th><th>CAPEX</th><th>比能耗</th><th>单位成本</th><th>面积</th><th>FCR</th><th>安全系数</th><th>回收期</th></tr></thead>
         <tbody>${rows}</tbody></table></div>`;
@@ -1310,7 +1433,7 @@
     const host = document.getElementById("libList");
     const items = libItems;
     if (!items.length) {
-      host.innerHTML = `<div class="note" style="margin:8px 0"><span class="ic">📭</span><div>暂无方案。输入名称后点「保存当前方案」。云端模式需先填写 API 地址并选「云端」。</div></div>`;
+      host.innerHTML = `<div class="note"><span class="ic">📭</span><div>暂无方案。输入名称后点「保存当前方案」。云端模式需先填写 API 地址并选「云端」。</div></div>`;
       document.getElementById("libCompare").innerHTML = "";
       return;
     }
@@ -1378,7 +1501,7 @@
       const dTxt = (typeof delta === "number") ? (delta > 0 ? "+" : "") + (Math.round(delta * 100) / 100) : "—";
       return `<tr><td>${m[0]}</td><td class="num">${m[2](va)}</td><td class="num">${m[2](vb)}</td><td class="num">${dTxt}</td></tr>`;
     }).join("");
-    host.innerHTML = `<div class="section-title" style="padding:8px 0 0">方案对比：${a.name} vs ${b.name}</div>
+    host.innerHTML = `<div class="section-title" style="margin-top:8px">方案对比：${a.name} vs ${b.name}</div>
       <div class="table-wrap" style="padding:12px 0 0"><table class="data">
         <thead><tr><th>指标</th><th class="num">${a.name}</th><th class="num">${b.name}</th><th class="num">Δ(B−A)</th></tr></thead>
         <tbody>${rows}</tbody></table></div>`;
@@ -1518,11 +1641,11 @@
         <h2>水质可行性校核</h2>${keyval(d.waterQuality.checks.map((c) => [c.name + " (" + c.status + ")", c.value + " " + c.unit + " / 限值 " + c.limit]))}
         <h2>盈利与投资回报</h2>${keyval([["售价(元/kg)", d.economics.salePrice], ["年营业收入", E.rmb(d.economics.revenue)], ["年毛利", E.rmb(d.economics.grossProfit)], ["投资回收期", (d.economics.paybackYears != null ? d.economics.paybackYears.toFixed(1) + " 年" : "不可行")], ["年化 ROI", (d.economics.roi != null ? d.economics.roi + " %" : "—")]])}
         <h2>设计计算书（方法论）</h2>
-        <p style="font-size:13px;color:#475569">计算体系：质量守恒原理 + RAS 工程经验基准。水质限值 TAN≤${K.waterQuality.tanMax}、NO₂≤${K.waterQuality.no2Max}、DO≥${K.waterQuality.doMin}、CO₂≤${K.waterQuality.co2Max}、TSS≤${K.waterQuality.ssMax} mg/L（pH ${K.waterQuality.phLow}–${K.waterQuality.phHigh}）。生物滤池硝化负荷 ${K.equipment.biofilter.rate} kg TAN/m³·d，微滤机 TSS 去除率 ${(K.equipment.drumFilter.tssRemoval*100)}%，脱气塔 CO₂ 去除率 ${(K.equipment.degasser.co2Removal*100)}%。投资按养殖水体估算（土建按面积），运营含水费。</p>
-        <p style="font-size:12.5px;color:#94a3b8;border-left:3px solid #0ea5e9;padding-left:10px">🔒 核心算法、设备选型系数、经济模型参数与实现代码为 AquaRAS 商业机密，不在本文档披露。本报告为工程量级估算，实际工程须由具备资质单位依据现行规范深化设计。</p>
+        <p style="font-size:13px;color:#475569">计算体系：质量守恒原理 + RAS 工程经验基准。水质控制目标、设备选型系数与经济模型参数均依据现行规范与工程经验设定，不在本报告披露。</p>
+        <p style="font-size:12.5px;color:#94a3b8;border-left:3px solid #0ea5e9;padding-left:10px">🔒 核心算法、设备选型系数、经济模型参数与实现代码不在本文档披露。本报告为工程量级估算，实际工程须由具备资质单位依据现行规范深化设计。</p>
         <h2>工艺流程图 (PFD)</h2><div style="border:1px solid #eee;border-radius:12px;padding:10px">${pfd}</div>
         <h2>管道仪表图 (P&ID)</h2><div style="border:1px solid #eee;border-radius:12px;padding:10px">${pid}</div>
-        <h2>参考文献</h2><ul>${K.references.map(r=>`<li style="font-size:13px;color:#475569">${r}</li>`).join("")}</ul>
+        <h2>参考文献</h2><p style="font-size:13px;color:#94a3b8">计算所依据的规范与文献目录未公开。</p>
         <p style="margin-top:30px;color:#94a3b8;font-size:12px">本报告由 AquaRAS 自动生成，结果为工程估算，实际工程需结合场地与规范深化。</p>
         </body></html>`);
       w.document.close();
@@ -1531,12 +1654,776 @@
   }
   function keyval(arr) { return arr.map((r) => `<div class="kv"><b>${r[0]}</b><span>${r[1]}</span></div>`).join(""); }
 
+  function escHtml(str) {
+    if (!str) return "";
+    const div = document.createElement("div");
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  /* ---------------- 供应商库 ---------------- */
+  let suppliersData = [];
+  let suppliersLoaded = false;
+  let supplierCatOn = "";
+  let supplierKeyword = "";
+  let isAdmin = false;
+  let adminToken = localStorage.getItem("ras_admin_token") || "";
+
+  const CAT_LABELS = { equipment:"设备供应商", material:"材料供应商", construction:"施工供应商", design:"设计供应商", consumable:"耗材供应商" };
+  const CAT_KEYS = ["equipment", "material", "construction", "design", "consumable"];
+
+  async function ensureSuppliers() {
+    if (!suppliersLoaded) await fetchSuppliers();
+  }
+
+  async function fetchSuppliers() {
+    try {
+      const BASE = cloud.getBase();
+      const headers = isAdmin && adminToken ? { "x-admin-token": adminToken } : {};
+      const [itemsRes, catsRes] = await Promise.all([
+        fetch(BASE + "/api/suppliers", { headers }),
+        fetch(BASE + "/api/suppliers/categories", { headers })
+      ]);
+      if (!itemsRes.ok) throw new Error("HTTP " + itemsRes.status);
+      suppliersData = await itemsRes.json();
+      let categories = [];
+      if (catsRes.ok) categories = await catsRes.json();
+
+      // 渲染分类标签
+      const catBar = document.getElementById("supplierCats");
+      let catHTML = `<button class="chip${supplierCatOn === "" ? " on" : ""}" data-cat="">全部 <span class="count">${suppliersData.length}</span></button>`;
+      categories.forEach((c) => {
+        catHTML += `<button class="chip${supplierCatOn === c.key ? " on" : ""}" data-cat="${c.key}">${c.label} <span class="count">${c.count}</span></button>`;
+      });
+      catBar.innerHTML = catHTML;
+      catBar.querySelectorAll(".chip").forEach((chip) => {
+        chip.addEventListener("click", () => {
+          supplierCatOn = chip.dataset.cat;
+          supplierKeyword = "";
+          document.getElementById("supplierKeyword").value = "";
+          applySupplierFilter();
+          updateCatChips();
+        });
+      });
+
+      suppliersLoaded = true;
+      applySupplierFilter();
+    } catch (e) {
+      console.error("[suppliers] fetch error:", e);
+      document.getElementById("supplierGrid").innerHTML = '<div class="supplier-none">❌ 无法连接服务器，请确认后端已启动</div>';
+    }
+  }
+
+  function updateCatChips() {
+    document.querySelectorAll("#supplierCats .chip").forEach((chip) => {
+      chip.classList.toggle("on", chip.dataset.cat === supplierCatOn);
+    });
+  }
+
+  function applySupplierFilter() {
+    let list = suppliersData;
+    // 非管理员过滤掉已隐藏的
+    if (!isAdmin) list = list.filter((s) => !s.hidden);
+    if (supplierCatOn) list = list.filter((s) => s.category === supplierCatOn);
+    if (supplierKeyword) {
+      const kw = supplierKeyword.toLowerCase();
+      list = list.filter((s) =>
+        (s.name && s.name.toLowerCase().includes(kw)) ||
+        (s.brand && s.brand.toLowerCase().includes(kw)) ||
+        (s.product && s.product.toLowerCase().includes(kw)) ||
+        (s.tags && s.tags.some((t) => t.toLowerCase().includes(kw)))
+      );
+    }
+    renderSupplierCards(list);
+  }
+
+  function renderSupplierCards(list) {
+    const grid = document.getElementById("supplierGrid");
+    if (list.length === 0) {
+      grid.innerHTML = '<div class="supplier-none">没有匹配的供应商</div>';
+      return;
+    }
+    grid.innerHTML = list.map((s) => {
+      const tagsHTML = (s.tags || []).slice(0, 4).map((t) => `<span class="sup-tag">${t}</span>`).join("");
+      const adminBtns = isAdmin ? `
+        <div class="card-admin-actions" onclick="event.stopPropagation()">
+          <button class="admin-act-btn edit" onclick="window._editSupplier(${s.id})" title="编辑">✏️</button>
+          <button class="admin-act-btn hide-btn" onclick="window._toggleHideSupplier(${s.id})" title="${s.hidden ? '取消隐藏' : '隐藏'}">${s.hidden ? '👁' : '🙈'}</button>
+          <button class="admin-act-btn del" onclick="window._deleteSupplier(${s.id})" title="删除">🗑</button>
+        </div>` : "";
+      const hiddenClass = s.hidden ? " is-hidden" : "";
+      const hiddenBadge = s.hidden ? '<span class="sup-hidden-badge">已隐藏</span>' : "";
+      return `
+        <div class="supplier-card${isAdmin ? " admin-mode" : ""}${hiddenClass}" data-id="${s.id}" onclick="window._showSupplierDetail(${s.id})">
+          ${adminBtns}
+          <div class="sup-header">
+            <span class="sup-name">${escHtml(s.name)}</span>
+            ${s.brand ? `<span class="sup-brand">${escHtml(s.brand)}</span>` : ""}
+            ${hiddenBadge}
+          </div>
+          ${s.product ? `<div class="sup-product">${escHtml(s.product)}</div>` : ""}
+          ${s.description ? `<div class="sup-desc">${escHtml(s.description)}</div>` : ""}
+          <div class="sup-meta">
+            ${s.region ? `<span>📍 ${escHtml(s.region)}</span>` : ""}
+            ${s.contact ? `<span>📞 ${escHtml(s.contact)}</span>` : ""}
+          </div>
+          ${tagsHTML ? `<div class="sup-tags">${tagsHTML}</div>` : ""}
+        </div>`;
+    }).join("");
+
+    window._suppliersData = suppliersData;
+  }
+
+  window._showSupplierDetail = function(id) {
+    const s = (window._suppliersData || suppliersData).find((x) => x.id === id);
+    if (!s) return;
+    const overlay = document.createElement("div");
+    overlay.className = "supplier-modal-overlay";
+    const tagsHTML = (s.tags || []).map((t) => `<span class="modal-tag">${t}</span>`).join("");
+    const adminFooter = isAdmin ? `
+      <div class="modal-admin-footer">
+        <button class="admin-act-btn edit" onclick="window._editSupplier(${s.id})">✏️ 编辑</button>
+        <button class="admin-act-btn hide-btn" onclick="window._toggleHideSupplier(${s.id})">${s.hidden ? '👁 取消隐藏' : '🙈 隐藏'}</button>
+        <button class="admin-act-btn del" onclick="window._deleteSupplier(${s.id})">🗑 删除</button>
+      </div>` : "";
+    overlay.innerHTML = `
+      <div class="supplier-modal">
+        <button class="modal-close" onclick="this.closest('.supplier-modal-overlay').remove()">✕</button>
+        <div class="modal-name">${escHtml(s.name)}</div>
+        ${s.brand ? `<div class="modal-brand">品牌：${escHtml(s.brand)}</div>` : ""}
+        ${s.product ? `<div class="modal-section"><div class="modal-label">主营产品</div><div class="modal-value">${escHtml(s.product)}</div></div>` : ""}
+        ${s.description ? `<div class="modal-section"><div class="modal-label">简介</div><div class="modal-value">${escHtml(s.description)}</div></div>` : ""}
+        ${s.region ? `<div class="modal-section"><div class="modal-label">服务区域</div><div class="modal-value">📍 ${escHtml(s.region)}</div></div>` : ""}
+        ${s.contact ? `<div class="modal-section"><div class="modal-label">联系方式</div><div class="modal-value">📞 ${escHtml(s.contact)}</div></div>` : ""}
+        ${s.website ? `<div class="modal-section"><div class="modal-label">网站</div><div class="modal-value"><a href="${escHtml(s.website)}" target="_blank" rel="noopener">${escHtml(s.website)}</a></div></div>` : ""}
+        ${tagsHTML ? `<div class="modal-section"><div class="modal-label">标签</div><div class="modal-tags">${tagsHTML}</div></div>` : ""}
+        ${adminFooter}
+      </div>`;
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  };
+
+  /* ---- 管理员登录 ---- */
+  function toggleAdmin() {
+    if (isAdmin) {
+      // 退出登录
+      isAdmin = false;
+      adminToken = "";
+      localStorage.removeItem("ras_admin_token");
+      applySupplierFilter();
+      updateAdminUI();
+      // 如果当前在 full 模式的管理面板，切回设计输入
+      const activeTab = document.querySelector("#tabs .tab.active");
+      if (activeTab && activeTab.dataset.adminOnly === "full") {
+        document.querySelector('#tabs .tab[data-tab="input"]').click();
+      }
+      return;
+    }
+    // 弹出登录框
+    const overlay = document.createElement("div");
+    overlay.className = "supplier-modal-overlay";
+    overlay.innerHTML = `
+      <div class="supplier-modal admin-login-modal">
+        <button class="modal-close" onclick="this.closest('.supplier-modal-overlay').remove()">✕</button>
+        <div class="modal-name" style="margin-bottom:1rem">🔐 管理员登录</div>
+        <div style="margin-bottom:1rem">
+          <label style="font-size:.73rem;color:hsla(0,0%,100%,.5);display:block;margin-bottom:.3rem">管理员密码</label>
+          <input id="adminPwdInput" type="password" class="text-input" placeholder="请输入管理员密码" style="width:100%;padding:.5rem .75rem" />
+        </div>
+        <div id="adminLoginError" style="color:#f66;font-size:.73rem;margin-bottom:.8rem;display:none"></div>
+        <button id="adminLoginBtn" class="toggle-btn magnetic on" style="width:100%;padding:.55rem">登录</button>
+      </div>`;
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+
+    const pwdInput = document.getElementById("adminPwdInput");
+    const loginBtn = document.getElementById("adminLoginBtn");
+    const errEl = document.getElementById("adminLoginError");
+
+    const doLogin = async () => {
+      const pwd = pwdInput.value.trim();
+      if (!pwd) { errEl.textContent = "请输入密码"; errEl.style.display = "block"; return; }
+      try {
+        const BASE = cloud.getBase();
+        const res = await fetch(BASE + "/api/suppliers/admin/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password: pwd })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          adminToken = pwd;
+          isAdmin = true;
+          localStorage.setItem("ras_admin_token", pwd);
+          overlay.remove();
+          applySupplierFilter();
+          updateAdminUI();
+        } else {
+          errEl.textContent = data.error || "密码错误";
+          errEl.style.display = "block";
+        }
+      } catch (e) {
+        errEl.textContent = "连接服务器失败";
+        errEl.style.display = "block";
+      }
+    };
+    loginBtn.addEventListener("click", doLogin);
+    pwdInput.addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
+    setTimeout(() => pwdInput.focus(), 100);
+  }
+
+  /* ---- 自动恢复管理员状态 ---- */
+  async function restoreAdmin() {
+    if (!adminToken) return;
+    try {
+      const BASE = cloud.getBase();
+      const res = await fetch(BASE + "/api/suppliers/admin/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: adminToken })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        isAdmin = true;
+        updateAdminUI();
+      } else {
+        adminToken = "";
+        localStorage.removeItem("ras_admin_token");
+      }
+    } catch (e) { /* 静默失败 */ }
+  }
+
+  function updateAdminUI() {
+    const lockBtn = document.getElementById("adminLockBtn");
+    const addBtn = document.getElementById("adminAddBtn");
+
+    // 1. 统一锁按钮状态
+    if (lockBtn) {
+      if (isAdmin) {
+        lockBtn.textContent = "🔓";
+        lockBtn.title = "退出管理";
+        lockBtn.classList.add("on");
+      } else {
+        lockBtn.textContent = "🔒";
+        lockBtn.title = "管理员登录";
+        lockBtn.classList.remove("on");
+      }
+    }
+
+    // 2. 管理类 tab 显隐控制
+    document.querySelectorAll("#tabs .tab[data-admin-only]").forEach(tab => {
+      const mode = tab.dataset.adminOnly;
+      if (mode === "full") {
+        tab.style.display = isAdmin ? "" : "none";
+      }
+      // "edit" 模式始终可见，无需处理
+    });
+
+    // 3. 供应商面板中的编辑模式按钮
+    if (addBtn) addBtn.style.display = isAdmin ? "" : "none";
+
+    // 4. 知识库面板 UI
+    updateKBUI();
+    // 5. 计算书随管理员状态重渲染（脱敏概览 / 完整机密视图）
+    renderDoc();
+  }
+
+  /* ---- 新增 / 编辑供应商 ---- */
+  window._editSupplier = function(id) {
+    const s = id ? (window._suppliersData || suppliersData).find((x) => x.id === id) : null;
+    showSupplierEditor(s);
+  };
+
+  function showSupplierEditor(supplier) {
+    const isNew = !supplier;
+    const s = supplier || {};
+    // 关闭已有的详情弹窗
+    document.querySelectorAll(".supplier-modal-overlay").forEach((el) => el.remove());
+
+    const overlay = document.createElement("div");
+    overlay.className = "supplier-modal-overlay";
+    overlay.innerHTML = `
+      <div class="supplier-modal supplier-editor-modal">
+        <button class="modal-close" onclick="this.closest('.supplier-modal-overlay').remove()">✕</button>
+        <div class="modal-name">${isNew ? "＋ 新增供应商" : "✏️ 编辑供应商"}</div>
+        <form id="supplierForm" class="supplier-form" onsubmit="return false">
+          <div class="form-row">
+            <label>分类 <span class="req">*</span></label>
+            <select id="supCat" class="text-input">
+              ${CAT_KEYS.map((k) => `<option value="${k}" ${s.category === k ? "selected" : ""}>${CAT_LABELS[k]}</option>`).join("")}
+            </select>
+          </div>
+          <div class="form-row">
+            <label>名称 <span class="req">*</span></label>
+            <input id="supName" class="text-input" value="${escHtml(s.name || "")}" placeholder="供应商名称" />
+          </div>
+          <div class="form-row">
+            <label>品牌</label>
+            <input id="supBrand" class="text-input" value="${escHtml(s.brand || "")}" placeholder="品牌名称" />
+          </div>
+          <div class="form-row">
+            <label>主营产品</label>
+            <input id="supProduct" class="text-input" value="${escHtml(s.product || "")}" placeholder="主营产品描述" />
+          </div>
+          <div class="form-row">
+            <label>联系方式</label>
+            <input id="supContact" class="text-input" value="${escHtml(s.contact || "")}" placeholder="电话 / 邮箱" />
+          </div>
+          <div class="form-row">
+            <label>服务区域</label>
+            <input id="supRegion" class="text-input" value="${escHtml(s.region || "")}" placeholder="如：全国 / 华东 / 海外" />
+          </div>
+          <div class="form-row">
+            <label>网站</label>
+            <input id="supWebsite" class="text-input" value="${escHtml(s.website || "")}" placeholder="https://..." />
+          </div>
+          <div class="form-row">
+            <label>标签</label>
+            <input id="supTags" class="text-input" value="${(s.tags || []).join("，")}" placeholder="多个标签用逗号分隔" />
+          </div>
+          <div class="form-row">
+            <label>简介</label>
+            <textarea id="supDesc" class="text-input" rows="3" placeholder="供应商简介...">${escHtml(s.description || "")}</textarea>
+          </div>
+          <div id="supFormError" style="color:#f66;font-size:.73rem;margin-top:.5rem;display:none"></div>
+          <div class="form-actions">
+            <button type="button" class="toggle-btn" onclick="this.closest('.supplier-modal-overlay').remove()">取消</button>
+            <button type="submit" class="toggle-btn magnetic on">${isNew ? "创建" : "保存"}</button>
+          </div>
+        </form>
+      </div>`;
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+
+    const form = document.getElementById("supplierForm");
+    form.addEventListener("submit", async () => {
+      const name = document.getElementById("supName").value.trim();
+      const category = document.getElementById("supCat").value;
+      const errEl = document.getElementById("supFormError");
+      if (!name) { errEl.textContent = "请输入供应商名称"; errEl.style.display = "block"; return; }
+      if (!category) { errEl.textContent = "请选择分类"; errEl.style.display = "block"; return; }
+
+      const tagsRaw = document.getElementById("supTags").value.trim();
+      const tags = tagsRaw ? tagsRaw.split(/[,，]/).map((t) => t.trim()).filter(Boolean) : [];
+
+      const body = {
+        category,
+        name,
+        brand: document.getElementById("supBrand").value.trim() || undefined,
+        product: document.getElementById("supProduct").value.trim() || undefined,
+        contact: document.getElementById("supContact").value.trim() || undefined,
+        region: document.getElementById("supRegion").value.trim() || undefined,
+        website: document.getElementById("supWebsite").value.trim() || undefined,
+        tags: tags.length ? tags : undefined,
+        description: document.getElementById("supDesc").value.trim() || undefined,
+        sort_order: 0
+      };
+
+      try {
+        const BASE = cloud.getBase();
+        const url = isNew ? (BASE + "/api/suppliers") : (BASE + "/api/suppliers/" + supplier.id);
+        const method = isNew ? "POST" : "PUT";
+        const res = await fetch(url, {
+          method,
+          headers: { "Content-Type": "application/json", "x-admin-token": adminToken },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (!res.ok) { errEl.textContent = data.error || "操作失败"; errEl.style.display = "block"; return; }
+        overlay.remove();
+        // 刷新数据
+        suppliersLoaded = false;
+        await fetchSuppliers();
+      } catch (e) {
+        errEl.textContent = "网络错误：" + e.message;
+        errEl.style.display = "block";
+      }
+    });
+  }
+
+  /* ---- 删除供应商 ---- */
+  window._deleteSupplier = function(id) {
+    if (!confirm("确定要删除该供应商吗？此操作不可撤销。")) return;
+    (async () => {
+      try {
+        const BASE = cloud.getBase();
+        const res = await fetch(BASE + "/api/suppliers/" + id, {
+          method: "DELETE",
+          headers: { "x-admin-token": adminToken }
+        });
+        if (!res.ok) { const d = await res.json(); alert("删除失败：" + (d.error || res.status)); return; }
+        suppliersLoaded = false;
+        await fetchSuppliers();
+      } catch (e) {
+        alert("网络错误：" + e.message);
+      }
+    })();
+  };
+
+  /* ---- 隐藏/取消隐藏供应商 ---- */
+  window._toggleHideSupplier = function(id) {
+    console.log("[toggleHide] 触发，id=", id, "类型:", typeof id);
+    console.log("[toggleHide] suppliersData 长度:", suppliersData ? suppliersData.length : 0);
+    const s = suppliersData.find((x) => x.id === id);
+    if (!s) { console.warn("[toggleHide] 未找到供应商 id=", id); return; }
+    console.log("[toggleHide] 供应商:", s.name, "hidden:", s.hidden, "类型:", typeof s.hidden);
+    const action = s.hidden ? "unhide" : "hide";
+    console.log("[toggleHide] action:", action, "adminToken:", adminToken ? "已设置" : "空");
+    (async () => {
+      try {
+        const BASE = cloud.getBase();
+        const url = BASE + "/api/suppliers/" + id + "/" + action;
+        console.log("[toggleHide] 请求 URL:", url);
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "x-admin-token": adminToken }
+        });
+        console.log("[toggleHide] 响应状态:", res.status);
+        if (!res.ok) {
+          let errMsg;
+          try { const d = await res.json(); errMsg = d.error || res.status; } catch (_) { errMsg = res.status; }
+          console.error("[toggleHide] 服务器错误:", errMsg);
+          alert("操作失败：" + errMsg);
+          return;
+        }
+        const data = await res.json();
+        console.log("[toggleHide] 服务器响应:", data);
+        // 本地即时更新
+        s.hidden = !s.hidden;
+        console.log("[toggleHide] 本地更新: hidden =", s.hidden);
+        applySupplierFilter();
+      } catch (e) {
+        console.error("[toggleHide] 网络错误:", e.message);
+        alert("网络错误：" + e.message);
+      }
+    })();
+  };
+
+  function initSuppliers() {
+    const kw = document.getElementById("supplierKeyword");
+    if (kw) {
+      kw.addEventListener("input", () => {
+        supplierKeyword = kw.value.trim();
+        applySupplierFilter();
+      });
+    }
+    // 管理员按钮
+    const addBtn = document.getElementById("adminAddBtn");
+    if (addBtn) addBtn.addEventListener("click", () => showSupplierEditor(null));
+    // 尝试恢复管理员状态
+    restoreAdmin();
+    // 首次点击 tab 时懒加载
+  }
+
+  /* ---------------- 知识库管理 ---------------- */
+  let kbCategories = [];
+  let kbLeaves = [];
+  let kbDirty = {};          // { "category.itemKey": { value, value_type } }
+  let kbSelectedCat = "";
+  let kbLoaded = false;
+
+  async function ensureKnowledge() {
+    if (!kbLoaded) await loadKBCategories();
+  }
+
+  async function loadKBCategories() {
+    try {
+      const BASE = cloud.getBase();
+      const tk = localStorage.getItem("ras_admin_token") || "";
+      const res = await fetch(BASE + "/api/knowledge/categories", tk ? { headers: { "x-admin-token": tk } } : {});
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      kbCategories = await res.json();
+      renderKBCategorySelect();
+      kbLoaded = true;
+    } catch (e) {
+      console.error("[knowledge] load categories error:", e);
+      document.getElementById("kbHint").textContent = "❌ 无法连接服务器";
+    }
+  }
+
+  function renderKBCategorySelect() {
+    const sel = document.getElementById("kbCategorySel");
+    sel.innerHTML = '<option value="">-- 选择知识库类别 (' + kbCategories.length + ' 个) --</option>';
+    kbCategories.forEach(c => {
+      const ovBadge = c.overridesCount > 0 ? ` [${c.overridesCount}项覆盖]` : "";
+      sel.innerHTML += `<option value="${c.key}">${c.label} · ${c.leafCount}项参数${ovBadge}</option>`;
+    });
+    sel.addEventListener("change", () => {
+      kbSelectedCat = sel.value;
+      if (kbSelectedCat) { loadKBLeaves(kbSelectedCat); } else { clearKBView(); }
+    });
+  }
+
+  async function loadKBLeaves(category) {
+    try {
+      const BASE = cloud.getBase();
+      const tk = localStorage.getItem("ras_admin_token") || "";
+      const res = await fetch(BASE + "/api/knowledge/leaves/" + category, tk ? { headers: { "x-admin-token": tk } } : {});
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      kbLeaves = await res.json();
+      kbDirty = {};
+      renderKBTable();
+      updateKBUI();
+      loadKBAudit(category);
+    } catch (e) {
+      console.error("[knowledge] load leaves error:", e);
+    }
+  }
+
+  function renderKBTable() {
+    const tbody = document.getElementById("kbTableBody");
+    if (kbLeaves.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" style="color:hsla(0,0%,100%,.3);text-align:center;padding:2rem">该类别无参数</td></tr>';
+      return;
+    }
+    tbody.innerHTML = kbLeaves.map(leaf => {
+      const displayValue = typeof leaf.value === "object" ? JSON.stringify(leaf.value).substring(0, 40) : String(leaf.value);
+      const displayOverride = leaf.isOverridden ? (typeof leaf.overrideValue === "object" ? JSON.stringify(leaf.overrideValue).substring(0, 40) : String(leaf.overrideValue)) : "";
+      const overrideClass = leaf.isOverridden ? " overridden" : "";
+      const changedClass = kbDirty[leaf.key] ? " changed" : "";
+      const editValue = kbDirty[leaf.key] ? kbDirty[leaf.key].value : (leaf.isOverridden ? displayOverride : "");
+      return `<tr class="${overrideClass}">
+        <td class="kb-path" title="${leaf.key}">${leaf.key}</td>
+        <td class="kb-default" title="${displayValue}">${displayValue}</td>
+        <td><input class="kb-input${changedClass}" data-key="${leaf.key}" data-type="${leaf.value_type}" value="${escHtml(editValue)}" placeholder="= 默认" /></td>
+        <td style="display:flex;gap:.3rem;align-items:center">
+          <input class="kb-notes-input" data-key="${leaf.key}" data-field="notes" value="${escHtml(leaf.overrideNotes || (kbDirty[leaf.key] ? kbDirty[leaf.key].notes || "" : ""))}" placeholder="备注" />
+          <span class="kb-reset-cell" data-key="${leaf.key}" title="恢复默认值">↺</span>
+        </td>
+      </tr>`;
+    }).join("");
+
+    // 绑定事件
+    tbody.querySelectorAll(".kb-input[data-key]").forEach(inp => {
+      inp.addEventListener("input", () => markDirty(inp.dataset.key, inp.dataset.type, inp.value));
+    });
+    tbody.querySelectorAll(".kb-notes-input[data-key]").forEach(inp => {
+      inp.addEventListener("input", () => {
+        const key = inp.dataset.key;
+        if (!kbDirty[key]) kbDirty[key] = { value: "", value_type: "number", notes: "" };
+        kbDirty[key].notes = inp.value;
+      });
+    });
+    tbody.querySelectorAll(".kb-reset-cell[data-key]").forEach(span => {
+      span.addEventListener("click", () => {
+        const key = span.dataset.key;
+        const leaf = kbLeaves.find(l => l.key === key);
+        if (leaf && leaf.isOverridden) {
+          // 标记为删除覆盖
+          kbDirty[key] = { _delete: true, notes: "重置为默认值" };
+          renderKBTable();
+          updateKBUI();
+        } else if (kbDirty[key]) {
+          delete kbDirty[key];
+          renderKBTable();
+          updateKBUI();
+        }
+      });
+    });
+  }
+
+  function markDirty(key, type, rawValue) {
+    const leaf = kbLeaves.find(l => l.key === key);
+    if (!leaf) return;
+    const trimmed = rawValue.trim();
+    if (trimmed === "") {
+      delete kbDirty[key];
+      updateKBUI();
+      return;
+    }
+    let parsed;
+    if (type === "number") { parsed = parseFloat(trimmed); if (isNaN(parsed)) { kbDirty[key] = { value: trimmed, value_type: "string", notes: kbDirty[key] ? kbDirty[key].notes || "" : "" }; updateKBUI(); return; } }
+    else if (type === "boolean") { parsed = trimmed.toLowerCase() === "true" || trimmed === "1"; }
+    else { parsed = trimmed; }
+    kbDirty[key] = { value: parsed, value_type: type, notes: kbDirty[key] ? kbDirty[key].notes || "" : "" };
+    updateKBUI();
+  }
+
+  function updateKBUI() {
+    const saveBtn = document.getElementById("kbSaveBtn");
+    const resetBtn = document.getElementById("kbResetBtn");
+    const badge = document.getElementById("kbOverridesBadge");
+    const tableWrap = document.getElementById("kbTableWrap");
+    const hint = document.getElementById("kbHint");
+    const lockHint = document.getElementById("kbLockHint");
+    const auditSec = document.getElementById("kbAuditSection");
+
+    const hasCat = !!kbSelectedCat;
+
+    if (!hasCat) {
+      // 未选择类别
+      tableWrap.style.display = "none";
+      hint.style.display = "";
+      if (lockHint) lockHint.style.display = "none";
+      auditSec.style.display = "none";
+      saveBtn.style.display = "none";
+      resetBtn.style.display = "none";
+      badge.style.display = "none";
+    } else if (!isAdmin) {
+      // 选择了类别但未解锁 → 隐藏所有参数，仅显示锁定提示
+      tableWrap.style.display = "none";
+      hint.style.display = "none";
+      if (lockHint) lockHint.style.display = "";
+      auditSec.style.display = "none";
+      saveBtn.style.display = "none";
+      resetBtn.style.display = "none";
+      badge.style.display = "none";
+    } else {
+      // 已解锁 → 正常显示所有内容
+      tableWrap.style.display = "";
+      hint.style.display = "none";
+      if (lockHint) lockHint.style.display = "none";
+      auditSec.style.display = "";
+
+      // 显示按钮（仅管理员）
+      saveBtn.style.display = "";
+      resetBtn.style.display = "";
+
+      const dirtyCount = Object.keys(kbDirty).length;
+      const ovCount = kbLeaves.filter(l => l.isOverridden).length;
+      badge.style.display = ovCount > 0 ? "" : "none";
+      if (ovCount > 0) badge.textContent = ovCount + " 项覆盖";
+      if (dirtyCount > 0) saveBtn.textContent = "💾 保存更改 (" + dirtyCount + ")";
+      else saveBtn.textContent = "💾 保存更改";
+    }
+  }
+
+  async function saveKBOverrides() {
+    const overrides = Object.entries(kbDirty).map(([key, val]) => ({
+      item_key: key,
+      value: val.value,
+      value_type: val.value_type || "number",
+      notes: val.notes || "",
+    }));
+    if (overrides.length === 0) return;
+
+    try {
+      const BASE = cloud.getBase();
+      const res = await fetch(BASE + "/api/knowledge/overrides", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "x-admin-token": adminToken },
+        body: JSON.stringify({ category: kbSelectedCat, overrides })
+      });
+      const data = await res.json();
+      if (!res.ok) { alert("保存失败：" + (data.error || res.status)); return; }
+      alert("✅ 已保存 " + overrides.length + " 项修改");
+      // 重新加载
+      await loadKBLeaves(kbSelectedCat);
+      await loadKBCategories(); // 刷新类别统计
+      // 重新加载知识库覆盖到引擎
+      await loadKnowledgeOverrides();
+    } catch (e) {
+      alert("网络错误：" + e.message);
+    }
+  }
+
+  async function resetKBCategory() {
+    if (!confirm("确定要将「" + (kbCategories.find(c => c.key === kbSelectedCat) || {}).label || kbSelectedCat + "」的所有覆盖值恢复为默认值吗？此操作不可撤销。")) return;
+    try {
+      const BASE = cloud.getBase();
+      const res = await fetch(BASE + "/api/knowledge/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-token": adminToken },
+        body: JSON.stringify({ category: kbSelectedCat })
+      });
+      const data = await res.json();
+      if (!res.ok) { alert("重置失败：" + (data.error || res.status)); return; }
+      kbDirty = {};
+      await loadKBLeaves(kbSelectedCat);
+      await loadKBCategories();
+      await loadKnowledgeOverrides();
+      alert("✅ 已恢复默认值");
+    } catch (e) {
+      alert("网络错误：" + e.message);
+    }
+  }
+
+  async function loadKBAudit(category) {
+    try {
+      const BASE = cloud.getBase();
+      const tk = localStorage.getItem("ras_admin_token") || "";
+      const res = await fetch(BASE + "/api/knowledge/audit?category=" + encodeURIComponent(category) + "&limit=20",
+        tk ? { headers: { "x-admin-token": tk } } : {});
+      if (!res.ok) return;
+      const rows = await res.json();
+      const list = document.getElementById("kbAuditList");
+      if (rows.length === 0) { list.innerHTML = '<div style="color:hsla(0,0%,100%,.2);padding:.5rem 0">暂无变更记录</div>'; list.classList.add("open"); return; }
+      list.innerHTML = rows.map(r => {
+        const actionClass = r.action === "delete" ? "del" : r.action === "reset" ? "reset" : "";
+        const actionLabel = { create: "新增", update: "修改", delete: "删除", reset: "重置", reset_all: "全部重置" }[r.action] || r.action;
+        const time = r.created_at ? r.created_at.replace("T", " ").substring(0, 19) : "";
+        return `<div class="kb-audit-item">
+          <span class="audit-action ${actionClass}">${actionLabel}</span>
+          <span class="audit-key">${r.item_key}</span>
+          ${r.notes ? `<span style="color:hsla(0,0%,100%,.3)">${escHtml(r.notes.substring(0, 40))}</span>` : ""}
+          <span class="audit-time">${time}</span>
+        </div>`;
+      }).join("");
+      list.classList.add("open");
+    } catch (e) { /* 静默 */ }
+  }
+
+  function clearKBView() {
+    kbLeaves = [];
+    kbDirty = {};
+    document.getElementById("kbTableBody").innerHTML = "";
+    document.getElementById("kbTableWrap").style.display = "none";
+    document.getElementById("kbHint").style.display = "";
+    const lockHint = document.getElementById("kbLockHint");
+    if (lockHint) lockHint.style.display = "none";
+    document.getElementById("kbSaveBtn").style.display = "none";
+    document.getElementById("kbResetBtn").style.display = "none";
+    document.getElementById("kbOverridesBadge").style.display = "none";
+    document.getElementById("kbAuditSection").style.display = "none";
+  }
+
+  /* ---- 全局：加载知识库覆盖值并应用到引擎 ---- */
+  async function loadKnowledgeOverrides() {
+    try {
+      const BASE = cloud.getBase();
+      const tk = localStorage.getItem("ras_admin_token") || "";
+      const res = await fetch(BASE + "/api/knowledge/export",
+        tk ? { headers: { "x-admin-token": tk } } : {});
+      if (!res.ok) return;
+      const merged = await res.json();
+      // 将合并后的知识库应用到全局
+      window.RAS_KNOWLEDGE = merged;
+      // 同时更新 K 引用（app.js 顶层 const K = window.RAS_KNOWLEDGE 不会自动更新，
+      // 但引擎内部使用 window.RAS_KNOWLEDGE 读取，所以覆盖全局即可）
+      console.log("[knowledge] 已加载覆盖值（" + Object.keys(merged).length + " 个顶级类别）");
+    } catch (e) {
+      console.warn("[knowledge] 加载覆盖值失败，使用内置默认:", e.message);
+    }
+  }
+
+  function initKnowledge() {
+    // 类别选择器事件
+    const sel = document.getElementById("kbCategorySel");
+    if (sel) sel.addEventListener("change", () => {
+      kbSelectedCat = sel.value;
+      if (kbSelectedCat) loadKBLeaves(kbSelectedCat); else clearKBView();
+    });
+    // 保存按钮
+    const saveBtn = document.getElementById("kbSaveBtn");
+    if (saveBtn) saveBtn.addEventListener("click", saveKBOverrides);
+    // 重置按钮
+    const resetBtn = document.getElementById("kbResetBtn");
+    if (resetBtn) resetBtn.addEventListener("click", resetKBCategory);
+  }
+
   /* ---------------- 初始化 ---------------- */
   function init() {
     const sv = document.getElementById("sysVersion");
     if (sv && K && K.meta) sv.textContent = K.meta.version;   // 首页版本号跟随系统版本（knowledge.meta.version）
     initTheme(); initSpecies(); initRegionChips(); initTabs(); initMagnetic();
-    initModelControls(); initExport(); initOptimizer(); initLibrary(); initLinking();
+    initModelControls(); initExport(); initOptimizer(); initLibrary(); initLinking(); initSuppliers(); initKnowledge();
+    // 统一管理员锁按钮
+    const adminLockBtn = document.getElementById("adminLockBtn");
+    if (adminLockBtn) adminLockBtn.addEventListener("click", toggleAdmin);
+    // 初始化管理员 UI 状态（非管理员时隐藏管理面板 tab）
+    updateAdminUI();
+    // 加载知识库覆盖值（异步，不阻塞页面渲染）
+    loadKnowledgeOverrides();
     renderDoc();
     document.querySelectorAll("[data-goto]").forEach((b) => {
       b.addEventListener("click", () => {

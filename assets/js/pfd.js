@@ -7,12 +7,28 @@
 window.RAS = window.RAS || {};
 
 RAS.pfd = (function () {
+  // 估算文本像素宽度（CJK 全宽、ASCII 半宽），用于判断是否需压缩以贴合方框
+  function estWidth(s, fs) {
+    let w = 0;
+    for (const ch of String(s)) {
+      const c = ch.codePointAt(0);
+      w += c > 0x2e80 ? fs : (c === 0x20 ? fs * 0.3 : fs * 0.55);
+    }
+    return w;
+  }
+  // 仅在文本估算宽度超过框内可用宽度时才返回需强制压缩到的宽度，否则返回 0（不压缩，保持自然间距）
+  function fitLen(s, fs, maxW) {
+    const ew = estWidth(s, fs);
+    return ew > maxW ? Math.max(24, Math.round(maxW)) : 0;
+  }
   function node(x, y, w, h, title, sub, cls, key) {
+    const tLen = fitLen(title, 14, w - 16);
+    const sLen = fitLen(sub, 11.5, w - 12);
     return `
       <g class="pfd-node ${cls || ""}" data-key="${key || ""}">
         <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="14" class="pfd-box" filter="url(#pfdShadow)"/>
-        <text x="${x + w / 2}" y="${y + h / 2 - 4}" class="pfd-title">${title}</text>
-        <text x="${x + w / 2}" y="${y + h / 2 + 14}" class="pfd-sub">${sub}</text>
+        <text x="${x + w / 2}" y="${y + h / 2 - 4}" class="pfd-title"${tLen ? ` textLength="${tLen}" lengthAdjust="spacingAndGlyphs"` : ""}>${title}</text>
+        <text x="${x + w / 2}" y="${y + h / 2 + 14}" class="pfd-sub"${sLen ? ` textLength="${sLen}" lengthAdjust="spacingAndGlyphs"` : ""}>${sub}</text>
       </g>`;
   }
   function arrow(x1, y1, x2, y2, cls) {
@@ -125,7 +141,7 @@ RAS.pfd = (function () {
       <!-- 回水（下排 右→左，闭合正交环）-->
       <path d="M ${lastColCx} ${eqY + eqH} L ${lastColCx} ${yRet} L ${tkCx} ${yRet} L ${tkCx} ${eqY + eqH}" class="pfd-line pfd-return"/>
       <polygon points="${tkCx},${eqY + eqH} ${tkCx - 5},${eqY + eqH + 9} ${tkCx + 5},${eqY + eqH + 9}" class="pfd-head pfd-return"/>
-      <text x="${retLabelX}" y="${yRet - 8}" class="pfd-flow-label">净化回水 ${Q} m³/h</text>
+      <text x="${heCx}" y="${yRet + 48}" class="pfd-flow-label">净化回水 ${Q} m³/h</text>
 
       <!-- 换热（回水管上）-->
       ${node(heX, yRet - 26, 120, 52, "换热器", `${d.inputs.temp}℃ 控温`, "c8", "he")}
@@ -144,7 +160,7 @@ RAS.pfd = (function () {
         <path d="M ${sludgeCenterX} ${eqY + eqH} L ${sludgeCenterX} 290 L ${sludgeTurnX} 290 L ${sludgeTurnX} 400 L ${xs[drIdx]} 400" class="pfd-line"/>
         <polygon points="${xs[drIdx]},400 ${xs[drIdx] - 1},390 ${xs[drIdx] + 9},390" class="pfd-head"/>
       </g>
-      <text x="${sludgeLabelX}" y="282" class="pfd-flow-label">排渣 ~${d.solids.tssDaily} kg/d</text>
+      <text x="${sludgeTurnX + 6}" y="270" class="pfd-flow-label">排渣 ~${d.solids.tssDaily} kg/d</text>
 
       <!-- 反硝化反应器（侧流脱氮；仅 denitRemoval>0 时显示）-->
       ${denitOn ? `${node(dnX, 400, eqW, eqH, "反硝化反应器", d.waterQuality.denit.volume + " m³ · 脱氮 " + Math.round(d.waterQuality.denit.removal * 100) + "%", "c9", "dn")}
@@ -156,10 +172,10 @@ RAS.pfd = (function () {
         <path d="M ${dnPipe2X} ${yRet} L ${dnPipe2X} 400" class="pfd-line"/>
         <polygon points="${dnPipe2X},${yRet} ${dnPipe2X - 5},${yRet + 10} ${dnPipe2X + 5},${yRet + 10}" class="pfd-head"/>
       </g>
-      <text x="${dnLabelX}" y="352" class="pfd-flow-label">NO₃ 侧流脱氮</text>` : ""}
+      <text x="${dnLabelX}" y="388" class="pfd-flow-label">NO₃ 侧流脱氮</text>` : ""}
 
       <!-- 图例 -->
-      <g class="pfd-legend" transform="translate(150, ${H - 16})">
+      <g class="pfd-legend" transform="translate(150, ${H - 28})">
         <rect x="0" y="-14" width="14" height="14" rx="3" class="pfd-box c2"/>
         <text x="20" y="-2" class="pfd-sub">主循环</text>
         <rect x="110" y="-14" width="14" height="14" rx="3" class="pfd-box c8"/>
