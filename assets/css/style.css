@@ -533,6 +533,7 @@ table.data tfoot td { font-weight: 800; border-top: 2px solid var(--border-stron
 
 /* —— 敏感度分析 · 龙卷风图 —— */
 .sn-wrap { margin-top: 4px; }
+.sn-wrap .note { margin-left: 0; margin-right: 0; }
 .sn-ctrl { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
 .sn-ctrl label { font-size: 13px; color: var(--text-soft); }
 .tornado { display: flex; flex-direction: column; gap: 10px; }
