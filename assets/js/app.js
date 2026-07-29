@@ -219,6 +219,8 @@
       const res = E.optimize({
         speciesKey: inputs.speciesKey,
         designTemp: inputs.designTemp,
+        ambientTemp: inputs.ambientTemp,
+        region: inputs.region,
         constraints: { maxBudget: bc },
         objective: "maxCapacity",
       });
@@ -1330,6 +1332,7 @@
       const res = E.optimize({
         speciesKey: sp.key, annualTons: parseFloat(document.getElementById("annualTons").value) || 100,
         designTemp: document.getElementById("designTemp").value ? parseFloat(document.getElementById("designTemp").value) : null,
+        ambientTemp: inputs.ambientTemp, region: inputs.region,
         constraints, objective,
       });
       renderOptResult(res);

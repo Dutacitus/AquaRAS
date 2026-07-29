@@ -1205,8 +1205,13 @@ RAS.engine = (function () {
       // 给定预算(或面积/能耗)，搜索可承受的最大年产量
       const dens = sp.stockingDensity;
       const turns = 12;
+      // 用户指定的地区/气温优先（与 compute 一致：ambientTemp 优先于 region.ambient；否则回退默认 15）
+      const maxAmb = opts.ambientTemp != null ? opts.ambientTemp
+        : (opts.region && K.climate.regions[opts.region] ? K.climate.regions[opts.region].ambient : null);
+      const maxReg = opts.region || null;
       for (let p = 10; p <= 2000; p += 10) {
-        const d = compute({ speciesKey: opts.speciesKey, annualTons: p, designTemp: opts.designTemp });
+        const d = compute({ speciesKey: opts.speciesKey, annualTons: p, designTemp: opts.designTemp,
+          ambientTemp: maxAmb, region: maxReg });
         // 记录最小 WQ 可行 CAPEX（资金地板），供 UI 提示"最小可行投资下限"
         const wqOk = (opts.requireWqOk === false) || !(d.waterQuality && d.waterQuality.feasible === false);
         if (wqOk && d.economics.capexTotal < floorCapex) floorCapex = d.economics.capexTotal;
@@ -1227,7 +1232,13 @@ RAS.engine = (function () {
       const baseTemp = opts.designTemp != null ? opts.designTemp : sp.designTemp;
       const tempList = energyObj ? range(sp.tempRange[0], sp.tempRange[1], 3) : [baseTemp];
       const ambKeys = ["harbin", "beijing", "shanghai", "guangzhou", "sanya"];
-      const ambEntries = energyObj ? ambKeys.filter((k) => K.climate.regions[k]).map((k) => [k, K.climate.regions[k]]) : [["__none__", { ambient: null }]];
+      // 用户指定地区/气温时优先采用（与 compute 一致：ambientTemp 优先于 region.ambient），否则回退原扫描逻辑
+      const userAmb = opts.ambientTemp != null ? opts.ambientTemp
+        : (opts.region && K.climate.regions[opts.region] ? K.climate.regions[opts.region].ambient : null);
+      const userReg = opts.region || null;
+      const ambEntries = (userAmb != null || userReg)
+        ? [[userReg || "__user__", { ambient: userAmb, region: userReg }]]
+        : (energyObj ? ambKeys.filter((k) => K.climate.regions[k]).map((k) => [k, K.climate.regions[k]]) : [["__none__", { ambient: null }]]);
       for (const density of densList)
         for (const turns of turnsList)
           for (const D of diamList)
