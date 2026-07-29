@@ -125,6 +125,7 @@
       hint.innerHTML = `${s.group} · <b>${salTxt}</b> · 适温 ${s.tempRange[0]}–${s.tempRange[1]}℃ · FCR ${s.fcr}`
         + (mech.length ? ` · <span style="color:#f59e0b">${mech.join("/")}</span>` : "");
       updateBudgetFloorHint(); // 品种切换时实时更新资金地板提示（v1.25.0c）
+      syncPricePlaceholders(); // 品种切换时同步价格占位符（v1.25.0d）
     };
     sel.addEventListener("change", updHint);
     updHint();
@@ -154,6 +155,7 @@
         document.getElementById("ambient").value = parseFloat(btn.dataset.t);
         const regEl = document.getElementById("region");
         if (regEl) regEl.value = btn.dataset.region;
+        syncPricePlaceholders(); // 地区切换影响电价默认（v1.25.0d）
         chips.querySelectorAll(".chip").forEach((b) => b.classList.remove("on"));
         btn.classList.add("on");
         if (form) form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event("submit", { cancelable: true }));
@@ -167,6 +169,36 @@
       // 手动气温输入自动重算（v1.25.0c）
       amb.addEventListener("input", debounce(() => compute(), 350));
     }
+  }
+
+  /* 价格输入占位符动态同步：与引擎解析顺序一致（品种优先→全局回退，电价再乘地区指数），消除静态默认值与实际默认不符（v1.25.0d） */
+  function syncPricePlaceholders() {
+    const sp = K.species[document.getElementById("species").value] || null;
+    const reg = document.getElementById("region") ? document.getElementById("region").value : null;
+    const regPower = (reg && K.climate.regions[reg] && K.climate.regions[reg].powerIndex != null) ? K.climate.regions[reg].powerIndex : 1;
+    const defSale = (sp && sp.marketPrice != null) ? sp.marketPrice : (K.economics.salePrice != null ? K.economics.salePrice : 22);
+    const defFeed = (sp && sp.feedPrice != null) ? sp.feedPrice : (K.economics.opex.feedPrice != null ? K.economics.opex.feedPrice : 11);
+    const defFinger = (sp && sp.fingerlingPrice != null) ? sp.fingerlingPrice : (K.economics.opex.fingerlingPrice != null ? K.economics.opex.fingerlingPrice : 0.8);
+    const defElec = (K.economics.opex.elecPrice != null ? K.economics.opex.elecPrice : 0.72) * regPower;
+    const r2 = (v) => Math.round(v * 100) / 100;
+    const setPh = (id, v) => { const el = document.getElementById(id); if (el) el.placeholder = "默认 " + r2(v); };
+    setPh("salePrice", defSale);
+    setPh("feedPrice", defFeed);
+    setPh("fingerlingPrice", defFinger);
+    setPh("elecPrice", defElec);
+  }
+
+  /* 尾水/排放控件：主输入表单为唯一数据源（v1.25.0d 修复 C4：原仅注入设计计算书面板，主表单不可达） */
+  function initTailwaterControls() {
+    const twSel = document.getElementById("tailwaterTech");
+    if (twSel && K.tailwaterTreatment) {
+      twSel.innerHTML = Object.entries(K.tailwaterTreatment)
+        .map(([k, t]) => `<option value="${k}">${t.name}</option>`).join("");
+      twSel.value = "none";
+      twSel.addEventListener("change", () => compute());
+    }
+    const dlSel = document.getElementById("dischargeLevel");
+    if (dlSel) dlSel.addEventListener("change", () => compute());
   }
 
   /* ---------------- 输入读取 / 计算 ---------------- */
@@ -183,7 +215,7 @@
       cycles: document.getElementById("cycles").value ? num("cycles") : null,
       fcr: document.getElementById("fcr").value ? num("fcr") : null,
       recircTurns: document.getElementById("turns").value ? num("turns") : null,
-      makeupRate: num("makeup", 1) / 100,
+      makeupRate: num("makeup", 0.75) / 100,
       designTemp: document.getElementById("designTemp").value ? num("designTemp") : null,
       ambientTemp: document.getElementById("ambient").value ? num("ambient", 15) : 15,
       region: document.getElementById("region") ? (document.getElementById("region").value || null) : null,
@@ -403,11 +435,7 @@
         <div class="wq-val">${it.value}<small>${it.unit}</small></div>
         <div class="wq-lim">限值 ${it.limitStr} ${it.unit}</div>
       </div>`).join("");
-    const lvl = tw.level;
-    const selL = (v) => (v === lvl ? " selected" : "");
     const techKey = tt.key || "none";
-    const techOpts = Object.entries(K.tailwaterTreatment || {}).map(([k, t]) =>
-      `<option value="${k}"${k === techKey ? " selected" : ""}>${t.name}</option>`).join("");
     const head = tw.allPass ? "五项全部达标" : "存在不达标项，尾水不得直接排放";
     const tnRaw = tt.cTnRaw, tnPol = tt.cTnPol, tnDrop = (tt.removal && Math.round(tt.removal.tn * 100)) || 0;
     const treatNote = techKey === "none"
@@ -419,17 +447,8 @@
     return `
       <div class="section-title">尾水排放合规 (DB44/2462-2024)
         <span class="badge wq-${tw.status}">${head}</span></div>
-      <div style="padding:0 26px 6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <label style="font-size:13px;color:#cbd5e1">受纳水域</label>
-        <select id="dischargeLevel" class="text-input" style="max-width:280px">
-          <option value="2"${selL(2)}>二级（一般水域）</option>
-          <option value="1"${selL(1)}>一级（重点保护水域：饮用水源/自然保护区等）</option>
-        </select>
-        <span class="muted" style="font-size:12px">${tw.waterType === "seawater" ? "海水" : "淡水"} · ${tw.standardName}</span>
-      </div>
-      <div style="padding:0 26px 8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <label style="font-size:13px;color:#cbd5e1">末端尾水处理</label>
-        <select id="tailwaterTech" class="text-input" style="max-width:300px">${techOpts}</select>
+      <div class="muted" style="font-size:13px;padding:0 26px 8px">
+        受纳水域等级与末端处理工艺请在「🎯 设计输入」面板设置（当前：<b>${tw.level === 1 ? "一级（重点保护水域）" : "二级（一般水域）"}</b> · 末端处理 <b>${tt.name}</b>）。
       </div>
       <div class="wq-grid">${cards}</div>
       ${treatNote}
@@ -754,10 +773,6 @@
       <div style="padding:0"><div class="note">
         <span class="ic">⚠️</span>
         <div><b>设计说明：</b>生物滤池硝化负荷已含水温折减与安全系数 ${d.inputs.sf}。需配置备用发电机、备用纯氧、在线监测（DO/pH/TAN/温度）与自动化控制，确保满足设计水质阈值（TAN、DO 等）。</div></div></div>`;
-    const twSel = document.getElementById("dischargeLevel");
-    if (twSel) twSel.addEventListener("change", () => compute());
-    const twTechSel = document.getElementById("tailwaterTech");
-    if (twTechSel) twTechSel.addEventListener("change", () => compute());
   }
 
   /* ---------------- 渲染：PFD / P&ID ---------------- */
@@ -1648,6 +1663,10 @@
     document.getElementById("elecPrice").value = (inputs.elecPrice != null) ? inputs.elecPrice : "";
     document.getElementById("waterPrice").value = (inputs.waterPrice != null) ? inputs.waterPrice : "";
     document.getElementById("laborPerYear").value = (inputs.laborPerYear != null) ? inputs.laborPerYear : "";
+    const dl = document.getElementById("dischargeLevel");
+    if (dl && inputs.dischargeLevel != null) dl.value = inputs.dischargeLevel;
+    const tt = document.getElementById("tailwaterTech");
+    if (tt) tt.value = (inputs.tailwaterTech != null) ? inputs.tailwaterTech : "none";
   }
   function mergeSchemes(local, incoming) {
     const map = {};
@@ -2537,7 +2556,7 @@
   function init() {
     const sv = document.getElementById("sysVersion");
     if (sv && K && K.meta) sv.textContent = K.meta.version;   // 首页版本号跟随系统版本（knowledge.meta.version）
-    initTheme(); initSpecies(); initRegionChips(); initTabs(); initMagnetic();
+    initTheme(); initSpecies(); initRegionChips(); initTailwaterControls(); initTabs(); initMagnetic();
     initModelControls(); initExport(); initOptimizer(); initLibrary(); initLinking(); initSuppliers(); initKnowledge(); initBudgetMode(); updateBudgetFloorHint();
     // 统一管理员锁按钮
     const adminLockBtn = document.getElementById("adminLockBtn");

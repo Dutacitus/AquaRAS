@@ -80,7 +80,7 @@
       </div>
 
       <div class="hero-inner">
-        <div class="hero-eyebrow"><span class="pulse"></span>参数化 RAS 工艺设计引擎 · v<span id="sysVersion">1.24.0</span></div>
+        <div class="hero-eyebrow"><span class="pulse"></span>参数化 RAS 工艺设计引擎 · v<span id="sysVersion">1.25.0</span></div>
         <h1 class="hero-title">工厂化循环水养殖<br /><span class="grad">智能工艺设计系统</span></h1>
         <p class="hero-sub">输入产能目标，引擎按质量守恒自动推导养殖池、生物滤池 (MBBR)、纯氧增氧、CO₂ 脱除、固废处理等全套参数，并实时生成可交互 3D 车间模型。</p>
         <div class="hero-cta-row">
@@ -156,7 +156,7 @@
         </div>
         <div class="field">
           <label>补水率 <span class="unit">(% 循环量)</span></label>
-          <input type="number" id="makeup" value="1" min="0.2" max="10" step="0.1" />
+          <input type="number" id="makeup" value="0.75" min="0.2" max="10" step="0.1" />
           <span class="hint">新鲜水补充比例（回用率 = 100%−补水率）</span>
         </div>
         <div class="field">
@@ -176,6 +176,20 @@
           <input type="number" id="safety" value="1.15" min="1" max="1.5" step="0.05" />
           <span class="hint">单元设备容量冗余</span>
         </div>
+        <div class="subhead">尾水排放与处理（可选，默认二级水域 · 无末端处理）</div>
+        <div class="field">
+          <label>受纳水域排放标准 <span class="unit">(等级)</span></label>
+          <select id="dischargeLevel" class="text-input">
+            <option value="2">二级（一般水域）</option>
+            <option value="1">一级（重点保护水域：饮用水源 / 自然保护区等）</option>
+          </select>
+          <span class="hint">依据 DB44/2462-2024 等的受纳水域等级，影响尾水五项限值判定</span>
+        </div>
+        <div class="field">
+          <label>末端尾水处理工艺 <span class="unit">(可选)</span></label>
+          <select id="tailwaterTech" class="text-input"></select>
+          <span class="hint">直排=无末端处理；选择工艺后引擎据处理量核算投资与运行费，并二次削减排放口浓度</span>
+        </div>
         <div class="field">
           <label>预估鱼价 <span class="unit">(元/kg)</span></label>
           <input type="number" id="salePrice" step="0.5" min="1" placeholder="默认 22" />
@@ -184,7 +198,7 @@
         <div class="subhead">运营成本单价（可选，留空用系统默认）</div>
         <div class="field">
           <label>饲料单价 <span class="unit">(元/kg)</span></label>
-          <input type="number" id="feedPrice" step="0.1" min="0" placeholder="默认 9.5" />
+          <input type="number" id="feedPrice" step="0.1" min="0" placeholder="默认 11" />
           <span class="hint">商品配合饲料采购价</span>
         </div>
         <div class="field">
@@ -194,7 +208,7 @@
         </div>
         <div class="field">
           <label>电价 <span class="unit">(元/kWh)</span></label>
-          <input type="number" id="elecPrice" step="0.05" min="0" placeholder="默认 0.75" />
+          <input type="number" id="elecPrice" step="0.05" min="0" placeholder="默认 0.72" />
           <span class="hint">工业/农业用电到户价</span>
         </div>
         <div class="field">
