@@ -195,7 +195,6 @@ window.RAS_KNOWLEDGE = {
       "disinfectLog": 3
     },
     "pump": {
-      "head": 4,
       "eff": 0.7,
       "loadFactor": 0.9,
       "pipeDiameter": 0.35,

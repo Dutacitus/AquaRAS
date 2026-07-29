@@ -658,7 +658,7 @@ RAS.engine = (function () {
     const loanRate = fin.loanRate != null ? fin.loanRate : 0.045;
     const loanYears = fin.loanYears != null ? fin.loanYears : 10;
     const depYears = fin.depYears != null ? fin.depYears : 15;
-    const projectLife = 15;                                  // 项目评价期(年)
+    const projectLife = depYears;                            // 项目评价期(年)：由折旧期派生，改 K.economics.finance.depYears 时评价期自动同步（原硬编码 15）
     const ebitda = grossProfit;                              // 息税折旧摊销前利润 ≈ 毛利（opexTotal 不含折旧/利息）
     const depreciation = capexTotal / Math.max(1, depYears);// 直线法年折旧(非现金)
     const loanPrincipal = capexTotal * loanRatio;            // 贷款本金
