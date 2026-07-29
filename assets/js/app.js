@@ -117,16 +117,21 @@
     const hint = document.getElementById("speciesHint");
     const updHint = () => {
       const s = K.species[sel.value];
+      if (!s) return; // 防护：品种键无效时避免 s.salinity 报错（v1.25.0c）
       const salTxt = s.salinity === "marine" ? "海水" : (s.salinity === "brackish" ? "半咸水" : "淡水");
       const mech = [];
       if (s.matlFactor && s.matlFactor > 1) mech.push("耐蚀材质");
       if (s.o2SatFactor && s.o2SatFactor < 1) mech.push("溶氧饱和低");
       hint.innerHTML = `${s.group} · <b>${salTxt}</b> · 适温 ${s.tempRange[0]}–${s.tempRange[1]}℃ · FCR ${s.fcr}`
         + (mech.length ? ` · <span style="color:#f59e0b">${mech.join("/")}</span>` : "");
+      updateBudgetFloorHint(); // 品种切换时实时更新资金地板提示（v1.25.0c）
     };
     sel.addEventListener("change", updHint);
     updHint();
   }
+
+  /* 通用工具：防抖 */
+  function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 
   /* ---------------- 地区气温预设 ---------------- */
   function initRegionChips() {
@@ -159,6 +164,8 @@
       const cur = parseFloat(amb.value);
       const match = [...chips.querySelectorAll(".chip")].find((b) => parseFloat(b.dataset.t) === cur);
       if (match) match.classList.add("on");
+      // 手动气温输入自动重算（v1.25.0c）
+      amb.addEventListener("input", debounce(() => compute(), 350));
     }
   }
 
@@ -271,8 +278,29 @@
       const hint = annualEl.parentElement.querySelector(".hint");
       if (hint) hint.textContent = on ? "预算反算模式下不可自定义（已锁定）" : "商品鱼上市量（活重）";
     };
-    budgetEl.addEventListener("input", sync);
+    // v1.25.0c：预算输入变化时立即重算（之前只锁定 UI 不重算）；debounce 避免逐字符卡顿
+    const onBudgetInput = debounce(() => compute(), 350);
+    budgetEl.addEventListener("input", () => { sync(); onBudgetInput(); });
     sync();
+  }
+
+  /* 资金地板提示：当前品种最小可行投资下限（v1.25.0c） */
+  const _floorCache = {};
+  function updateBudgetFloorHint() {
+    const el = document.getElementById("budgetFloorHint");
+    if (!el) return;
+    const spEl = document.getElementById("species");
+    const spKey = spEl ? spEl.value : null;
+    if (!spKey) { el.textContent = ""; return; }
+    if (_floorCache[spKey] != null) {
+      el.innerHTML = `当前品种最小可行投资 ≈ <b>${_floorCache[spKey].toFixed(1)} 万元</b>`;
+      return;
+    }
+    // 复用引擎 maxCapacity 扫描得到的最小 WQ 可行 CAPEX（floorCapex 已为万元）
+    const r = E.optimize({ speciesKey: spKey, objective: "maxCapacity", constraints: { maxBudget: 1e9 } });
+    const floorWan = (r.floorCapex != null && isFinite(r.floorCapex)) ? r.floorCapex : 0;
+    _floorCache[spKey] = floorWan;
+    el.innerHTML = `当前品种最小可行投资 ≈ <b>${floorWan.toFixed(1)} 万元</b>`;
   }
 
   /* ---------------- 渲染：工艺参数 ---------------- */
@@ -869,7 +897,7 @@
         ${metricCard("年营业收入", (e.revenue/10000).toFixed(1), "万元", "售价 "+e.salePrice+" 元/kg", "brand")}
         ${metricCard("年毛利", (e.grossProfit/10000).toFixed(1), "万元", "营收−运营", e.grossProfit>=0?"accent":"")}
         ${metricCard("单位利润", e.profitPerKg, "元/kg", "毛利/产量")}
-        ${metricCard("投资回收期", e.paybackYears!=null?e.paybackYears.toFixed(1):"—", "年", e.paybackYears!=null&&e.paybackYears>0?"简单回收期":"不可行", e.paybackYears!=null&&e.paybackYears<8?"accent":"")}
+        ${metricCard("投资回收期", e.paybackYears!=null?e.paybackYears.toFixed(1):"—", "年", e.paybackYears!=null&&e.paybackYears>0?"简单回收期":"存在风险", e.paybackYears!=null&&e.paybackYears<8?"accent":"")}
         ${metricCard("年化 ROI", e.roi!=null?e.roi:"—", "%", "毛利/CAPEX")}
         ${metricCard("毛利率", e.marginRate!=null?e.marginRate:"—", "%", "毛利/营收")}
       </div>
@@ -1701,7 +1729,7 @@
           ["单位鱼成本", d.economics.costPerKg + " 元/kg"],
         ])}
         <h2>水质可行性校核</h2>${keyval(d.waterQuality.checks.map((c) => [c.name + " (" + c.status + ")", c.value + " " + c.unit + " / 限值 " + c.limit]))}
-        <h2>盈利与投资回报</h2>${keyval([["售价(元/kg)", d.economics.salePrice], ["年营业收入", E.rmb(d.economics.revenue)], ["年毛利", E.rmb(d.economics.grossProfit)], ["投资回收期", (d.economics.paybackYears != null ? d.economics.paybackYears.toFixed(1) + " 年" : "不可行")], ["年化 ROI", (d.economics.roi != null ? d.economics.roi + " %" : "—")]])}
+        <h2>盈利与投资回报</h2>${keyval([["售价(元/kg)", d.economics.salePrice], ["年营业收入", E.rmb(d.economics.revenue)], ["年毛利", E.rmb(d.economics.grossProfit)], ["投资回收期", (d.economics.paybackYears != null ? d.economics.paybackYears.toFixed(1) + " 年" : "存在风险")], ["年化 ROI", (d.economics.roi != null ? d.economics.roi + " %" : "—")]])}
         <h2>设计计算书（方法论）</h2>
         <p style="font-size:13px;color:#475569">计算体系：质量守恒原理 + RAS 工程经验基准。水质控制目标、设备选型系数与经济模型参数均依据现行规范与工程经验设定，不在本报告披露。</p>
         <p style="font-size:12.5px;color:#94a3b8;border-left:3px solid #0ea5e9;padding-left:10px">🔒 核心算法、设备选型系数、经济模型参数与实现代码不在本文档披露。本报告为工程量级估算，实际工程须由具备资质单位依据现行规范深化设计。</p>
@@ -2478,7 +2506,7 @@
     const sv = document.getElementById("sysVersion");
     if (sv && K && K.meta) sv.textContent = K.meta.version;   // 首页版本号跟随系统版本（knowledge.meta.version）
     initTheme(); initSpecies(); initRegionChips(); initTabs(); initMagnetic();
-    initModelControls(); initExport(); initOptimizer(); initLibrary(); initLinking(); initSuppliers(); initKnowledge(); initBudgetMode();
+    initModelControls(); initExport(); initOptimizer(); initLibrary(); initLinking(); initSuppliers(); initKnowledge(); initBudgetMode(); updateBudgetFloorHint();
     // 统一管理员锁按钮
     const adminLockBtn = document.getElementById("adminLockBtn");
     if (adminLockBtn) adminLockBtn.addEventListener("click", toggleAdmin);

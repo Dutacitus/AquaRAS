@@ -1209,7 +1209,7 @@ RAS.engine = (function () {
       const maxAmb = opts.ambientTemp != null ? opts.ambientTemp
         : (opts.region && K.climate.regions[opts.region] ? K.climate.regions[opts.region].ambient : null);
       const maxReg = opts.region || null;
-      for (let p = 10; p <= 2000; p += 10) {
+      for (let p = 1; p <= 2000; p += 1) {
         const d = compute({ speciesKey: opts.speciesKey, annualTons: p, designTemp: opts.designTemp,
           ambientTemp: maxAmb, region: maxReg });
         // 记录最小 WQ 可行 CAPEX（资金地板），供 UI 提示"最小可行投资下限"
