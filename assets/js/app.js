@@ -838,6 +838,37 @@
     const host = document.getElementById("panel-econ");
     host.className = "panel active glass";
     const e = d.economics, ec = E.rmb;
+    // 融资结构与现金流分析（数据来自引擎 e.finance；利率/比例均为小数，需 ×100；金额均为元，需 ÷1万）
+    const fin = e.finance || {};
+    const pct = (x) => (x != null ? (x * 100).toFixed(1) : "—");
+    const wan = (x) => (x != null ? (x / 10000).toFixed(1) : "—");
+    const finNetOK = fin.npv != null && fin.npv > 0;
+    const financeSection = `
+      <div class="section-title" style="margin-top:18px">融资结构与现金流分析</div>
+      <div class="note"><span class="ic">💡</span>
+      <div>以下为<b>权益口径</b>融资测算：折现率 / 贷款比例 / 利率 / 年限取自全局金融假设（可在知识库 economics.finance 调整）。EBITDA ≈ 年毛利（运营口径，不含折旧与利息）；项目 NPV 与 IRR 以初始权益投入为基准。对亏损或回收期过长方案标「<b>存在风险</b>」。</div></div>
+      <div class="metrics" style="padding:14px 26px 8px">
+        ${metricCard("折现率", pct(fin.discountRate), "%", "NPV/IRR 贴现")}
+        ${metricCard("贷款比例", pct(fin.loanRatio), "%", "债务融资占比")}
+        ${metricCard("贷款利率", pct(fin.loanRate), "%", "年化")}
+        ${metricCard("贷款年限", fin.loanYears, "年", "等额还本")}
+        ${metricCard("折旧年限", fin.depYears, "年", "直线法")}
+      </div>
+      <div class="section-title" style="margin-top:8px">核心现金流指标</div>
+      <div class="metrics" style="padding:14px 26px 8px">
+        ${metricCard("项目 NPV", wan(fin.npv), "万元", "净现值(权益口径)", finNetOK ? "accent" : "")}
+        ${metricCard("项目 IRR", fin.irr != null ? fin.irr : "—", "%", fin.irr != null ? "内部收益率" : "存在风险", fin.irr != null && fin.irr > 0 ? "accent" : "")}
+        ${metricCard("折现回收期", fin.discountedPayback != null ? fin.discountedPayback : "—", "年", fin.discountedPayback != null ? "贴现现金流回收" : "存在风险", fin.discountedPayback != null && fin.discountedPayback < fin.loanYears ? "accent" : "")}
+        ${metricCard("EBITDA", wan(fin.ebitda), "万元", "≈年毛利")}
+      </div>
+      <div class="section-title" style="margin-top:8px">融资结构分解</div>
+      <div class="metrics" style="padding:14px 26px 26px">
+        ${metricCard("权益投资", wan(fin.equityInvest), "万元", "初始自有资金", "brand")}
+        ${metricCard("贷款本金", wan(fin.loanPrincipal), "万元", "债务融资", "brand")}
+        ${metricCard("年利息", wan(fin.annualInterest), "万元/年", "贷款利息")}
+        ${metricCard("年还本", wan(fin.annualPrincipal), "万元/年", "等额本金")}
+        ${metricCard("年偿债合计", (fin.annualInterest != null && fin.annualPrincipal != null) ? wan(fin.annualInterest + fin.annualPrincipal) : "—", "万元/年", "利息+还本")}
+      </div>`;
     // CAPEX：各投资项向下展开一级（默认折叠，点击展开子项；子项金额合计 == 该项总额）
     const capRows = e.capexBreakdown.map((c) => {
       if (c.subtotal) {
@@ -901,6 +932,7 @@
         ${metricCard("年化 ROI", e.roi!=null?e.roi:"—", "%", "毛利/CAPEX")}
         ${metricCard("毛利率", e.marginRate!=null?e.marginRate:"—", "%", "毛利/营收")}
       </div>
+      ${financeSection}
       <div class="section-title" style="margin-top:18px">光伏投资分析 (PV)</div>
       ${renderPVPanel(d)}
       <div class="section-title" style="margin-top:8px">敏感度分析 (What-if · ±20%)</div>
